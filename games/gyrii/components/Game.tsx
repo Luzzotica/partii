@@ -3,9 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 import type { Vector3 } from "@babylonjs/core";
 import { useGyriiStore } from "../store/gameStore";
+import { useSpacetimeDB } from "../hooks/useSpacetimeDB";
+import { maps } from "../game/maps";
 import HUD from "./HUD";
-import LobbyUI from "./LobbyUI";
 import PauseMenu from "./PauseMenu";
+import type { Player } from "../store/gameStore";
 
 // Types for weapon and throwable renderers
 type WeaponRendererType =
@@ -21,10 +23,38 @@ export default function GyriiGame() {
   );
   const throwableRendererRef =
     useRef<InstanceType<ThrowableRendererType> | null>(null);
-  const { gameState, setGameState, localPlayer, selectedWeapon } =
+  const playerMeshesRef = useRef<
+    Map<
+      string,
+      {
+        mesh: any;
+        material: any;
+        lastPos?: { x: number; z: number };
+        targetPos?: { x: number; z: number };
+      }
+    >
+  >(new Map());
+  const { gameState, setGameState, selectedWeapon, localPlayer } =
     useGyriiStore();
+  const { updateInput, setMarbleConfig } = useSpacetimeDB();
+  const updateInputIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
+    null,
+  );
   const [isLoading, setIsLoading] = useState(true);
   const [loadingProgress, setLoadingProgress] = useState(0);
+
+  // Sync marble config to server when we enter the game
+  const marbleConfigSyncedRef = useRef(false);
+  const marbleConfig = useGyriiStore((s) => s.marbleConfig);
+  useEffect(() => {
+    if (!localPlayer) {
+      marbleConfigSyncedRef.current = false;
+      return;
+    }
+    if (marbleConfigSyncedRef.current) return;
+    marbleConfigSyncedRef.current = true;
+    setMarbleConfig(marbleConfig);
+  }, [localPlayer, marbleConfig, setMarbleConfig]);
 
   useEffect(() => {
     if (!canvasRef.current) return;
@@ -39,13 +69,13 @@ export default function GyriiGame() {
         // Import Havok physics
         const HavokPhysics = await import("@babylonjs/havok");
 
-        // Import weapon systems
+        // Import weapon systems and camera constants (weapon can override zoom)
         const { WeaponRenderer, WEAPON_CONFIGS } =
           await import("../game/weapons/WeaponRenderer");
         const { ThrowableRenderer } =
           await import("../game/weapons/ThrowableRenderer");
-        const { createDeathExplosion } =
-          await import("../game/effects/ParticleEffects");
+        const { loadMap } = await import("../game/maps/MapLoader");
+        const { DEFAULT_CAMERA_ZOOM } = await import("../game/constants");
 
         if (!mounted || !canvasRef.current) return;
 
@@ -67,21 +97,22 @@ export default function GyriiGame() {
 
         setLoadingProgress(40);
 
-        // Create top-down camera
+        // Create top-down camera; zoom from constants (overridable per weapon in render loop)
         const camera = new BABYLON.ArcRotateCamera(
           "camera",
           -Math.PI / 2, // alpha - rotation around Y axis
           Math.PI / 6, // beta - angle from top (30 degrees from vertical)
-          40, // radius
+          DEFAULT_CAMERA_ZOOM.radiusMin,
           BABYLON.Vector3.Zero(),
           scene,
         );
-        camera.lowerRadiusLimit = 20;
-        camera.upperRadiusLimit = 80;
+        camera.lowerRadiusLimit = DEFAULT_CAMERA_ZOOM.radiusMin;
+        camera.upperRadiusLimit = DEFAULT_CAMERA_ZOOM.radiusMax;
         camera.lowerBetaLimit = Math.PI / 8;
         camera.upperBetaLimit = Math.PI / 3;
         camera.attachControl(canvasRef.current, false);
         camera.panningSensibility = 0; // Disable panning
+        camera.inputs.removeByType("ArcRotateCameraPointersInput"); // Disable orbit on drag
 
         // Initialize camera target for smooth following
         let cameraTarget = BABYLON.Vector3.Zero();
@@ -104,100 +135,146 @@ export default function GyriiGame() {
         );
         mainLight.intensity = 0.8;
 
-        // Create ground plane
-        const ground = BABYLON.MeshBuilder.CreateGround(
-          "ground",
-          { width: 100, height: 100 },
-          scene,
-        );
-        const groundMaterial = new BABYLON.PBRMaterial("groundMat", scene);
-        groundMaterial.albedoColor = new BABYLON.Color3(0.05, 0.05, 0.1);
-        groundMaterial.metallic = 0.8;
-        groundMaterial.roughness = 0.4;
-        groundMaterial.emissiveColor = new BABYLON.Color3(0, 0.05, 0.1);
-        ground.material = groundMaterial;
-
-        // Add grid lines to ground using standard material with texture
-        const gridGround = BABYLON.MeshBuilder.CreateGround(
-          "gridGround",
-          { width: 100, height: 100, subdivisions: 50 },
-          scene,
-        );
-        gridGround.position.y = 0.01;
-
-        const gridMaterial = new BABYLON.StandardMaterial("gridMat", scene);
-        gridMaterial.emissiveColor = new BABYLON.Color3(0.1, 0.2, 0.3);
-        gridMaterial.wireframe = true;
-        gridMaterial.alpha = 0.3;
-        gridGround.material = gridMaterial;
+        // Load map from JSON based on lobby's mapId
+        const mapId = useGyriiStore.getState().currentLobby?.mapId ?? "arena";
+        const mapData = maps[mapId] ?? maps.arena;
+        loadMap(BABYLON, scene, mapData as any);
 
         setLoadingProgress(80);
 
-        // Create a test player ball
-        const playerBall = BABYLON.MeshBuilder.CreateSphere(
-          "player",
-          { diameter: 1 },
-          scene,
-        );
-        playerBall.position.y = 0.5;
-
-        // Initialize camera target to player starting position
-        cameraTarget = playerBall.position.clone();
-        camera.target.copyFrom(cameraTarget);
-
-        const playerMaterial = new BABYLON.PBRMaterial("playerMat", scene);
-        playerMaterial.albedoColor = new BABYLON.Color3(0, 1, 1);
-        playerMaterial.emissiveColor = new BABYLON.Color3(0, 0.5, 0.5);
-        playerMaterial.metallic = 0.5;
-        playerMaterial.roughness = 0.3;
-        playerBall.material = playerMaterial;
-
-        // Add glow layer for neon effect
+        // Add glow layer for player balls
         const glowLayer = new BABYLON.GlowLayer("glow", scene);
         glowLayer.intensity = 0.8;
-        glowLayer.addIncludedOnlyMesh(playerBall);
 
-        // Create some test walls
-        const createWall = (
-          x: number,
-          z: number,
-          width: number,
-          depth: number,
-          height: number,
+        // Helper to sync player meshes from store
+        const playerMeshes = new Map<
+          string,
+          {
+            mesh: any;
+            material: any;
+            lastPos?: { x: number; z: number };
+            targetPos?: { x: number; z: number };
+          }
+        >();
+        playerMeshesRef.current = playerMeshes;
+
+        const { createMarbleMaterial, createSolidMarbleMaterial } =
+          await import("../game/marble/MarbleMaterials");
+
+        const syncPlayerMeshes = (
+          localPlayer: Player | null,
+          players: Map<string, Player>,
+          deltaTime: number,
         ) => {
-          const wall = BABYLON.MeshBuilder.CreateBox(
-            `wall_${x}_${z}`,
-            { width, height, depth },
-            scene,
-          );
-          wall.position = new BABYLON.Vector3(x, height / 2, z);
+          const allPlayers = new Map<string, Player>();
+          if (localPlayer) allPlayers.set(localPlayer.id, localPlayer);
+          players.forEach((p, id) => allPlayers.set(id, p));
 
-          const wallMaterial = new BABYLON.PBRMaterial(
-            `wallMat_${x}_${z}`,
-            scene,
-          );
-          wallMaterial.albedoColor = new BABYLON.Color3(0.2, 0.2, 0.3);
-          wallMaterial.emissiveColor = new BABYLON.Color3(0.1, 0.1, 0.2);
-          wallMaterial.metallic = 0.7;
-          wallMaterial.roughness = 0.3;
-          wall.material = wallMaterial;
+          // Remove meshes for players that left
+          for (const id of playerMeshes.keys()) {
+            if (!allPlayers.has(id)) {
+              const entry = playerMeshes.get(id)!;
+              entry.mesh.dispose();
+              entry.material.dispose();
+              glowLayer.removeIncludedOnlyMesh(entry.mesh);
+              playerMeshes.delete(id);
+            }
+          }
 
-          return wall;
+          const radius = 0.5;
+
+          // Create or update meshes
+          for (const [id, player] of allPlayers) {
+            let entry = playerMeshes.get(id);
+            if (!entry) {
+              const mesh = BABYLON.MeshBuilder.CreateSphere(
+                `player-${id}`,
+                { diameter: 1 },
+                scene,
+              );
+              mesh.position.y = 0.5;
+              const config = player.marbleConfig ?? {
+                designId: 0 as const,
+                mainColor: player.color,
+                secondaryColor: player.color,
+              };
+              let material: any;
+              try {
+                material = createMarbleMaterial(
+                  BABYLON,
+                  scene,
+                  config,
+                  `playerMat-${id}`,
+                );
+              } catch {
+                material = createSolidMarbleMaterial(
+                  BABYLON,
+                  scene,
+                  config,
+                  `playerMat-${id}`,
+                );
+              }
+              mesh.material = material;
+              glowLayer.addIncludedOnlyMesh(mesh);
+              entry = { mesh, material };
+              playerMeshes.set(id, entry);
+            }
+            const px = player.position.x;
+            const pz = player.position.z;
+            entry.targetPos = { x: px, z: pz };
+
+            // Lerp toward target position for smooth movement (fixes choppy server updates)
+            const LERP_SPEED = 12;
+            const t = Math.min(1, deltaTime * LERP_SPEED);
+            const mesh = entry.mesh;
+            mesh.position.x = mesh.position.x + (px - mesh.position.x) * t;
+            mesh.position.y = 0.5;
+            mesh.position.z = mesh.position.z + (pz - mesh.position.z) * t;
+
+            // Rolling: rotation from velocity (ω = v / r)
+            const lastPos = entry.lastPos;
+            entry.lastPos = { x: mesh.position.x, z: mesh.position.z };
+            if (deltaTime > 0 && lastPos !== undefined) {
+              const vx = (px - lastPos.x) / deltaTime;
+              const vz = (pz - lastPos.z) / deltaTime;
+              const speed = Math.sqrt(vx * vx + vz * vz);
+              if (speed > 0.01) {
+                const deltaAngle = ((speed * deltaTime) / radius) * 0.25; // 1/2 spin rate
+                const axis = new BABYLON.Vector3(-vz, 0, vx).normalize();
+                entry.mesh.rotate(axis, -deltaAngle, BABYLON.Space.WORLD);
+              }
+            }
+
+            // Update material if marbleConfig changed (e.g. after server sync)
+            const config = player.marbleConfig ?? {
+              designId: 0 as const,
+              mainColor: player.color,
+              secondaryColor: player.color,
+            };
+            if (entry.material.setColor3) {
+              const main = config.mainColor;
+              const sec = config.secondaryColor;
+              entry.material.setColor3?.(
+                "mainColor",
+                new BABYLON.Color3(main.r / 255, main.g / 255, main.b / 255),
+              );
+              entry.material.setColor3?.(
+                "secondaryColor",
+                new BABYLON.Color3(sec.r / 255, sec.g / 255, sec.b / 255),
+              );
+            } else if (entry.material.albedoColor) {
+              const r = config.mainColor.r / 255;
+              const g = config.mainColor.g / 255;
+              const b = config.mainColor.b / 255;
+              entry.material.albedoColor = new BABYLON.Color3(r, g, b);
+              entry.material.emissiveColor = new BABYLON.Color3(
+                r * 0.5,
+                g * 0.5,
+                b * 0.5,
+              );
+            }
+          }
         };
-
-        // Create arena boundaries
-        createWall(0, -25, 50, 1, 2);
-        createWall(0, 25, 50, 1, 2);
-        createWall(-25, 0, 1, 50, 2);
-        createWall(25, 0, 1, 50, 2);
-
-        // Create some cover
-        createWall(0, 0, 8, 2, 1);
-        createWall(0, 0, 2, 8, 1);
-        createWall(-12, -12, 3, 3, 2);
-        createWall(12, -12, 3, 3, 2);
-        createWall(-12, 12, 3, 3, 2);
-        createWall(12, 12, 3, 3, 2);
 
         setLoadingProgress(100);
 
@@ -208,7 +285,7 @@ export default function GyriiGame() {
         throwableRendererRef.current = throwableRenderer;
 
         // Store reference
-        gameSceneRef.current = { engine, scene, camera, playerBall, glowLayer };
+        gameSceneRef.current = { engine, scene, camera, glowLayer };
 
         // Handle resize
         const handleResize = () => {
@@ -242,41 +319,65 @@ export default function GyriiGame() {
         let aimDirection = new BABYLON.Vector3(0, 0, -1);
         let mouseScreenPos = { x: 0, y: 0 };
 
-        const handleMouseMove = (e: MouseEvent) => {
+        const handlePointerMove = (e: MouseEvent | PointerEvent) => {
           mouseScreenPos.x = e.clientX;
           mouseScreenPos.y = e.clientY;
+          useGyriiStore.getState().setMousePosition(e.clientX, e.clientY);
         };
-        window.addEventListener("mousemove", handleMouseMove);
+        // Capture phase on document so we get move events during click-drag (before Babylon or others capture)
+        document.addEventListener(
+          "mousemove",
+          handlePointerMove as (e: MouseEvent) => void,
+          true,
+        );
+        document.addEventListener(
+          "pointermove",
+          handlePointerMove as (e: PointerEvent) => void,
+          true,
+        );
 
         // Shooting state
         let isShooting = false;
         let lastShotTime = 0;
-        let playerVelocity = new BABYLON.Vector3(0, 0, 0);
-        let playerHealth = 100;
 
         // Mouse button handlers
         const handleMouseDown = (e: MouseEvent) => {
           if (e.button === 0) {
-            // Left click - shoot
             isShooting = true;
           } else if (e.button === 2) {
-            // Right click - grenade
-            throwableRenderer.throw(
-              playerBall.position.clone(),
-              aimDirection,
-              15,
-              "grenade",
-              "local",
-            );
+            const store = useGyriiStore.getState();
+            const me = store.localPlayer;
+            if (me) {
+              const pos = new BABYLON.Vector3(
+                me.position.x,
+                0.5,
+                me.position.z,
+              );
+              throwableRenderer.throw(
+                pos,
+                aimDirection,
+                15,
+                "grenade",
+                "local",
+              );
+            }
           } else if (e.button === 1) {
-            // Middle click - molotov
-            throwableRenderer.throw(
-              playerBall.position.clone(),
-              aimDirection,
-              12,
-              "molotov",
-              "local",
-            );
+            const store = useGyriiStore.getState();
+            const me = store.localPlayer;
+            if (me) {
+              const pos = new BABYLON.Vector3(
+                me.position.x,
+                0.5,
+                me.position.z,
+              );
+              throwableRenderer.throw(
+                pos,
+                aimDirection,
+                12,
+                "molotov",
+                "local",
+              );
+            }
           }
         };
 
@@ -289,35 +390,64 @@ export default function GyriiGame() {
         canvasRef.current.addEventListener("mousedown", handleMouseDown);
         canvasRef.current.addEventListener("mouseup", handleMouseUp);
 
+        // Send input to server at ~20 Hz
+        updateInputIntervalRef.current = setInterval(() => {
+          if (useGyriiStore.getState().gameState === "paused") return;
+          let inputX = 0,
+            inputZ = 0;
+          if (inputMap["w"] || inputMap["arrowup"]) inputZ = 1;
+          if (inputMap["s"] || inputMap["arrowdown"]) inputZ = -1;
+          if (inputMap["a"] || inputMap["arrowleft"]) inputX = -1;
+          if (inputMap["d"] || inputMap["arrowright"]) inputX = 1;
+          const store = useGyriiStore.getState();
+          if (store.localPlayer) {
+            updateInput(
+              inputX,
+              inputZ,
+              aimDirection.x,
+              aimDirection.z,
+              isShooting,
+            );
+          }
+        }, 50);
+
         // Game loop
         let lastFrameTime = performance.now();
 
         scene.onBeforeRenderObservable.add(() => {
-          // Pause game loop if paused
           const currentState = useGyriiStore.getState().gameState;
-          if (currentState === "paused") {
-            return;
-          }
+          if (currentState === "paused") return;
 
           const currentTime = performance.now();
           const deltaTime = (currentTime - lastFrameTime) / 1000;
           lastFrameTime = currentTime;
 
-          // Calculate aim direction from mouse position
+          const store = useGyriiStore.getState();
+          const localPlayer = store.localPlayer;
+          const players = store.players;
+
+          // Sync player meshes from store
+          syncPlayerMeshes(localPlayer, players, deltaTime);
+
+          // Use local player position for aim/camera (from server)
+          const myPos = localPlayer
+            ? new BABYLON.Vector3(
+                localPlayer.position.x,
+                0.5,
+                localPlayer.position.z,
+              )
+            : BABYLON.Vector3.Zero();
+
+          // Calculate aim direction from mouse
           let mouseWorldPos: Vector3 | null = null;
           const pickInfo = scene.pick(mouseScreenPos.x, mouseScreenPos.y);
           if (pickInfo?.pickedPoint) {
-            const targetPos = pickInfo.pickedPoint;
-            mouseWorldPos = targetPos.clone();
-            // Always zero out Y (vertical) coordinate so camera doesn't go up when hovering over walls
+            mouseWorldPos = pickInfo.pickedPoint.clone();
             mouseWorldPos.y = 0;
-            aimDirection = mouseWorldPos
-              .subtract(playerBall.position)
-              .normalize();
+            aimDirection = mouseWorldPos.subtract(myPos).normalize();
             aimDirection.y = 0;
-            aimDirection.normalize();
+            if (aimDirection.lengthSquared() > 0.01) aimDirection.normalize();
           } else {
-            // Fallback: project mouse ray onto ground plane (y=0)
             const ray = scene.createPickingRay(
               mouseScreenPos.x,
               mouseScreenPos.y,
@@ -328,150 +458,69 @@ export default function GyriiGame() {
               const t = -ray.origin.y / ray.direction.y;
               if (t > 0) {
                 mouseWorldPos = ray.origin.add(ray.direction.scale(t));
-                mouseWorldPos.y = 0; // Ensure it's on the ground plane
-                aimDirection = mouseWorldPos
-                  .subtract(playerBall.position)
-                  .normalize();
+                mouseWorldPos.y = 0;
+                aimDirection = mouseWorldPos.subtract(myPos).normalize();
                 aimDirection.y = 0;
-                aimDirection.normalize();
+                if (aimDirection.lengthSquared() > 0.01)
+                  aimDirection.normalize();
               }
             }
           }
 
-          // Movement input (Y inverted)
-          const moveSpeed = 10 * 0.03; // Reduced by 80% again (4% of original)
-          let inputX = 0,
-            inputZ = 0;
-
-          if (inputMap["w"] || inputMap["arrowup"]) inputZ = 1; // Inverted: was -1
-          if (inputMap["s"] || inputMap["arrowdown"]) inputZ = -1; // Inverted: was 1
-          if (inputMap["a"] || inputMap["arrowleft"]) inputX = -1;
-          if (inputMap["d"] || inputMap["arrowright"]) inputX = 1;
-
-          // Apply movement with physics-like velocity
-          const friction = 0.85;
-          if (inputX !== 0 || inputZ !== 0) {
-            const len = Math.sqrt(inputX * inputX + inputZ * inputZ);
-            playerVelocity.x += (inputX / len) * moveSpeed * deltaTime * 5;
-            playerVelocity.z += (inputZ / len) * moveSpeed * deltaTime * 5;
-          }
-
-          // Apply friction
-          playerVelocity.x *= friction;
-          playerVelocity.z *= friction;
-
-          // Cap velocity
-          const maxSpeed = 0.5;
-          const currentSpeed = Math.sqrt(
-            playerVelocity.x ** 2 + playerVelocity.z ** 2,
-          );
-          if (currentSpeed > maxSpeed) {
-            playerVelocity.x = (playerVelocity.x / currentSpeed) * maxSpeed;
-            playerVelocity.z = (playerVelocity.z / currentSpeed) * maxSpeed;
-          }
-
-          // Update position
-          playerBall.position.x += playerVelocity.x;
-          playerBall.position.z += playerVelocity.z;
-
-          // Clamp to arena
-          playerBall.position.x = Math.max(
-            -24,
-            Math.min(24, playerBall.position.x),
-          );
-          playerBall.position.z = Math.max(
-            -24,
-            Math.min(24, playerBall.position.z),
-          );
-
-          // Handle shooting
-          if (isShooting) {
-            // Get current weapon config dynamically from store
-            const currentWeapon = useGyriiStore.getState().selectedWeapon;
-            const currentWeaponConfig = WEAPON_CONFIGS[currentWeapon];
+          // Handle shooting (visual only for now)
+          if (isShooting && localPlayer) {
+            const currentWeaponConfig = WEAPON_CONFIGS[store.selectedWeapon];
             const timeSinceLastShot = currentTime - lastShotTime;
             const fireInterval = 1000 / currentWeaponConfig.fireRate;
-
             if (timeSinceLastShot >= fireInterval) {
-              // Fire weapon
-              const muzzlePos = playerBall.position.add(
-                aimDirection.scale(0.7),
-              );
+              const muzzlePos = myPos.add(aimDirection.scale(0.7));
               muzzlePos.y += 0.3;
-
               weaponRenderer.fireHitscan(
                 muzzlePos,
                 aimDirection,
                 currentWeaponConfig,
-                (hitPoint) => {
-                  // Handle hit feedback
-                  console.log("Hit at:", hitPoint);
-                },
+                () => {},
               );
-
-              // Apply recoil knockback to player
-              const recoilForce = currentWeaponConfig.knockback * 0.1;
-              playerVelocity.x -= aimDirection.x * recoilForce;
-              playerVelocity.z -= aimDirection.z * recoilForce;
-
               lastShotTime = currentTime;
             }
           }
 
-          // Update weapon renderer
           weaponRenderer.update(deltaTime);
-
-          // Update throwables
           throwableRenderer.update(deltaTime);
 
-          // Check if player is in fire zone (molotov damage)
-          if (throwableRenderer.isInFireZone(playerBall.position)) {
-            playerHealth -= 15 * deltaTime; // 15 damage per second
-            if (playerHealth <= 0 && playerHealth > -100) {
-              // Death effect (only trigger once)
-              playerHealth = -100;
-              createDeathExplosion(
-                scene,
-                playerBall.position.clone(),
-                new BABYLON.Color3(0, 1, 1),
-                () => {
-                  // Respawn after death
-                  setTimeout(() => {
-                    playerHealth = 100;
-                    playerBall.position = new BABYLON.Vector3(0, 0.5, 0);
-                    playerVelocity = new BABYLON.Vector3(0, 0, 0);
-                  }, 2000);
-                },
-              );
-            }
-          }
-
-          // Camera follows player - sits 1/4 of the way to mouse world position
+          // Camera target at .25 between player and mouse; aimer visual at mouse (HUD)
           let targetPosition: Vector3;
-          if (mouseWorldPos) {
-            // Calculate position 1/4 of the way from player to mouse (0.25 = 1/4)
-            targetPosition = BABYLON.Vector3.Lerp(
-              playerBall.position,
-              mouseWorldPos,
-              0.25,
-            );
+          if (mouseWorldPos && localPlayer) {
+            targetPosition = BABYLON.Vector3.Lerp(myPos, mouseWorldPos, 0.25);
           } else {
-            // Fallback: just follow player if no mouse position
-            targetPosition = playerBall.position.clone();
+            targetPosition = myPos.clone();
           }
-
-          // Smooth camera interpolation (lerp for smooth following)
-          // Higher lerp speed = more responsive, lower = smoother
-          const cameraLerpSpeed = Math.min(1.0, deltaTime * 10); // Responsive following
+          const cameraLerpSpeed = Math.min(1.0, deltaTime * 10);
           cameraTarget = BABYLON.Vector3.Lerp(
             cameraTarget,
             targetPosition,
             cameraLerpSpeed,
           );
-
-          // Update camera target directly (don't use setTarget which rebuilds angles)
-          // This makes the camera MOVE to follow the target, not just look at it
           camera.target.copyFrom(cameraTarget);
+
+          // Zoom camera by mouse distance from player; config from constants, overridable per weapon
+          const zoomConfig =
+            WEAPON_CONFIGS[store.selectedWeapon].cameraZoom ??
+            DEFAULT_CAMERA_ZOOM;
+          if (mouseWorldPos && localPlayer) {
+            const dx = mouseWorldPos.x - myPos.x;
+            const dz = mouseWorldPos.z - myPos.z;
+            const mouseDist = Math.sqrt(dx * dx + dz * dz);
+            const t = Math.min(mouseDist / zoomConfig.mouseZoomMaxDist, 1);
+            const targetRadius =
+              zoomConfig.radiusMin +
+              t * (zoomConfig.radiusMax - zoomConfig.radiusMin);
+            camera.radius = BABYLON.Scalar.Lerp(
+              camera.radius,
+              targetRadius,
+              Math.min(1, deltaTime * 8),
+            );
+          }
         });
 
         // Start render loop
@@ -480,17 +529,35 @@ export default function GyriiGame() {
         });
 
         setIsLoading(false);
-        setGameState("menu");
+        setGameState("playing");
 
         // Cleanup function
         return () => {
           mounted = false;
+          if (updateInputIntervalRef.current) {
+            clearInterval(updateInputIntervalRef.current);
+            updateInputIntervalRef.current = null;
+          }
           window.removeEventListener("resize", handleResize);
           window.removeEventListener("keydown", handleKeyDown);
           window.removeEventListener("keyup", handleKeyUp);
-          window.removeEventListener("mousemove", handleMouseMove);
+          document.removeEventListener(
+            "mousemove",
+            handlePointerMove as (e: MouseEvent) => void,
+            true,
+          );
+          document.removeEventListener(
+            "pointermove",
+            handlePointerMove as (e: PointerEvent) => void,
+            true,
+          );
           canvasRef.current?.removeEventListener("mousedown", handleMouseDown);
           canvasRef.current?.removeEventListener("mouseup", handleMouseUp);
+          for (const [, { mesh, material }] of playerMeshes) {
+            mesh.dispose();
+            material.dispose();
+          }
+          playerMeshes.clear();
           weaponRenderer.dispose();
           throwableRenderer.dispose();
           scene.dispose();
@@ -508,7 +575,7 @@ export default function GyriiGame() {
       mounted = false;
       cleanup?.then((fn) => fn?.());
     };
-  }, [setGameState]);
+  }, [setGameState, updateInput]);
 
   return (
     <div className="relative w-full h-full">
@@ -539,8 +606,7 @@ export default function GyriiGame() {
         onContextMenu={(e) => e.preventDefault()}
       />
 
-      {/* UI Overlays */}
-      {!isLoading && gameState === "menu" && <LobbyUI />}
+      {/* UI Overlays - Game only mounts when user has joined a lobby */}
       {!isLoading && gameState === "playing" && <HUD />}
       {!isLoading && gameState === "paused" && <PauseMenu />}
     </div>

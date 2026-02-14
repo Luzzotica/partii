@@ -10,6 +10,7 @@ use crate::player::{create_player_in_lobby, remove_player};
 // Re-export table traits for other modules
 pub use lobby::lobby;
 pub use lobby_player::lobby_player;
+pub use lobby_secret::lobby_secret;
 
 // ============================================================================
 // LOBBY TABLE
@@ -31,6 +32,19 @@ pub struct Lobby {
     pub created_at: Timestamp,
     pub score_limit: i32,
     pub time_limit_seconds: i32,
+    pub has_password: bool,
+}
+
+// ============================================================================
+// LOBBY SECRET TABLE (private - server only, invisible to clients)
+// ============================================================================
+
+#[derive(Clone)]
+#[table(name = lobby_secret, private)]
+pub struct LobbySecret {
+    #[primary_key]
+    pub lobby_id: u64,
+    pub password: String,
 }
 
 // ============================================================================
@@ -73,6 +87,7 @@ pub fn create_lobby(
     game_mode: GameMode,
     max_players: u8,
     score_limit: i32,
+    password: String, // empty string = no password
 ) -> Result<(), String> {
     let identity = ctx.sender;
     
@@ -80,6 +95,8 @@ pub fn create_lobby(
     if ctx.db.lobby_player().iter().any(|lp| lp.player_identity == identity) {
         return Err("Already in a lobby".to_string());
     }
+    
+    let has_password = !password.is_empty();
     
     // Create physics world for this lobby
     let world = PhysicsWorld::builder()
@@ -101,12 +118,24 @@ pub fn create_lobby(
         created_at: ctx.timestamp,
         score_limit,
         time_limit_seconds: 600, // 10 minutes default
+        has_password,
     };
     let lobby = ctx.db.lobby().insert(lobby);
     
+    // Store password in private table if set
+    if has_password {
+        ctx.db.lobby_secret().insert(LobbySecret {
+            lobby_id: lobby.id,
+            password,
+        });
+    }
+    
     // Create map geometry
     create_map_geometry(ctx, lobby.id, lobby.physics_world_id, map_id);
-    
+
+    // Start physics tick so player positions sync from Rapier immediately (movement works in lobby)
+    schedule_physics_tick(ctx, lobby.physics_world_id);
+
     // Add host as first player
     ctx.db.lobby_player().insert(LobbyPlayer {
         id: 0,
@@ -125,7 +154,7 @@ pub fn create_lobby(
 }
 
 #[reducer]
-pub fn join_lobby(ctx: &ReducerContext, lobby_id: u64, player_name: String) -> Result<(), String> {
+pub fn join_lobby(ctx: &ReducerContext, lobby_id: u64, player_name: String, password: String) -> Result<(), String> {
     let identity = ctx.sender;
     
     // Check if player already in a lobby
@@ -136,6 +165,15 @@ pub fn join_lobby(ctx: &ReducerContext, lobby_id: u64, player_name: String) -> R
     // Find lobby
     let lobby = ctx.db.lobby().id().find(lobby_id)
         .ok_or("Lobby not found")?;
+    
+    // Validate password if lobby is password-protected
+    if lobby.has_password {
+        let secret = ctx.db.lobby_secret().lobby_id().find(lobby_id)
+            .ok_or("Lobby secret not found")?;
+        if secret.password != password {
+            return Err("Incorrect password".to_string());
+        }
+    }
     
     // Check if lobby is full
     let player_count = ctx.db.lobby_player().iter()
@@ -203,11 +241,13 @@ pub fn leave_lobby(ctx: &ReducerContext) -> Result<(), String> {
         .collect();
     
     if remaining_players.is_empty() {
-        // Delete empty lobby
+        // Delete empty lobby and its secret
         if let Some(lobby) = ctx.db.lobby().id().find(lobby_id) {
             if let Some(world) = PhysicsWorld::find(ctx, lobby.physics_world_id) {
                 world.delete(ctx);
             }
+            // Clean up password secret if it exists
+            ctx.db.lobby_secret().lobby_id().delete(lobby_id);
             ctx.db.lobby().id().delete(lobby_id);
             log::info!("Deleted empty lobby {}", lobby_id);
         }
@@ -268,14 +308,11 @@ pub fn start_game(ctx: &ReducerContext) -> Result<(), String> {
         return Err("Not all players are ready".to_string());
     }
     
-    // Update game state
+    // Update game state (physics tick already running since create_lobby)
     let mut updated_lobby = lobby.clone();
     updated_lobby.game_state = GameState::InProgress;
     ctx.db.lobby().id().update(updated_lobby);
-    
-    // Start physics tick loop
-    schedule_physics_tick(ctx, lobby.physics_world_id);
-    
+
     log::info!("Game started in lobby {}", lobby_id);
     Ok(())
 }

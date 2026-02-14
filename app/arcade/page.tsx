@@ -37,6 +37,15 @@ const games: Game[] = [
     mobileFriendly: true,
     image: "/RocketToHeaven.png",
   },
+  {
+    id: "gyrii",
+    name: "Gyrii",
+    description:
+      "Multiplayer ball shooter. Battle other players in fast-paced arena combat with an arsenal of weapons.",
+    color: "#00ffff",
+    mobileFriendly: false,
+    icon: "⚪",
+  },
 ];
 
 // Map game IDs to their menu music paths

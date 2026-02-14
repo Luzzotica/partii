@@ -1,17 +1,31 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useGyriiStore } from "../store/gameStore";
-import Link from "next/link";
+import { useSpacetimeDB } from "../hooks/useSpacetimeDB";
 
 export default function PauseMenu() {
-  const { setGameState } = useGyriiStore();
+  const router = useRouter();
+  const { setGameState, setCurrentLobby, setPendingLeaveLobby } =
+    useGyriiStore();
+  const { leaveLobby } = useSpacetimeDB();
 
   const handleResume = () => {
     setGameState("playing");
   };
 
-  const handleQuit = () => {
-    setGameState("menu");
+  const handleQuit = async () => {
+    setPendingLeaveLobby(true);
+    setCurrentLobby(null);
+    setGameState("loading");
+    await leaveLobby();
+  };
+
+  const handleBackToArcade = async () => {
+    setPendingLeaveLobby(true);
+    setCurrentLobby(null);
+    await leaveLobby();
+    router.push("/arcade");
   };
 
   return (
@@ -36,12 +50,12 @@ export default function PauseMenu() {
             Quit to Menu
           </button>
 
-          <Link
-            href="/arcade"
-            className="block w-full py-3 px-6 bg-gray-800 text-white font-bold rounded-lg hover:bg-gray-700 transition-all duration-200 text-center no-underline"
+          <button
+            onClick={handleBackToArcade}
+            className="w-full py-3 px-6 bg-gray-800 text-white font-bold rounded-lg hover:bg-gray-700 transition-all duration-200"
           >
             Back to Arcade
-          </Link>
+          </button>
         </div>
 
         <p className="text-gray-400 text-sm text-center mt-6">

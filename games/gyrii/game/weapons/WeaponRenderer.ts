@@ -4,6 +4,7 @@ import {
   createExplosion,
   createFireEffect,
 } from "../effects/ParticleEffects";
+import type { CameraZoomConfig } from "../constants";
 
 export type WeaponType =
   | "smg"
@@ -23,6 +24,8 @@ export interface WeaponConfig {
   isHitscan: boolean;
   ammoCapacity: number;
   reloadTime: number;
+  /** Override camera zoom (distance-based) when this weapon is equipped. */
+  cameraZoom?: CameraZoomConfig;
 }
 
 export const WEAPON_CONFIGS: Record<WeaponType, WeaponConfig> = {
@@ -65,6 +68,7 @@ export const WEAPON_CONFIGS: Record<WeaponType, WeaponConfig> = {
     isHitscan: true,
     ammoCapacity: 5,
     reloadTime: 2,
+    cameraZoom: { radiusMin: 35, radiusMax: 50, mouseZoomMaxDist: 30 },
   },
   bazooka: {
     type: "bazooka",

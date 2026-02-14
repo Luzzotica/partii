@@ -54,7 +54,6 @@ pub fn step_world_3d(
     let mut ccd_solver = CCDSolver::new();
     let mut query_pipeline = QueryPipeline::new();
     let physics_hooks = ();
-    let event_handler = ();
 
     let mut rigid_body_set = RigidBodySet::new();
     let mut collider_set = ColliderSet::new();
@@ -148,8 +147,14 @@ pub fn step_world_3d(
         if let Some(shape) = collider_shapes.get(&body.collider_id) {
             let props = properties.get(&body.properties_id);
             
-            let mut collider_builder = ColliderBuilder::new(shape.clone());
-            
+            let mut collider_builder = ColliderBuilder::new(shape.clone())
+                .sensor(false) // solid collision (triggers use sensor=true separately)
+                .collision_groups(InteractionGroups::all())
+                .solver_groups(InteractionGroups::all())
+                .active_collision_types(ActiveCollisionTypes::default())
+                .active_events(ActiveEvents::COLLISION_EVENTS)
+                .contact_skin(0.005);
+
             if let Some(props) = props {
                 collider_builder = collider_builder
                     .friction(props.friction)
@@ -209,17 +214,12 @@ pub fn step_world_3d(
         &mut ccd_solver,
         Some(&mut query_pipeline),
         &physics_hooks,
-        &event_handler,
+        &(),
     );
 
     // Write results back to SpacetimeDB
     for body in bodies {
         if !body.enabled {
-            continue;
-        }
-
-        // Skip kinematic bodies - their positions are set externally
-        if body.body_type == RigidBodyType::Kinematic {
             continue;
         }
 

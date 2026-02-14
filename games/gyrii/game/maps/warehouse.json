@@ -1,0 +1,26 @@
+{
+  "name": "Warehouse",
+  "description": "Industrial warehouse with shelving units and crate clusters",
+  "width": 50,
+  "depth": 50,
+  "groundColor": [0.06, 0.05, 0.04],
+  "walls": [
+    { "x": -18, "z": -15, "width": 2, "depth": 2, "height": 1 },
+    { "x": -16, "z": -15, "width": 2, "depth": 2, "height": 2 },
+    { "x": -18, "z": -13, "width": 2, "depth": 2, "height": 1 },
+    { "x": 18, "z": 15, "width": 2, "depth": 2, "height": 1 },
+    { "x": 16, "z": 15, "width": 2, "depth": 2, "height": 2 },
+    { "x": 18, "z": 13, "width": 2, "depth": 2, "height": 1 },
+    { "x": -8, "z": 0, "width": 2, "depth": 20, "height": 2 },
+    { "x": 8, "z": 0, "width": 2, "depth": 20, "height": 2 },
+    { "x": 0, "z": -10, "width": 14, "depth": 2, "height": 1 },
+    { "x": 0, "z": 10, "width": 14, "depth": 2, "height": 1 }
+  ],
+  "spawnPoints": [
+    { "x": -22, "z": 0, "team": 0 },
+    { "x": 22, "z": 0, "team": 1 },
+    { "x": 0, "z": -22, "team": 2 },
+    { "x": 0, "z": 22, "team": 3 }
+  ],
+  "teleporters": []
+}

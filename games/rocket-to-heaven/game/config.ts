@@ -37,8 +37,17 @@ export const COLORS = {
   HEAVEN: 0xff8c42, // Coral orange (less bright, more orange than yellow)
 
   // Game elements
-  PLAYER: 0xffffff, // White wheelchair
+  PLAYER: 0xffffff, // Legacy / fallback
   ROCKET_FLAME: 0xffa500, // Orange flame
+
+  // Player character (wheelchair + person)
+  WHEELCHAIR_FRAME: 0x1a1a1a, // Black wheelchair & backrest
+  WHEELCHAIR_WHEEL: 0x444444, // Dark grey wheel rims
+  PLAYER_SKIN: 0xe8c4a0, // Peachy-beige skin
+  PLAYER_HAIR: 0x8b7355, // Light brown hair
+  PLAYER_CLOTHING: 0x2c5282, // Dark blue vest/shirt
+  PLAYER_FACE: 0x333333, // Eyes, brows, mouth outline
+  PLAYER_BEARD: 0x7a6348, // Slightly darker brown beard
   LAVA: 0xff3300, // Red-orange lava
   LAVA_GLOW: 0xff6600,
 

@@ -1,0 +1,1 @@
+Filter<impl Iterator<Item = <map_wall__TableHandle as Table>::Row>, {closure@game.rs:93:25}>

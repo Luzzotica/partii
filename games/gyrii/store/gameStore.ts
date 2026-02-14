@@ -17,6 +17,14 @@ export type WeaponType =
   | "flamethrower";
 export type SecondaryType = "popupKnives" | "bubbleShield" | "selfDestructNuke";
 
+export type MarbleDesignId = 0 | 1 | 2 | 3 | 4;
+
+export interface MarbleConfig {
+  designId: MarbleDesignId;
+  mainColor: { r: number; g: number; b: number };
+  secondaryColor: { r: number; g: number; b: number };
+}
+
 export interface Player {
   id: string;
   name: string;
@@ -27,6 +35,7 @@ export interface Player {
   deaths: number;
   team: number;
   color: { r: number; g: number; b: number };
+  marbleConfig?: MarbleConfig;
   weapon: WeaponType;
   secondary: SecondaryType;
   ammo: number;
@@ -39,10 +48,12 @@ export interface Lobby {
   name: string;
   hostId: string;
   mapId: string;
+  physicsWorldId?: number; // for physics debug (heartbeat, debug_physics_world)
   maxPlayers: number;
   playerCount: number;
-  gameMode: "deathmatch" | "teamDeathmatch" | "ctf";
+  gameMode: "freeForAll" | "teamDeathmatch" | "captureTheFlag";
   gameState: "waiting" | "starting" | "inProgress" | "ended";
+  hasPassword: boolean;
 }
 
 export interface KillEvent {
@@ -57,8 +68,10 @@ export interface KillEvent {
 interface GyriiStore {
   // Connection state
   isConnected: boolean;
+  isConnecting: boolean;
   connectionError: string | null;
   setConnected: (connected: boolean) => void;
+  setConnecting: (connecting: boolean) => void;
   setConnectionError: (error: string | null) => void;
 
   // Game state
@@ -71,12 +84,16 @@ interface GyriiStore {
   setLocalPlayer: (player: Player | null) => void;
   updatePlayer: (id: string, update: Partial<Player>) => void;
   removePlayer: (id: string) => void;
+  clearPlayers: () => void;
 
   // Lobby state
   currentLobby: Lobby | null;
   availableLobbies: Lobby[];
+  /** When true, user clicked Quit to menu; ignore server lobby_player until we see we left */
+  pendingLeaveLobby: boolean;
   setCurrentLobby: (lobby: Lobby | null) => void;
   setAvailableLobbies: (lobbies: Lobby[]) => void;
+  setPendingLeaveLobby: (pending: boolean) => void;
 
   // Kill feed
   killFeed: KillEvent[];
@@ -86,6 +103,8 @@ interface GyriiStore {
   // Input state
   inputDirection: { x: number; z: number };
   aimDirection: { x: number; z: number };
+  mousePosition: { x: number; y: number };
+  setMousePosition: (x: number, y: number) => void;
   isShooting: boolean;
   setInputDirection: (x: number, z: number) => void;
   setAimDirection: (x: number, z: number) => void;
@@ -100,8 +119,10 @@ interface GyriiStore {
   // Settings
   playerName: string;
   playerColor: { r: number; g: number; b: number };
+  marbleConfig: MarbleConfig;
   setPlayerName: (name: string) => void;
   setPlayerColor: (color: { r: number; g: number; b: number }) => void;
+  setMarbleConfig: (config: MarbleConfig) => void;
 
   // Reset
   reset: () => void;
@@ -109,26 +130,35 @@ interface GyriiStore {
 
 const initialState = {
   isConnected: false,
+  isConnecting: false,
   connectionError: null,
   gameState: "loading" as GameState,
   localPlayer: null,
   players: new Map<string, Player>(),
   currentLobby: null,
   availableLobbies: [],
+  pendingLeaveLobby: false,
   killFeed: [],
   inputDirection: { x: 0, z: 0 },
   aimDirection: { x: 0, z: 1 },
+  mousePosition: { x: 0, y: 0 },
   isShooting: false,
   selectedWeapon: "smg" as WeaponType,
   selectedSecondary: "popupKnives" as SecondaryType,
   playerName: "Player",
   playerColor: { r: 0, g: 255, b: 255 },
+  marbleConfig: {
+    designId: 0,
+    mainColor: { r: 0, g: 255, b: 255 },
+    secondaryColor: { r: 255, g: 0, b: 128 },
+  } as MarbleConfig,
 };
 
 export const useGyriiStore = create<GyriiStore>((set, get) => ({
   ...initialState,
 
   setConnected: (connected) => set({ isConnected: connected }),
+  setConnecting: (connecting) => set({ isConnecting: connecting }),
   setConnectionError: (error) => set({ connectionError: error }),
 
   setGameState: (state) => set({ gameState: state }),
@@ -168,8 +198,11 @@ export const useGyriiStore = create<GyriiStore>((set, get) => ({
     set({ players });
   },
 
+  clearPlayers: () => set({ players: new Map(), localPlayer: null }),
+
   setCurrentLobby: (lobby) => set({ currentLobby: lobby }),
   setAvailableLobbies: (lobbies) => set({ availableLobbies: lobbies }),
+  setPendingLeaveLobby: (pending) => set({ pendingLeaveLobby: pending }),
 
   addKillEvent: (event) => {
     const killFeed = [event, ...get().killFeed].slice(0, 5);
@@ -179,6 +212,7 @@ export const useGyriiStore = create<GyriiStore>((set, get) => ({
 
   setInputDirection: (x, z) => set({ inputDirection: { x, z } }),
   setAimDirection: (x, z) => set({ aimDirection: { x, z } }),
+  setMousePosition: (x, y) => set({ mousePosition: { x, y } }),
   setIsShooting: (shooting) => set({ isShooting: shooting }),
 
   setSelectedWeapon: (weapon) => set({ selectedWeapon: weapon }),
@@ -186,6 +220,7 @@ export const useGyriiStore = create<GyriiStore>((set, get) => ({
 
   setPlayerName: (name) => set({ playerName: name }),
   setPlayerColor: (color) => set({ playerColor: color }),
+  setMarbleConfig: (config) => set({ marbleConfig: config }),
 
   reset: () => set(initialState),
 }));

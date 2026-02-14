@@ -3,7 +3,7 @@
 use spacetimedb::{reducer, table, Identity, ReducerContext, SpacetimeType, Table, Timestamp};
 use spacetime_rapier::{Collider, RigidBody, RigidBodyProperties, RigidBodyType, Vec3};
 
-use crate::lobby::{lobby, lobby_player, Lobby};
+use crate::lobby::{lobby, lobby_player, lobby_secret, Lobby};
 use crate::maps::get_spawn_position;
 
 // Re-export table trait for other modules
@@ -40,6 +40,12 @@ pub struct Player {
     pub color_r: f32,
     pub color_g: f32,
     pub color_b: f32,
+    pub design_id: u8,
+    pub secondary_color_r: f32,
+    pub secondary_color_g: f32,
+    pub secondary_color_b: f32,
+    pub velocity_x: f32,
+    pub velocity_z: f32,
     pub input_x: f32,
     pub input_z: f32,
     pub aim_x: f32,
@@ -98,18 +104,20 @@ pub fn create_player_in_lobby(
 ) -> Result<Player, String> {
     let spawn_pos = get_spawn_position(lobby.map_id, team as usize);
 
-    // Create rigid body properties for player (reusable)
+    // Create rigid body properties for player (dynamic, with damping so it slows when input stops)
     let rb_properties = RigidBodyProperties::builder()
         .world_id(lobby.physics_world_id)
         .mass(1.0)
-        .restitution(0.3) // slight bounce
+        .restitution(0.3) // slight bounce off walls
+        .linear_damping(3.5) // marble slows when input released
+        .ccd_enabled(true) // prevent tunneling through walls at speed
         .build()
         .insert(ctx);
 
     // Create sphere collider for player ball
     let collider = Collider::ball(lobby.physics_world_id, 0.5).insert(ctx);
 
-    // Create kinematic rigid body (controlled by input, not forces)
+    // Create dynamic rigid body - Rapier handles collision with walls; we only set velocity from input
     let rigid_body = RigidBody::builder()
         .world_id(lobby.physics_world_id)
         .position_x(spawn_pos.x)
@@ -117,7 +125,7 @@ pub fn create_player_in_lobby(
         .position_z(spawn_pos.z)
         .collider_id(collider.id)
         .properties_id(rb_properties.id)
-        .body_type(RigidBodyType::Kinematic)
+        .body_type(RigidBodyType::Dynamic)
         .build()
         .insert(ctx);
 
@@ -144,6 +152,12 @@ pub fn create_player_in_lobby(
         color_r: 0.0,
         color_g: 1.0,
         color_b: 1.0,
+        design_id: 0,
+        secondary_color_r: 1.0,
+        secondary_color_g: 0.0,
+        secondary_color_b: 0.5,
+        velocity_x: 0.0,
+        velocity_z: 0.0,
         input_x: 0.0,
         input_z: 0.0,
         aim_x: 0.0,
@@ -188,19 +202,41 @@ pub fn update_input(
     if let Some(mut player) = ctx.db.player().identity().find(identity) {
         player.input_x = input_x.clamp(-1.0, 1.0);
         player.input_z = input_z.clamp(-1.0, 1.0);
+        // Normalize so diagonal movement isn't faster than cardinal
+        let len_sq = player.input_x * player.input_x + player.input_z * player.input_z;
+        if len_sq > 1.0 {
+            let len = len_sq.sqrt();
+            player.input_x /= len;
+            player.input_z /= len;
+        }
         player.aim_x = aim_x;
         player.aim_z = aim_z;
         player.is_shooting = is_shooting;
 
-        // Update position based on input (simple movement)
+        // Update velocity from input; Rapier will move the body and resolve wall collision
         if player.is_alive {
-            let speed = 0.15; // units per tick
-            player.position_x += player.input_x * speed;
-            player.position_z += player.input_z * speed;
+            const ACCEL: f32 = 24.0; // acceleration per second
+            const DAMPING: f32 = 0.84; // per input tick (velocity *= DAMPING when no input)
+            const TICK_DT: f32 = 0.05; // ~50ms between input updates
 
-            // Clamp to arena bounds
-            player.position_x = player.position_x.clamp(-24.0, 24.0);
-            player.position_z = player.position_z.clamp(-24.0, 24.0);
+            player.velocity_x += player.input_x * ACCEL * TICK_DT;
+            player.velocity_z += player.input_z * ACCEL * TICK_DT;
+            player.velocity_x *= DAMPING;
+            player.velocity_z *= DAMPING;
+
+            // Write velocity to RigidBody so next physics step moves the player (Rapier handles wall collision)
+            if let Some(mut rb) = RigidBody::find(ctx, player.rigid_body_id) {
+                rb.linear_velocity_x = player.velocity_x;
+                rb.linear_velocity_y = 0.0;
+                rb.linear_velocity_z = player.velocity_z;
+                rb.update(ctx);
+                // Keep Player in sync with RigidBody position/velocity (authoritative state from physics)
+                player.position_x = rb.position_x;
+                player.position_y = rb.position_y;
+                player.position_z = rb.position_z;
+                player.velocity_x = rb.linear_velocity_x;
+                player.velocity_z = rb.linear_velocity_z;
+            }
         }
 
         ctx.db.player().identity().update(player);
@@ -243,6 +279,34 @@ pub fn set_player_color(
         player.color_r = r.clamp(0.0, 1.0);
         player.color_g = g.clamp(0.0, 1.0);
         player.color_b = b.clamp(0.0, 1.0);
+        ctx.db.player().identity().update(player);
+        Ok(())
+    } else {
+        Err("Player not found".to_string())
+    }
+}
+
+#[reducer]
+pub fn set_marble_config(
+    ctx: &ReducerContext,
+    design_id: u8,
+    main_r: f32,
+    main_g: f32,
+    main_b: f32,
+    sec_r: f32,
+    sec_g: f32,
+    sec_b: f32,
+) -> Result<(), String> {
+    let identity = ctx.sender;
+
+    if let Some(mut player) = ctx.db.player().identity().find(identity) {
+        player.design_id = design_id.min(4);
+        player.color_r = main_r.clamp(0.0, 1.0);
+        player.color_g = main_g.clamp(0.0, 1.0);
+        player.color_b = main_b.clamp(0.0, 1.0);
+        player.secondary_color_r = sec_r.clamp(0.0, 1.0);
+        player.secondary_color_g = sec_g.clamp(0.0, 1.0);
+        player.secondary_color_b = sec_b.clamp(0.0, 1.0);
         ctx.db.player().identity().update(player);
         Ok(())
     } else {
@@ -328,6 +392,8 @@ pub fn client_disconnected(ctx: &ReducerContext) {
                 if let Some(world) = spacetime_rapier::PhysicsWorld::find(ctx, lobby.physics_world_id) {
                     world.delete(ctx);
                 }
+                // Clean up password secret if it exists
+                ctx.db.lobby_secret().lobby_id().delete(lobby_id);
                 ctx.db.lobby().id().delete(lobby_id);
                 log::info!("Deleted empty lobby {}", lobby_id);
             }

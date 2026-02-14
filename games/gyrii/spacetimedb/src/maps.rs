@@ -22,6 +22,7 @@ pub enum MapId {
 // ============================================================================
 
 #[table(name = map_wall, public)]
+#[derive(Clone)]
 pub struct MapWall {
     #[primary_key]
     #[auto_inc]
@@ -42,11 +43,41 @@ pub struct MapWall {
 // ============================================================================
 
 pub fn create_map_geometry(ctx: &ReducerContext, lobby_id: u64, world_id: u64, map_id: MapId) {
+    // Floor first so marbles have something to roll on (client draws its own plane)
+    create_floor(ctx, world_id);
+
     match map_id {
         MapId::Arena => create_arena_map(ctx, lobby_id, world_id),
         MapId::Maze => create_maze_map(ctx, lobby_id, world_id),
         MapId::Warehouse => create_warehouse_map(ctx, lobby_id, world_id),
     }
+}
+
+/// Creates a static floor plane for the physics world. Center at y = -0.5 so top face is y = 0
+/// (marbles with radius 0.5 rest at y = 0.5). No MapWall — client draws the floor.
+fn create_floor(ctx: &ReducerContext, world_id: u64) {
+    let rb_props = RigidBodyProperties::builder()
+        .world_id(world_id)
+        .mass(0.0)
+        .restitution(0.3)
+        .build()
+        .insert(ctx);
+
+    let half_x = 100.0;
+    let half_y = 0.5;
+    let half_z = 100.0;
+    let collider = Collider::cuboid(world_id, Vec3::new(half_x, half_y, half_z)).insert(ctx);
+
+    RigidBody::builder()
+        .world_id(world_id)
+        .position_x(0.0)
+        .position_y(-0.5)
+        .position_z(0.0)
+        .collider_id(collider.id)
+        .properties_id(rb_props.id)
+        .body_type(RigidBodyType::Static)
+        .build()
+        .insert(ctx);
 }
 
 fn create_arena_map(ctx: &ReducerContext, lobby_id: u64, world_id: u64) {

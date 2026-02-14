@@ -1,9 +1,11 @@
 "use client";
 
 import { useGyriiStore } from "../store/gameStore";
+import { useSpacetimeDB } from "../hooks/useSpacetimeDB";
 
 export default function HUD() {
-  const { localPlayer, killFeed, currentLobby } = useGyriiStore();
+  const { localPlayer, killFeed, currentLobby, mousePosition } =
+    useGyriiStore();
 
   if (!localPlayer) return null;
 
@@ -109,8 +111,11 @@ export default function HUD() {
         </div>
       </div>
 
-      {/* Crosshair */}
-      <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
+      {/* Crosshair - at mouse position */}
+      <div
+        className="fixed pointer-events-none -translate-x-1/2 -translate-y-1/2"
+        style={{ left: mousePosition.x, top: mousePosition.y }}
+      >
         <div className="relative w-8 h-8">
           <div className="absolute top-0 left-1/2 w-0.5 h-2 bg-white/80 -translate-x-1/2" />
           <div className="absolute bottom-0 left-1/2 w-0.5 h-2 bg-white/80 -translate-x-1/2" />

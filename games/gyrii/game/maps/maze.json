@@ -1,0 +1,25 @@
+{
+  "name": "Maze",
+  "description": "Labyrinthine corridors with mixed wall heights",
+  "width": 50,
+  "depth": 50,
+  "groundColor": [0.04, 0.06, 0.08],
+  "walls": [
+    { "x": -10, "z": -15, "width": 20, "depth": 1, "height": 1 },
+    { "x": 10, "z": -8, "width": 15, "depth": 1, "height": 2 },
+    { "x": -10, "z": 0, "width": 15, "depth": 1, "height": 1 },
+    { "x": 5, "z": 8, "width": 20, "depth": 1, "height": 2 },
+    { "x": -5, "z": 15, "width": 15, "depth": 1, "height": 1 },
+    { "x": -15, "z": -5, "width": 1, "depth": 15, "height": 2 },
+    { "x": -5, "z": 5, "width": 1, "depth": 10, "height": 1 },
+    { "x": 5, "z": -5, "width": 1, "depth": 10, "height": 2 },
+    { "x": 15, "z": 5, "width": 1, "depth": 15, "height": 1 }
+  ],
+  "spawnPoints": [
+    { "x": -22, "z": -22, "team": 0 },
+    { "x": 22, "z": 22, "team": 1 },
+    { "x": -22, "z": 22, "team": 2 },
+    { "x": 22, "z": -22, "team": 3 }
+  ],
+  "teleporters": []
+}

@@ -1,1 +1,0 @@
-Cloned<std::iter::Filter<impl Iterator<Item = <weapons::grenade__TableHandle as spacetimedb::Table>::Row>, {closure@src/game.rs:126:17: 126:20}>>

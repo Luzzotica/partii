@@ -1,1 +1,0 @@
-for<'a> fn(&'a ReducerContext, WeaponType, SecondaryType) -> Result<(), std::string::String> {set_loadout}

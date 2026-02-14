@@ -11,13 +11,19 @@
     "generate:sfx": "tsx scripts/generate-sfx.ts",
     "generate:mesh": "tsx scripts/generate-mesh.ts",
     "upload:post": "tsx scripts/upload-post.ts",
-    "gyrii:generate": "spacetime generate --lang typescript --out-dir games/gyrii/generated"
+    "gyrii:generate": "spacetime generate --lang typescript --out-dir games/gyrii/generated --project-path games/gyrii/spacetimedb",
+    "gyrii:spacetime:build": "cd games/gyrii/spacetimedb && spacetime build",
+    "gyrii:spacetime:clean": "cd games/gyrii/spacetimedb && rm -rf ~/.local/share/spacetime/data && (pkill -f 'spacetime.*start' || pkill -f 'spacetime.*dev' || true) && echo 'Cleaned SpacetimeDB build artifacts, database, and stopped processes'",
+    "gyrii:spacetime:start": "cd games/gyrii/spacetimedb && spacetime start -l 0.0.0.0:3001",
+    "gyrii:spacetime:dev": "cd games/gyrii && spacetime dev --server http://127.0.0.1:3001 gyrii --yes --module-project-path spacetimedb",
+    "gyrii:spacetime:run": "(npm run gyrii:spacetime:start &) && sleep 5 && npm run gyrii:spacetime:dev",
+    "gyrii:spacetime:logs": "spacetime logs gyrii --server http://127.0.0.1:3001"
   },
   "dependencies": {
     "@babylonjs/core": "^7.x",
     "@babylonjs/havok": "^1.3.x",
     "@babylonjs/loaders": "^7.x",
-    "@clockworklabs/spacetimedb-sdk": "^1.0.0",
+    "spacetimedb": "^1.12.0",
     "@supabase/ssr": "^0.8.0",
     "@supabase/supabase-js": "^2.91.1",
     "next": "^15.1.6",

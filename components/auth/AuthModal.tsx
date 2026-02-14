@@ -96,7 +96,6 @@ export function AuthModal({
                 type="text"
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
-                onKeyDown={(e) => e.stopPropagation()}
                 placeholder="How you'll appear on leaderboards"
                 required
                 maxLength={30}

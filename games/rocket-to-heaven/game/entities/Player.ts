@@ -79,21 +79,19 @@ export class Player extends Phaser.GameObjects.Container {
     const g = this.wheelchair;
     g.clear();
 
-    // Wheelchair body (white with golden accents)
-    g.fillStyle(COLORS.PLAYER, 1);
-    g.fillRoundedRect(-15, -20, 30, 25, 4);
+    const rocketX = -20;
+    const rocketY = -30;
 
-    // Seat back
-    g.fillStyle(COLORS.PLAYER, 1);
-    g.fillRoundedRect(-15, -35, 8, 20, 2);
+    // —— Wheelchair (black) ——
+    g.fillStyle(COLORS.WHEELCHAIR_FRAME, 1);
+    g.fillRoundedRect(-15, -20, 30, 25, 4); // Seat
+    g.fillRoundedRect(-15, -35, 8, 20, 2); // Backrest (black)
 
-    // Wheels
-    g.lineStyle(3, COLORS.TEXT_GOLD, 1);
+    // Wheels (dark grey rims)
+    g.lineStyle(3, COLORS.WHEELCHAIR_WHEEL, 1);
     g.strokeCircle(-12, 10, 12);
     g.strokeCircle(12, 10, 8);
-
-    // Wheel spokes
-    g.lineStyle(1, COLORS.TEXT_GOLD, 0.5);
+    g.lineStyle(1, COLORS.WHEELCHAIR_WHEEL, 0.6);
     for (let i = 0; i < 6; i++) {
       const angle = (i / 6) * Math.PI * 2;
       g.lineBetween(
@@ -103,12 +101,13 @@ export class Player extends Phaser.GameObjects.Container {
         10 + Math.sin(angle) * 10,
       );
     }
+    for (let i = 0; i < 6; i++) {
+      const angle = (i / 6) * Math.PI * 2;
+      g.lineBetween(12, 10, 12 + Math.cos(angle) * 6, 10 + Math.sin(angle) * 6);
+    }
 
     // Rocket attachment (on the back)
-    // Draw rocket attachment based on customizable (rocketX, rocketY) variables
-    const rocketX = -20;
-    const rocketY = -30;
-    g.fillStyle(0x888888, 1);
+    g.fillStyle(0x555555, 1);
     g.fillRect(rocketX, rocketY, 8, 20);
     g.fillStyle(0xff4444, 1);
     g.fillTriangle(
@@ -120,9 +119,36 @@ export class Player extends Phaser.GameObjects.Container {
       rocketY + 20,
     );
 
-    // Person silhouette (simplified)
-    g.fillStyle(COLORS.PLAYER, 0.9);
-    g.fillCircle(-10, -40, 8); // Head
+    // —— Person (order: hair behind, then torso, then head, then face/beard) ——
+    const headX = -5;
+    const headY = -38;
+    const headR = 7;
+
+    // Hair — drawn first so it sits behind everything
+    g.fillStyle(COLORS.PLAYER_HAIR, 1);
+    g.fillCircle(headX, headY - 2, headR + 1.5);
+
+    // Torso (blue) — below the head so head sits above the blue square
+    g.fillStyle(COLORS.PLAYER_CLOTHING, 1);
+    g.fillRoundedRect(-11, -28, 14, 14, 2);
+
+    // Head (skin) — circular, clearly above the blue
+    g.fillStyle(COLORS.PLAYER_SKIN, 1);
+    g.fillCircle(headX, headY, headR);
+
+    // Beard (stays on head, above neck)
+    g.fillStyle(COLORS.PLAYER_BEARD, 0.75);
+    g.fillEllipse(headX, headY + 4, 10, 5);
+
+    // Face
+    g.fillStyle(COLORS.PLAYER_FACE, 1);
+    g.fillCircle(headX - 2.5, headY - 2, 1.2);
+    g.fillCircle(headX + 2.5, headY - 2, 1.2);
+    g.fillCircle(headX, headY + 0.5, 0.7);
+    g.lineStyle(1.3, 0xffffff, 1);
+    g.beginPath();
+    g.arc(headX, headY + 1.5, 2.5, 0.2 * Math.PI, 0.8 * Math.PI);
+    g.strokePath();
   }
 
   private drawRocketFlame(): void {
