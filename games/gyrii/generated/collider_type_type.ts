@@ -18,6 +18,7 @@ const ColliderType = __t.enum("ColliderType", {Ball: __t.unit(),
   Cone: __t.unit(),
   Triangle: __t.unit(),
   Heightfield: __t.unit(),
+  HalfSpace: __t.unit(),
 });
 
 export default ColliderType;

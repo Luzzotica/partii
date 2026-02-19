@@ -21,15 +21,15 @@
   },
   "dependencies": {
     "@babylonjs/core": "^7.x",
-    "@babylonjs/havok": "^1.3.x",
     "@babylonjs/loaders": "^7.x",
-    "spacetimedb": "^1.12.0",
+    "@dimforge/rapier3d": "^0.12.0",
     "@supabase/ssr": "^0.8.0",
     "@supabase/supabase-js": "^2.91.1",
     "next": "^15.1.6",
     "phaser": "^3.90.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "spacetimedb": "^1.12.0",
     "zustand": "^5.0.10"
   },
   "devDependencies": {

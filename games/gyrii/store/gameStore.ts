@@ -35,12 +35,39 @@ export interface Player {
   deaths: number;
   team: number;
   color: { r: number; g: number; b: number };
+  /** Server-synced secondary color (e.g. for marble design). */
+  secondaryColor: { r: number; g: number; b: number };
   marbleConfig?: MarbleConfig;
   weapon: WeaponType;
   secondary: SecondaryType;
-  ammo: number;
   grenadeCount: number;
   molotovCount: number;
+  /** Server-synced aim direction (x, z); used for other players' weapon rotation. */
+  aimDirection?: { x: number; z: number };
+  /** Server-synced velocity (m/s); used for client extrapolation between updates. */
+  velocity?: { x: number; y: number; z: number };
+  /** Last impulse applied (e.g. bullet hit); client adds to predicted velocity once. */
+  lastImpulseX?: number;
+  lastImpulseY?: number;
+  lastImpulseZ?: number;
+  lastImpulseTime?: number;
+  /** Server timestamp when this player last fired (for shot feedback). */
+  lastShotAt?: number;
+  /** Server-synced alive state; when false, show respawn loadout screen. */
+  isAlive?: boolean;
+}
+
+/** Projectile type: which pool and behavior. Must match server PROJECTILE_TYPE_*. */
+export const PROJECTILE_TYPE_BULLET = 0;
+export const PROJECTILE_TYPE_ROCKET = 1;
+
+/** Event pushed when server creates a projectile (bullet/rocket); game loop spawns visual. */
+export interface PendingShotEvent {
+  playerId: string;
+  weapon: WeaponType;
+  projectileType: number; // 0 = bullet, 1 = rocket — which pool to use
+  position: { x: number; y: number; z: number };
+  velocity: { x: number; y: number; z: number };
 }
 
 export interface Lobby {
@@ -63,6 +90,43 @@ export interface KillEvent {
   victimName: string;
   weapon: string;
   timestamp: number;
+}
+
+/** Active photon beams from server (id -> beam); used for beam rendering. */
+export interface PhotonBeamEntry {
+  id: number;
+  originX: number;
+  originY: number;
+  originZ: number;
+  endX: number;
+  endY: number;
+  endZ: number;
+  /** Server remaining ticks; used for fade-out (0 = about to disappear). */
+  remainingTicks: number;
+  /** 0 until server has resolved beam end and created trigger; only render when !== 0. */
+  triggerId: number;
+  /** Physics world id; only render beams for current lobby's world. */
+  worldId: number;
+}
+
+/** Single source of truth for matching store players to game meshes. Use everywhere we key by player id. */
+export function canonicalPlayerId(id: string): string {
+  return String(id)
+    .toLowerCase()
+    .replace(/^0x/i, "")
+    .replace(/^Identity\(|\)$/g, "");
+}
+
+/** Normalize SpacetimeDB Identity to hex string for comparison. */
+export function identityToHex(identity: unknown): string {
+  if (!identity) return "";
+  if (typeof (identity as any).toHexString === "function")
+    return (identity as any).toHexString().replace(/^0x/i, "").toLowerCase();
+  const s = String(identity);
+  return s
+    .replace(/^0x/i, "")
+    .replace(/^Identity\(|\)$/g, "")
+    .toLowerCase();
 }
 
 interface GyriiStore {
@@ -100,6 +164,19 @@ interface GyriiStore {
   addKillEvent: (event: KillEvent) => void;
   clearKillFeed: () => void;
 
+  // Active photon beams (server table sync); key = beam id string
+  photonBeams: Map<string, PhotonBeamEntry>;
+  setPhotonBeam: (beam: PhotonBeamEntry) => void;
+  removePhotonBeam: (id: number) => void;
+  clearPhotonBeams: () => void;
+
+  /** Debug: player ids currently inside photon beam trigger (for highlight). */
+  playersInBeamHighlight: Set<string>;
+  setPlayersInBeamHighlight: (ids: Set<string>) => void;
+
+  // Internal: queue of shot events from server (Projectile inserts); drained by game loop
+  pendingShotEvents: PendingShotEvent[];
+
   // Input state
   inputDirection: { x: number; z: number };
   aimDirection: { x: number; z: number };
@@ -109,6 +186,12 @@ interface GyriiStore {
   setInputDirection: (x: number, z: number) => void;
   setAimDirection: (x: number, z: number) => void;
   setIsShooting: (shooting: boolean) => void;
+  /** 0..1 charge progress for charge weapons (e.g. photon rifle); 0 when not charging. */
+  weaponChargeProgress: number;
+  setWeaponChargeProgress: (progress: number) => void;
+  /** Timestamp (performance.now()) until which photon rifle cannot start a new charge. */
+  photonRifleRechargeUntil: number;
+  setPhotonRifleRechargeUntil: (until: number) => void;
 
   // Loadout
   selectedWeapon: WeaponType;
@@ -123,6 +206,10 @@ interface GyriiStore {
   setPlayerName: (name: string) => void;
   setPlayerColor: (color: { r: number; g: number; b: number }) => void;
   setMarbleConfig: (config: MarbleConfig) => void;
+
+  // Pending shot events from server (Projectile table inserts); game loop drains and spawns visuals
+  addPendingShotEvent: (event: PendingShotEvent) => void;
+  takePendingShotEvents: () => PendingShotEvent[];
 
   // Reset
   reset: () => void;
@@ -139,10 +226,15 @@ const initialState = {
   availableLobbies: [],
   pendingLeaveLobby: false,
   killFeed: [],
+  photonBeams: new Map<string, PhotonBeamEntry>(),
+  playersInBeamHighlight: new Set<string>(),
+  pendingShotEvents: [] as PendingShotEvent[],
   inputDirection: { x: 0, z: 0 },
   aimDirection: { x: 0, z: 1 },
   mousePosition: { x: 0, y: 0 },
   isShooting: false,
+  weaponChargeProgress: 0,
+  photonRifleRechargeUntil: 0,
   selectedWeapon: "smg" as WeaponType,
   selectedSecondary: "popupKnives" as SecondaryType,
   playerName: "Player",
@@ -163,27 +255,33 @@ export const useGyriiStore = create<GyriiStore>((set, get) => ({
 
   setGameState: (state) => set({ gameState: state }),
 
-  setLocalPlayer: (player) => set({ localPlayer: player }),
+  setLocalPlayer: (player) =>
+    set({
+      localPlayer: player
+        ? { ...player, id: canonicalPlayerId(player.id) }
+        : null,
+    }),
 
   updatePlayer: (id, update) => {
+    const canonicalId = canonicalPlayerId(id);
     const players = new Map(get().players);
-    const existing = players.get(id);
+    const existing = players.get(canonicalId);
     if (existing) {
-      players.set(id, { ...existing, ...update });
+      players.set(canonicalId, { ...existing, ...update });
     } else {
-      players.set(id, {
-        id,
+      players.set(canonicalId, {
+        id: canonicalId,
         name: "Unknown",
         position: { x: 0, y: 0.5, z: 0 },
         rotation: 0,
-        health: 100,
+        health: 1000,
         kills: 0,
         deaths: 0,
         team: 0,
         color: { r: 255, g: 255, b: 255 },
+        secondaryColor: { r: 255, g: 0, b: 128 },
         weapon: "smg",
         secondary: "popupKnives",
-        ammo: 30,
         grenadeCount: 2,
         molotovCount: 1,
         ...update,
@@ -194,13 +292,19 @@ export const useGyriiStore = create<GyriiStore>((set, get) => ({
 
   removePlayer: (id) => {
     const players = new Map(get().players);
-    players.delete(id);
+    players.delete(canonicalPlayerId(id));
     set({ players });
   },
 
   clearPlayers: () => set({ players: new Map(), localPlayer: null }),
 
-  setCurrentLobby: (lobby) => set({ currentLobby: lobby }),
+  setCurrentLobby: (lobby) =>
+    set((s) => ({
+      currentLobby: lobby,
+      ...(lobby === null
+        ? { photonBeams: new Map<string, PhotonBeamEntry>() }
+        : {}),
+    })),
   setAvailableLobbies: (lobbies) => set({ availableLobbies: lobbies }),
   setPendingLeaveLobby: (pending) => set({ pendingLeaveLobby: pending }),
 
@@ -210,10 +314,29 @@ export const useGyriiStore = create<GyriiStore>((set, get) => ({
   },
   clearKillFeed: () => set({ killFeed: [] }),
 
+  setPhotonBeam: (beam) =>
+    set((s) => {
+      const next = new Map(s.photonBeams);
+      next.set(String(beam.id), beam);
+      return { photonBeams: next };
+    }),
+  removePhotonBeam: (id) =>
+    set((s) => {
+      const next = new Map(s.photonBeams);
+      next.delete(String(id));
+      return { photonBeams: next };
+    }),
+  clearPhotonBeams: () => set({ photonBeams: new Map() }),
+  setPlayersInBeamHighlight: (ids) => set({ playersInBeamHighlight: ids }),
+
   setInputDirection: (x, z) => set({ inputDirection: { x, z } }),
   setAimDirection: (x, z) => set({ aimDirection: { x, z } }),
   setMousePosition: (x, y) => set({ mousePosition: { x, y } }),
   setIsShooting: (shooting) => set({ isShooting: shooting }),
+  setWeaponChargeProgress: (progress) =>
+    set({ weaponChargeProgress: progress }),
+  setPhotonRifleRechargeUntil: (until) =>
+    set({ photonRifleRechargeUntil: until }),
 
   setSelectedWeapon: (weapon) => set({ selectedWeapon: weapon }),
   setSelectedSecondary: (secondary) => set({ selectedSecondary: secondary }),
@@ -221,6 +344,19 @@ export const useGyriiStore = create<GyriiStore>((set, get) => ({
   setPlayerName: (name) => set({ playerName: name }),
   setPlayerColor: (color) => set({ playerColor: color }),
   setMarbleConfig: (config) => set({ marbleConfig: config }),
+
+  addPendingShotEvent: (event) =>
+    set((s) => ({
+      pendingShotEvents: [...s.pendingShotEvents, event],
+    })),
+  takePendingShotEvents: () => {
+    const events: PendingShotEvent[] = [];
+    useGyriiStore.setState((s) => {
+      events.push(...s.pendingShotEvents);
+      return { pendingShotEvents: [] };
+    });
+    return events;
+  },
 
   reset: () => set(initialState),
 }));

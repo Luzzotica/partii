@@ -3,8 +3,12 @@
 use spacetimedb::{reducer, table, Identity, ReducerContext, SpacetimeType, Table, Timestamp};
 use spacetime_rapier::{Collider, RigidBody, RigidBodyProperties, RigidBodyType, Vec3};
 
+use crate::collision_groups::{GROUP_BULLET, GROUP_FLOOR, GROUP_PLAYER, GROUP_WALL};
+use crate::constants::{PLAYER_ACCEL, PLAYER_DAMPING, PLAYER_INPUT_TICK_DT};
 use crate::lobby::{lobby, lobby_player, lobby_secret, Lobby};
-use crate::maps::get_spawn_position;
+use crate::ctf::get_flag_spawn_position;
+use crate::lobby::GameMode;
+use crate::maps::{get_best_spawn_position, get_spawn_position};
 
 // Re-export table trait for other modules
 pub use player::player;
@@ -19,12 +23,17 @@ pub struct Player {
     #[primary_key]
     pub identity: Identity,
     pub name: String,
+    #[index(btree)]
     pub lobby_id: u64,
     pub rigid_body_id: u64,
     // Position stored as separate components for SpacetimeDB
     pub position_x: f32,
     pub position_y: f32,
     pub position_z: f32,
+    /// Spawn position; player does not collide with other players until moved 1 unit away.
+    pub spawn_x: f32,
+    pub spawn_y: f32,
+    pub spawn_z: f32,
     pub health: i32,
     pub max_health: i32,
     pub is_alive: bool,
@@ -33,8 +42,6 @@ pub struct Player {
     pub deaths: i32,
     pub weapon: WeaponType,
     pub secondary: SecondaryType,
-    pub ammo: i32,
-    pub max_ammo: i32,
     pub grenades: i32,
     pub molotovs: i32,
     pub color_r: f32,
@@ -45,6 +52,7 @@ pub struct Player {
     pub secondary_color_g: f32,
     pub secondary_color_b: f32,
     pub velocity_x: f32,
+    pub velocity_y: f32,
     pub velocity_z: f32,
     pub input_x: f32,
     pub input_z: f32,
@@ -54,6 +62,11 @@ pub struct Player {
     pub respawn_at: i64,
     pub last_shot_at: i64,
     pub joined_at: Timestamp,
+    /// Last impulse applied (e.g. from bullet hit); client adds to predicted velocity once. 0,0,0 and 0 = none.
+    pub last_impulse_x: f32,
+    pub last_impulse_y: f32,
+    pub last_impulse_z: f32,
+    pub last_impulse_time: i64,
 }
 
 impl Player {
@@ -95,15 +108,18 @@ pub enum SecondaryType {
 // PLAYER CREATION
 // ============================================================================
 
-pub fn create_player_in_lobby(
+/// Creates a player entity at the given spawn position with the given loadout.
+/// Used by request_spawn (random spawn) and optionally by create_player_in_lobby (team spawn).
+pub fn create_player_at(
     ctx: &ReducerContext,
     identity: Identity,
     name: String,
     lobby: &Lobby,
     team: i32,
+    spawn_pos: Vec3,
+    weapon: WeaponType,
+    secondary: SecondaryType,
 ) -> Result<Player, String> {
-    let spawn_pos = get_spawn_position(lobby.map_id, team as usize);
-
     // Create rigid body properties for player (dynamic, with damping so it slows when input stops)
     let rb_properties = RigidBodyProperties::builder()
         .world_id(lobby.physics_world_id)
@@ -114,8 +130,10 @@ pub fn create_player_in_lobby(
         .build()
         .insert(ctx);
 
-    // Create sphere collider for player ball
-    let collider = Collider::ball(lobby.physics_world_id, 0.5).insert(ctx);
+    let mut collider = Collider::ball(lobby.physics_world_id, 0.5);
+    collider.collision_memberships = GROUP_PLAYER;
+    collider.collision_filter = GROUP_BULLET | GROUP_WALL | GROUP_FLOOR;
+    let collider = collider.insert(ctx);
 
     // Create dynamic rigid body - Rapier handles collision with walls; we only set velocity from input
     let rigid_body = RigidBody::builder()
@@ -137,16 +155,17 @@ pub fn create_player_in_lobby(
         position_x: spawn_pos.x,
         position_y: spawn_pos.y,
         position_z: spawn_pos.z,
-        health: 100,
-        max_health: 100,
+        spawn_x: spawn_pos.x,
+        spawn_y: spawn_pos.y,
+        spawn_z: spawn_pos.z,
+        health: crate::constants::MAX_HEALTH,
+        max_health: crate::constants::MAX_HEALTH,
         is_alive: true,
         team,
         kills: 0,
         deaths: 0,
-        weapon: WeaponType::Smg,
-        secondary: SecondaryType::PopupKnives,
-        ammo: 30,
-        max_ammo: 30,
+        weapon,
+        secondary,
         grenades: 2,
         molotovs: 1,
         color_r: 0.0,
@@ -157,6 +176,7 @@ pub fn create_player_in_lobby(
         secondary_color_g: 0.0,
         secondary_color_b: 0.5,
         velocity_x: 0.0,
+        velocity_y: 0.0,
         velocity_z: 0.0,
         input_x: 0.0,
         input_z: 0.0,
@@ -166,10 +186,171 @@ pub fn create_player_in_lobby(
         respawn_at: 0,
         last_shot_at: 0,
         joined_at: ctx.timestamp,
+        last_impulse_x: 0.0,
+        last_impulse_y: 0.0,
+        last_impulse_z: 0.0,
+        last_impulse_time: 0,
     };
 
     ctx.db.player().insert(player.clone());
     Ok(player)
+}
+
+/// Legacy: create player at team spawn with default loadout. Used when something needs to spawn by team (e.g. tests).
+pub fn create_player_in_lobby(
+    ctx: &ReducerContext,
+    identity: Identity,
+    name: String,
+    lobby: &Lobby,
+    team: i32,
+) -> Result<Player, String> {
+    let spawn_pos = get_spawn_position(ctx, lobby.id, team as usize);
+    create_player_at(
+        ctx,
+        identity,
+        name,
+        lobby,
+        team,
+        spawn_pos,
+        WeaponType::Smg,
+        SecondaryType::PopupKnives,
+    )
+}
+
+#[reducer]
+pub fn request_spawn(
+    ctx: &ReducerContext,
+    weapon: WeaponType,
+    secondary: SecondaryType,
+) -> Result<(), String> {
+    let identity = ctx.sender;
+
+    // Respawn case: player exists but is dead → respawn with new loadout
+    if let Some(mut player) = ctx.db.player().identity().find(identity) {
+        if player.is_alive {
+            return Err("Already spawned".to_string());
+        }
+        let lobby = ctx
+            .db
+            .lobby()
+            .id()
+            .find(player.lobby_id)
+            .ok_or("Lobby not found")?;
+        let existing: Vec<(Vec3, i32)> = ctx
+            .db
+            .player()
+            .iter()
+            .filter(|p| p.lobby_id == lobby.id && p.is_alive && p.identity != identity)
+            .map(|p| (Vec3::new(p.position_x, p.position_y, p.position_z), p.team))
+            .collect();
+        let seed = ctx.timestamp.to_micros_since_unix_epoch() as u64;
+        let is_team_mode = lobby.game_mode != GameMode::FreeForAll;
+        let spawn_pos = get_best_spawn_position(
+            ctx,
+            lobby.id,
+            player.team,
+            is_team_mode,
+            &existing,
+            seed,
+        );
+        player.health = crate::constants::MAX_HEALTH;
+        player.max_health = crate::constants::MAX_HEALTH;
+        player.is_alive = true;
+        player.respawn_at = 0;
+        player.weapon = weapon;
+        player.secondary = secondary;
+        player.position_x = spawn_pos.x;
+        player.position_y = spawn_pos.y;
+        player.position_z = spawn_pos.z;
+        player.spawn_x = spawn_pos.x;
+        player.spawn_y = spawn_pos.y;
+        player.spawn_z = spawn_pos.z;
+        player.velocity_x = 0.0;
+        player.velocity_y = 0.0;
+        player.velocity_z = 0.0;
+        player.input_x = 0.0;
+        player.input_z = 0.0;
+        player.aim_x = 0.0;
+        player.aim_z = -1.0;
+        player.is_shooting = false;
+        player.last_impulse_x = 0.0;
+        player.last_impulse_y = 0.0;
+        player.last_impulse_z = 0.0;
+        player.last_impulse_time = 0;
+        ctx.db.player().identity().update(player.clone());
+        // Sync RigidBody position and velocity; re-enable body for respawn
+        if player.rigid_body_id > 0 {
+            if let Some(mut rb) = RigidBody::find(ctx, player.rigid_body_id) {
+                rb.position_x = spawn_pos.x;
+                rb.position_y = spawn_pos.y;
+                rb.position_z = spawn_pos.z;
+                rb.linear_velocity_x = 0.0;
+                rb.linear_velocity_y = 0.0;
+                rb.linear_velocity_z = 0.0;
+                rb.enabled = true;
+                rb.update(ctx);
+                // Reset collider filter so player does not collide with others until moved 1 unit
+                if let Some(mut col) = Collider::find(ctx, rb.collider_id) {
+                    col.collision_filter = GROUP_BULLET | GROUP_WALL | GROUP_FLOOR;
+                    col.update(ctx);
+                }
+            }
+        }
+        return Ok(());
+    }
+
+    // Initial spawn: no Player row yet
+    let lp = ctx
+        .db
+        .lobby_player()
+        .iter()
+        .find(|lp| lp.player_identity == identity)
+        .ok_or("Not in a lobby")?
+        .clone();
+
+    let lobby = ctx
+        .db
+        .lobby()
+        .id()
+        .find(lp.lobby_id)
+        .ok_or("Lobby not found")?;
+
+    let existing: Vec<(Vec3, i32)> = ctx
+        .db
+        .player()
+        .iter()
+        .filter(|p| p.lobby_id == lobby.id && p.is_alive)
+        .map(|p| (Vec3::new(p.position_x, p.position_y, p.position_z), p.team))
+        .collect();
+
+    let seed = ctx.timestamp.to_micros_since_unix_epoch() as u64;
+    let spawn_pos = if lobby.game_mode == GameMode::CaptureTheFlag && existing.is_empty() {
+        get_flag_spawn_position(ctx, lobby.id, lp.team).unwrap_or_else(|| {
+            get_best_spawn_position(ctx, lobby.id, lp.team, true, &existing, seed)
+        })
+    } else {
+        let is_team_mode = lobby.game_mode != GameMode::FreeForAll;
+        get_best_spawn_position(
+            ctx,
+            lobby.id,
+            lp.team,
+            is_team_mode,
+            &existing,
+            seed,
+        )
+    };
+
+    create_player_at(
+        ctx,
+        identity,
+        lp.name,
+        &lobby,
+        lp.team,
+        spawn_pos,
+        weapon,
+        secondary,
+    )?;
+    Ok(())
 }
 
 pub fn remove_player(ctx: &ReducerContext, identity: Identity) {
@@ -188,6 +369,35 @@ pub fn remove_player(ctx: &ReducerContext, identity: Identity) {
 // INPUT REDUCERS
 // ============================================================================
 
+/// Discrete shooting state: call on mouse down (true) and mouse up (false).
+/// Instant response - no polling delay.
+#[reducer]
+pub fn set_shooting(
+    ctx: &ReducerContext,
+    is_shooting: bool,
+    aim_x: f32,
+    aim_z: f32,
+) -> Result<(), String> {
+    let identity = ctx.sender;
+
+    if is_shooting {
+        log::info!("start shooting identity={:?} aim=({}, {})", identity, aim_x, aim_z);
+    } else {
+        log::info!("stop shooting identity={:?}", identity);
+    }
+
+    if let Some(mut player) = ctx.db.player().identity().find(identity) {
+        player.is_shooting = is_shooting;
+        player.aim_x = aim_x;
+        player.aim_z = aim_z;
+
+        crate::weapons::on_input_for_weapon(ctx, player.weapon, identity, is_shooting);
+
+        ctx.db.player().identity().update(player);
+    }
+    Ok(())
+}
+
 #[reducer]
 pub fn update_input(
     ctx: &ReducerContext,
@@ -195,7 +405,6 @@ pub fn update_input(
     input_z: f32,
     aim_x: f32,
     aim_z: f32,
-    is_shooting: bool,
 ) -> Result<(), String> {
     let identity = ctx.sender;
 
@@ -211,23 +420,19 @@ pub fn update_input(
         }
         player.aim_x = aim_x;
         player.aim_z = aim_z;
-        player.is_shooting = is_shooting;
 
         // Update velocity from input; Rapier will move the body and resolve wall collision
         if player.is_alive {
-            const ACCEL: f32 = 24.0; // acceleration per second
-            const DAMPING: f32 = 0.84; // per input tick (velocity *= DAMPING when no input)
-            const TICK_DT: f32 = 0.05; // ~50ms between input updates
-
-            player.velocity_x += player.input_x * ACCEL * TICK_DT;
-            player.velocity_z += player.input_z * ACCEL * TICK_DT;
-            player.velocity_x *= DAMPING;
-            player.velocity_z *= DAMPING;
+            player.velocity_x += player.input_x * PLAYER_ACCEL * PLAYER_INPUT_TICK_DT;
+            player.velocity_z += player.input_z * PLAYER_ACCEL * PLAYER_INPUT_TICK_DT;
+            player.velocity_x *= PLAYER_DAMPING;
+            player.velocity_z *= PLAYER_DAMPING;
+            // velocity_y is left to physics (gravity, bullet impulse)
 
             // Write velocity to RigidBody so next physics step moves the player (Rapier handles wall collision)
             if let Some(mut rb) = RigidBody::find(ctx, player.rigid_body_id) {
                 rb.linear_velocity_x = player.velocity_x;
-                rb.linear_velocity_y = 0.0;
+                rb.linear_velocity_y = player.velocity_y;
                 rb.linear_velocity_z = player.velocity_z;
                 rb.update(ctx);
                 // Keep Player in sync with RigidBody position/velocity (authoritative state from physics)
@@ -235,6 +440,7 @@ pub fn update_input(
                 player.position_y = rb.position_y;
                 player.position_z = rb.position_z;
                 player.velocity_x = rb.linear_velocity_x;
+                player.velocity_y = rb.linear_velocity_y;
                 player.velocity_z = rb.linear_velocity_z;
             }
         }
@@ -257,8 +463,6 @@ pub fn set_loadout(
     if let Some(mut player) = ctx.db.player().identity().find(identity) {
         player.weapon = weapon;
         player.secondary = secondary;
-        player.ammo = get_weapon_max_ammo(weapon);
-        player.max_ammo = get_weapon_max_ammo(weapon);
         ctx.db.player().identity().update(player);
         Ok(())
     } else {
@@ -318,17 +522,6 @@ pub fn set_marble_config(
 // WEAPON HELPERS
 // ============================================================================
 
-pub fn get_weapon_max_ammo(weapon: WeaponType) -> i32 {
-    match weapon {
-        WeaponType::Smg => 30,
-        WeaponType::DualMachineGun => 40,
-        WeaponType::ChainGun => 100,
-        WeaponType::PhotonRifle => 5,
-        WeaponType::Bazooka => 4,
-        WeaponType::Flamethrower => 100,
-    }
-}
-
 pub fn get_weapon_damage(weapon: WeaponType) -> i32 {
     match weapon {
         WeaponType::Smg => 8,
@@ -345,7 +538,7 @@ pub fn get_weapon_fire_rate_ms(weapon: WeaponType) -> i64 {
         WeaponType::Smg => 67,          // ~15 shots/sec
         WeaponType::DualMachineGun => 50, // ~20 shots/sec
         WeaponType::ChainGun => 33,     // ~30 shots/sec
-        WeaponType::PhotonRifle => 2000, // 0.5 shots/sec
+        WeaponType::PhotonRifle => 2000, // 0.5 shots/sec (recharge cooldown)
         WeaponType::Bazooka => 1000,    // 1 shot/sec
         WeaponType::Flamethrower => 17, // ~60 ticks/sec
     }

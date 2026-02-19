@@ -2,10 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import * as BABYLON from "@babylonjs/core";
-import {
-  createMarbleMaterial,
-  createSolidMarbleMaterial,
-} from "../game/marble/MarbleMaterials";
+import { createMarbleMaterial } from "../game/marble/MarbleMaterials";
 import type { MarbleConfig } from "../store/gameStore";
 
 export default function MarblePreview({ config }: { config: MarbleConfig }) {
@@ -49,17 +46,12 @@ export default function MarblePreview({ config }: { config: MarbleConfig }) {
       scene,
     );
 
-    let material: BABYLON.Material;
-    try {
-      material = createMarbleMaterial(BABYLON as any, scene, config, "marbleMat");
-    } catch {
-      material = createSolidMarbleMaterial(
-        BABYLON as any,
-        scene,
-        config,
-        "marbleMat",
-      );
-    }
+    const material = createMarbleMaterial(
+      BABYLON as any,
+      scene,
+      config,
+      "marbleMat",
+    );
     sphere.material = material;
 
     const camera = new BABYLON.ArcRotateCamera(
@@ -116,22 +108,12 @@ export default function MarblePreview({ config }: { config: MarbleConfig }) {
 
     const { scene, sphere } = ctx;
     const oldMat = ctx.material;
-    let newMaterial: BABYLON.Material;
-    try {
-      newMaterial = createMarbleMaterial(
-        BABYLON as any,
-        scene,
-        config,
-        `marbleMat-${config.designId}`,
-      );
-    } catch {
-      newMaterial = createSolidMarbleMaterial(
-        BABYLON as any,
-        scene,
-        config,
-        `marbleMat-${config.designId}`,
-      );
-    }
+    const newMaterial = createMarbleMaterial(
+      BABYLON as any,
+      scene,
+      config,
+      `marbleMat-${config.designId}`,
+    );
     sphere.material = newMaterial;
     oldMat?.dispose?.();
     ctx.material = newMaterial;

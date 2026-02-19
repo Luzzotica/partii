@@ -16,6 +16,7 @@ pub(super) struct CreateLobbyArgs {
     pub max_players: u8,
     pub score_limit: i32,
     pub password: String,
+    pub custom_map_json: String,
 }
 
 impl From<CreateLobbyArgs> for super::Reducer {
@@ -27,6 +28,7 @@ impl From<CreateLobbyArgs> for super::Reducer {
             max_players: args.max_players,
             score_limit: args.score_limit,
             password: args.password,
+            custom_map_json: args.custom_map_json,
         }
     }
 }
@@ -55,6 +57,7 @@ pub trait create_lobby {
         max_players: u8,
         score_limit: i32,
         password: String,
+        custom_map_json: String,
     ) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `create_lobby`.
     ///
@@ -65,8 +68,16 @@ pub trait create_lobby {
     /// to cancel the callback.
     fn on_create_lobby(
         &self,
-        callback: impl FnMut(&super::ReducerEventContext, &String, &MapId, &GameMode, &u8, &i32, &String)
-            + Send
+        callback: impl FnMut(
+                &super::ReducerEventContext,
+                &String,
+                &MapId,
+                &GameMode,
+                &u8,
+                &i32,
+                &String,
+                &String,
+            ) + Send
             + 'static,
     ) -> CreateLobbyCallbackId;
     /// Cancel a callback previously registered by [`Self::on_create_lobby`],
@@ -83,6 +94,7 @@ impl create_lobby for super::RemoteReducers {
         max_players: u8,
         score_limit: i32,
         password: String,
+        custom_map_json: String,
     ) -> __sdk::Result<()> {
         self.imp.call_reducer(
             "create_lobby",
@@ -93,13 +105,22 @@ impl create_lobby for super::RemoteReducers {
                 max_players,
                 score_limit,
                 password,
+                custom_map_json,
             },
         )
     }
     fn on_create_lobby(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &String, &MapId, &GameMode, &u8, &i32, &String)
-            + Send
+        mut callback: impl FnMut(
+                &super::ReducerEventContext,
+                &String,
+                &MapId,
+                &GameMode,
+                &u8,
+                &i32,
+                &String,
+                &String,
+            ) + Send
             + 'static,
     ) -> CreateLobbyCallbackId {
         CreateLobbyCallbackId(self.imp.on_reducer(
@@ -117,6 +138,7 @@ impl create_lobby for super::RemoteReducers {
                                     max_players,
                                     score_limit,
                                     password,
+                                    custom_map_json,
                                 },
                             ..
                         },
@@ -133,6 +155,7 @@ impl create_lobby for super::RemoteReducers {
                     max_players,
                     score_limit,
                     password,
+                    custom_map_json,
                 )
             }),
         ))

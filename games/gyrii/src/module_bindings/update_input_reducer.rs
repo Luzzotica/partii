@@ -11,7 +11,6 @@ pub(super) struct UpdateInputArgs {
     pub input_z: f32,
     pub aim_x: f32,
     pub aim_z: f32,
-    pub is_shooting: bool,
 }
 
 impl From<UpdateInputArgs> for super::Reducer {
@@ -21,7 +20,6 @@ impl From<UpdateInputArgs> for super::Reducer {
             input_z: args.input_z,
             aim_x: args.aim_x,
             aim_z: args.aim_z,
-            is_shooting: args.is_shooting,
         }
     }
 }
@@ -42,14 +40,8 @@ pub trait update_input {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_update_input`] callbacks.
-    fn update_input(
-        &self,
-        input_x: f32,
-        input_z: f32,
-        aim_x: f32,
-        aim_z: f32,
-        is_shooting: bool,
-    ) -> __sdk::Result<()>;
+    fn update_input(&self, input_x: f32, input_z: f32, aim_x: f32, aim_z: f32)
+        -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `update_input`.
     ///
     /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
@@ -59,9 +51,7 @@ pub trait update_input {
     /// to cancel the callback.
     fn on_update_input(
         &self,
-        callback: impl FnMut(&super::ReducerEventContext, &f32, &f32, &f32, &f32, &bool)
-            + Send
-            + 'static,
+        callback: impl FnMut(&super::ReducerEventContext, &f32, &f32, &f32, &f32) + Send + 'static,
     ) -> UpdateInputCallbackId;
     /// Cancel a callback previously registered by [`Self::on_update_input`],
     /// causing it not to run in the future.
@@ -75,7 +65,6 @@ impl update_input for super::RemoteReducers {
         input_z: f32,
         aim_x: f32,
         aim_z: f32,
-        is_shooting: bool,
     ) -> __sdk::Result<()> {
         self.imp.call_reducer(
             "update_input",
@@ -84,15 +73,12 @@ impl update_input for super::RemoteReducers {
                 input_z,
                 aim_x,
                 aim_z,
-                is_shooting,
             },
         )
     }
     fn on_update_input(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, &f32, &f32, &f32, &f32, &bool)
-            + Send
-            + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, &f32, &f32, &f32, &f32) + Send + 'static,
     ) -> UpdateInputCallbackId {
         UpdateInputCallbackId(self.imp.on_reducer(
             "update_input",
@@ -107,7 +93,6 @@ impl update_input for super::RemoteReducers {
                                     input_z,
                                     aim_x,
                                     aim_z,
-                                    is_shooting,
                                 },
                             ..
                         },
@@ -116,7 +101,7 @@ impl update_input for super::RemoteReducers {
                 else {
                     unreachable!()
                 };
-                callback(ctx, input_x, input_z, aim_x, aim_z, is_shooting)
+                callback(ctx, input_x, input_z, aim_x, aim_z)
             }),
         ))
     }

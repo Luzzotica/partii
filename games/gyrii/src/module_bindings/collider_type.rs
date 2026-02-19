@@ -27,6 +27,11 @@ pub struct Collider {
     pub vertex_c_y: f32,
     pub vertex_c_z: f32,
     pub is_sensor: bool,
+    pub collision_memberships: u32,
+    pub collision_filter: u32,
+    pub normal_x: f32,
+    pub normal_y: f32,
+    pub normal_z: f32,
 }
 
 impl __sdk::InModule for Collider {

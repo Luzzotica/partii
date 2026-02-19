@@ -14,10 +14,13 @@ pub mod create_lobby_reducer;
 pub mod damage_zone_table;
 pub mod damage_zone_type;
 pub mod debug_collision_bodies_reducer;
+pub mod debug_photon_beam_target_table;
+pub mod debug_photon_beam_target_type;
 pub mod debug_physics_world_reducer;
 pub mod debug_player_in_wall_reducer;
 pub mod detonate_rocket_reducer;
 pub mod end_game_reducer;
+pub mod friendly_fire_type;
 pub mod game_config_table;
 pub mod game_config_type;
 pub mod game_mode_type;
@@ -34,9 +37,19 @@ pub mod lobby_secret_table;
 pub mod lobby_secret_type;
 pub mod lobby_table;
 pub mod lobby_type;
+pub mod map_flag_location_table;
+pub mod map_flag_location_type;
 pub mod map_id_type;
+pub mod map_spawn_point_table;
+pub mod map_spawn_point_type;
 pub mod map_wall_table;
 pub mod map_wall_type;
+pub mod pending_photon_beam_table;
+pub mod pending_photon_beam_type;
+pub mod photon_beam_table;
+pub mod photon_beam_type;
+pub mod photon_rifle_charge_table;
+pub mod photon_rifle_charge_type;
 pub mod physics_tick_heartbeat_table;
 pub mod physics_tick_heartbeat_type;
 pub mod physics_tick_reducer;
@@ -52,17 +65,21 @@ pub mod rapier_physics_world_table;
 pub mod rapier_raycast_table;
 pub mod rapier_rigid_body_properties_table;
 pub mod rapier_rigid_body_table;
+pub mod rapier_sensor_collision_table;
 pub mod rapier_trigger_table;
 pub mod ray_cast_hit_type;
 pub mod ray_cast_type;
+pub mod request_spawn_reducer;
 pub mod rigid_body_properties_type;
 pub mod rigid_body_type;
 pub mod rigid_body_type_type;
 pub mod secondary_type_type;
+pub mod sensor_collision_type;
 pub mod set_loadout_reducer;
 pub mod set_marble_config_reducer;
 pub mod set_player_color_reducer;
 pub mod set_ready_reducer;
+pub mod set_shooting_reducer;
 pub mod shoot_reducer;
 pub mod start_game_reducer;
 pub mod throw_grenade_reducer;
@@ -86,6 +103,8 @@ pub use damage_zone_type::DamageZone;
 pub use debug_collision_bodies_reducer::{
     debug_collision_bodies, set_flags_for_debug_collision_bodies, DebugCollisionBodiesCallbackId,
 };
+pub use debug_photon_beam_target_table::*;
+pub use debug_photon_beam_target_type::DebugPhotonBeamTarget;
 pub use debug_physics_world_reducer::{
     debug_physics_world, set_flags_for_debug_physics_world, DebugPhysicsWorldCallbackId,
 };
@@ -96,6 +115,7 @@ pub use detonate_rocket_reducer::{
     detonate_rocket, set_flags_for_detonate_rocket, DetonateRocketCallbackId,
 };
 pub use end_game_reducer::{end_game, set_flags_for_end_game, EndGameCallbackId};
+pub use friendly_fire_type::FriendlyFire;
 pub use game_config_table::*;
 pub use game_config_type::GameConfig;
 pub use game_mode_type::GameMode;
@@ -112,9 +132,19 @@ pub use lobby_secret_table::*;
 pub use lobby_secret_type::LobbySecret;
 pub use lobby_table::*;
 pub use lobby_type::Lobby;
+pub use map_flag_location_table::*;
+pub use map_flag_location_type::MapFlagLocation;
 pub use map_id_type::MapId;
+pub use map_spawn_point_table::*;
+pub use map_spawn_point_type::MapSpawnPoint;
 pub use map_wall_table::*;
 pub use map_wall_type::MapWall;
+pub use pending_photon_beam_table::*;
+pub use pending_photon_beam_type::PendingPhotonBeam;
+pub use photon_beam_table::*;
+pub use photon_beam_type::PhotonBeam;
+pub use photon_rifle_charge_table::*;
+pub use photon_rifle_charge_type::PhotonRifleCharge;
 pub use physics_tick_heartbeat_table::*;
 pub use physics_tick_heartbeat_type::PhysicsTickHeartbeat;
 pub use physics_tick_reducer::{physics_tick, set_flags_for_physics_tick, PhysicsTickCallbackId};
@@ -130,13 +160,18 @@ pub use rapier_physics_world_table::*;
 pub use rapier_raycast_table::*;
 pub use rapier_rigid_body_properties_table::*;
 pub use rapier_rigid_body_table::*;
+pub use rapier_sensor_collision_table::*;
 pub use rapier_trigger_table::*;
 pub use ray_cast_hit_type::RayCastHit;
 pub use ray_cast_type::RayCast;
+pub use request_spawn_reducer::{
+    request_spawn, set_flags_for_request_spawn, RequestSpawnCallbackId,
+};
 pub use rigid_body_properties_type::RigidBodyProperties;
 pub use rigid_body_type::RigidBody;
 pub use rigid_body_type_type::RigidBodyType;
 pub use secondary_type_type::SecondaryType;
+pub use sensor_collision_type::SensorCollision;
 pub use set_loadout_reducer::{set_flags_for_set_loadout, set_loadout, SetLoadoutCallbackId};
 pub use set_marble_config_reducer::{
     set_flags_for_set_marble_config, set_marble_config, SetMarbleConfigCallbackId,
@@ -145,6 +180,7 @@ pub use set_player_color_reducer::{
     set_flags_for_set_player_color, set_player_color, SetPlayerColorCallbackId,
 };
 pub use set_ready_reducer::{set_flags_for_set_ready, set_ready, SetReadyCallbackId};
+pub use set_shooting_reducer::{set_flags_for_set_shooting, set_shooting, SetShootingCallbackId};
 pub use shoot_reducer::{set_flags_for_shoot, shoot, ShootCallbackId};
 pub use start_game_reducer::{set_flags_for_start_game, start_game, StartGameCallbackId};
 pub use throw_grenade_reducer::{
@@ -177,6 +213,7 @@ pub enum Reducer {
         max_players: u8,
         score_limit: i32,
         password: String,
+        custom_map_json: String,
     },
     DebugCollisionBodies {
         world_id: u64,
@@ -200,6 +237,10 @@ pub enum Reducer {
     PhysicsTick {
         timer: PhysicsTickTimer,
     },
+    RequestSpawn {
+        weapon: WeaponType,
+        secondary: SecondaryType,
+    },
     SetLoadout {
         weapon: WeaponType,
         secondary: SecondaryType,
@@ -221,6 +262,11 @@ pub enum Reducer {
     SetReady {
         ready: bool,
     },
+    SetShooting {
+        is_shooting: bool,
+        aim_x: f32,
+        aim_z: f32,
+    },
     Shoot,
     StartGame,
     ThrowGrenade {
@@ -236,7 +282,6 @@ pub enum Reducer {
         input_z: f32,
         aim_x: f32,
         aim_z: f32,
-        is_shooting: bool,
     },
     UseSecondary,
 }
@@ -259,10 +304,12 @@ impl __sdk::Reducer for Reducer {
             Reducer::JoinLobby { .. } => "join_lobby",
             Reducer::LeaveLobby => "leave_lobby",
             Reducer::PhysicsTick { .. } => "physics_tick",
+            Reducer::RequestSpawn { .. } => "request_spawn",
             Reducer::SetLoadout { .. } => "set_loadout",
             Reducer::SetMarbleConfig { .. } => "set_marble_config",
             Reducer::SetPlayerColor { .. } => "set_player_color",
             Reducer::SetReady { .. } => "set_ready",
+            Reducer::SetShooting { .. } => "set_shooting",
             Reducer::Shoot => "shoot",
             Reducer::StartGame => "start_game",
             Reducer::ThrowGrenade { .. } => "throw_grenade",
@@ -334,6 +381,10 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 )?
                 .into(),
             ),
+            "request_spawn" => Ok(__sdk::parse_reducer_args::<
+                request_spawn_reducer::RequestSpawnArgs,
+            >("request_spawn", &value.args)?
+            .into()),
             "set_loadout" => Ok(
                 __sdk::parse_reducer_args::<set_loadout_reducer::SetLoadoutArgs>(
                     "set_loadout",
@@ -352,6 +403,13 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
             "set_ready" => Ok(
                 __sdk::parse_reducer_args::<set_ready_reducer::SetReadyArgs>(
                     "set_ready",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "set_shooting" => Ok(
+                __sdk::parse_reducer_args::<set_shooting_reducer::SetShootingArgs>(
+                    "set_shooting",
                     &value.args,
                 )?
                 .into(),
@@ -402,13 +460,19 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
 #[doc(hidden)]
 pub struct DbUpdate {
     damage_zone: __sdk::TableUpdate<DamageZone>,
+    debug_photon_beam_target: __sdk::TableUpdate<DebugPhotonBeamTarget>,
     game_config: __sdk::TableUpdate<GameConfig>,
     grenade: __sdk::TableUpdate<Grenade>,
     kill_event: __sdk::TableUpdate<KillEvent>,
     lobby: __sdk::TableUpdate<Lobby>,
     lobby_player: __sdk::TableUpdate<LobbyPlayer>,
     lobby_secret: __sdk::TableUpdate<LobbySecret>,
+    map_flag_location: __sdk::TableUpdate<MapFlagLocation>,
+    map_spawn_point: __sdk::TableUpdate<MapSpawnPoint>,
     map_wall: __sdk::TableUpdate<MapWall>,
+    pending_photon_beam: __sdk::TableUpdate<PendingPhotonBeam>,
+    photon_beam: __sdk::TableUpdate<PhotonBeam>,
+    photon_rifle_charge: __sdk::TableUpdate<PhotonRifleCharge>,
     physics_tick_heartbeat: __sdk::TableUpdate<PhysicsTickHeartbeat>,
     physics_tick_timer: __sdk::TableUpdate<PhysicsTickTimer>,
     player: __sdk::TableUpdate<Player>,
@@ -418,6 +482,7 @@ pub struct DbUpdate {
     rapier_raycast: __sdk::TableUpdate<RayCast>,
     rapier_rigid_body: __sdk::TableUpdate<RigidBody>,
     rapier_rigid_body_properties: __sdk::TableUpdate<RigidBodyProperties>,
+    rapier_sensor_collision: __sdk::TableUpdate<SensorCollision>,
     rapier_trigger: __sdk::TableUpdate<Trigger>,
 }
 
@@ -430,6 +495,9 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
                 "damage_zone" => db_update
                     .damage_zone
                     .append(damage_zone_table::parse_table_update(table_update)?),
+                "debug_photon_beam_target" => db_update.debug_photon_beam_target.append(
+                    debug_photon_beam_target_table::parse_table_update(table_update)?,
+                ),
                 "game_config" => db_update
                     .game_config
                     .append(game_config_table::parse_table_update(table_update)?),
@@ -448,9 +516,24 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
                 "lobby_secret" => db_update
                     .lobby_secret
                     .append(lobby_secret_table::parse_table_update(table_update)?),
+                "map_flag_location" => db_update
+                    .map_flag_location
+                    .append(map_flag_location_table::parse_table_update(table_update)?),
+                "map_spawn_point" => db_update
+                    .map_spawn_point
+                    .append(map_spawn_point_table::parse_table_update(table_update)?),
                 "map_wall" => db_update
                     .map_wall
                     .append(map_wall_table::parse_table_update(table_update)?),
+                "pending_photon_beam" => db_update
+                    .pending_photon_beam
+                    .append(pending_photon_beam_table::parse_table_update(table_update)?),
+                "photon_beam" => db_update
+                    .photon_beam
+                    .append(photon_beam_table::parse_table_update(table_update)?),
+                "photon_rifle_charge" => db_update
+                    .photon_rifle_charge
+                    .append(photon_rifle_charge_table::parse_table_update(table_update)?),
                 "physics_tick_heartbeat" => db_update.physics_tick_heartbeat.append(
                     physics_tick_heartbeat_table::parse_table_update(table_update)?,
                 ),
@@ -477,6 +560,9 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
                     .append(rapier_rigid_body_table::parse_table_update(table_update)?),
                 "rapier_rigid_body_properties" => db_update.rapier_rigid_body_properties.append(
                     rapier_rigid_body_properties_table::parse_table_update(table_update)?,
+                ),
+                "rapier_sensor_collision" => db_update.rapier_sensor_collision.append(
+                    rapier_sensor_collision_table::parse_table_update(table_update)?,
                 ),
                 "rapier_trigger" => db_update
                     .rapier_trigger
@@ -510,6 +596,12 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.damage_zone = cache
             .apply_diff_to_table::<DamageZone>("damage_zone", &self.damage_zone)
             .with_updates_by_pk(|row| &row.trigger_id);
+        diff.debug_photon_beam_target = cache
+            .apply_diff_to_table::<DebugPhotonBeamTarget>(
+                "debug_photon_beam_target",
+                &self.debug_photon_beam_target,
+            )
+            .with_updates_by_pk(|row| &row.identity);
         diff.game_config = cache
             .apply_diff_to_table::<GameConfig>("game_config", &self.game_config)
             .with_updates_by_pk(|row| &row.id);
@@ -528,9 +620,30 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.lobby_secret = cache
             .apply_diff_to_table::<LobbySecret>("lobby_secret", &self.lobby_secret)
             .with_updates_by_pk(|row| &row.lobby_id);
+        diff.map_flag_location = cache
+            .apply_diff_to_table::<MapFlagLocation>("map_flag_location", &self.map_flag_location)
+            .with_updates_by_pk(|row| &row.id);
+        diff.map_spawn_point = cache
+            .apply_diff_to_table::<MapSpawnPoint>("map_spawn_point", &self.map_spawn_point)
+            .with_updates_by_pk(|row| &row.id);
         diff.map_wall = cache
             .apply_diff_to_table::<MapWall>("map_wall", &self.map_wall)
             .with_updates_by_pk(|row| &row.id);
+        diff.pending_photon_beam = cache
+            .apply_diff_to_table::<PendingPhotonBeam>(
+                "pending_photon_beam",
+                &self.pending_photon_beam,
+            )
+            .with_updates_by_pk(|row| &row.raycast_id);
+        diff.photon_beam = cache
+            .apply_diff_to_table::<PhotonBeam>("photon_beam", &self.photon_beam)
+            .with_updates_by_pk(|row| &row.id);
+        diff.photon_rifle_charge = cache
+            .apply_diff_to_table::<PhotonRifleCharge>(
+                "photon_rifle_charge",
+                &self.photon_rifle_charge,
+            )
+            .with_updates_by_pk(|row| &row.identity);
         diff.physics_tick_heartbeat = cache
             .apply_diff_to_table::<PhysicsTickHeartbeat>(
                 "physics_tick_heartbeat",
@@ -564,6 +677,12 @@ impl __sdk::DbUpdate for DbUpdate {
                 &self.rapier_rigid_body_properties,
             )
             .with_updates_by_pk(|row| &row.id);
+        diff.rapier_sensor_collision = cache
+            .apply_diff_to_table::<SensorCollision>(
+                "rapier_sensor_collision",
+                &self.rapier_sensor_collision,
+            )
+            .with_updates_by_pk(|row| &row.id);
         diff.rapier_trigger = cache
             .apply_diff_to_table::<Trigger>("rapier_trigger", &self.rapier_trigger)
             .with_updates_by_pk(|row| &row.id);
@@ -577,13 +696,19 @@ impl __sdk::DbUpdate for DbUpdate {
 #[doc(hidden)]
 pub struct AppliedDiff<'r> {
     damage_zone: __sdk::TableAppliedDiff<'r, DamageZone>,
+    debug_photon_beam_target: __sdk::TableAppliedDiff<'r, DebugPhotonBeamTarget>,
     game_config: __sdk::TableAppliedDiff<'r, GameConfig>,
     grenade: __sdk::TableAppliedDiff<'r, Grenade>,
     kill_event: __sdk::TableAppliedDiff<'r, KillEvent>,
     lobby: __sdk::TableAppliedDiff<'r, Lobby>,
     lobby_player: __sdk::TableAppliedDiff<'r, LobbyPlayer>,
     lobby_secret: __sdk::TableAppliedDiff<'r, LobbySecret>,
+    map_flag_location: __sdk::TableAppliedDiff<'r, MapFlagLocation>,
+    map_spawn_point: __sdk::TableAppliedDiff<'r, MapSpawnPoint>,
     map_wall: __sdk::TableAppliedDiff<'r, MapWall>,
+    pending_photon_beam: __sdk::TableAppliedDiff<'r, PendingPhotonBeam>,
+    photon_beam: __sdk::TableAppliedDiff<'r, PhotonBeam>,
+    photon_rifle_charge: __sdk::TableAppliedDiff<'r, PhotonRifleCharge>,
     physics_tick_heartbeat: __sdk::TableAppliedDiff<'r, PhysicsTickHeartbeat>,
     physics_tick_timer: __sdk::TableAppliedDiff<'r, PhysicsTickTimer>,
     player: __sdk::TableAppliedDiff<'r, Player>,
@@ -593,6 +718,7 @@ pub struct AppliedDiff<'r> {
     rapier_raycast: __sdk::TableAppliedDiff<'r, RayCast>,
     rapier_rigid_body: __sdk::TableAppliedDiff<'r, RigidBody>,
     rapier_rigid_body_properties: __sdk::TableAppliedDiff<'r, RigidBodyProperties>,
+    rapier_sensor_collision: __sdk::TableAppliedDiff<'r, SensorCollision>,
     rapier_trigger: __sdk::TableAppliedDiff<'r, Trigger>,
     __unused: std::marker::PhantomData<&'r ()>,
 }
@@ -608,6 +734,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks: &mut __sdk::DbCallbacks<RemoteModule>,
     ) {
         callbacks.invoke_table_row_callbacks::<DamageZone>("damage_zone", &self.damage_zone, event);
+        callbacks.invoke_table_row_callbacks::<DebugPhotonBeamTarget>(
+            "debug_photon_beam_target",
+            &self.debug_photon_beam_target,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<GameConfig>("game_config", &self.game_config, event);
         callbacks.invoke_table_row_callbacks::<Grenade>("grenade", &self.grenade, event);
         callbacks.invoke_table_row_callbacks::<KillEvent>("kill_event", &self.kill_event, event);
@@ -622,7 +753,28 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             &self.lobby_secret,
             event,
         );
+        callbacks.invoke_table_row_callbacks::<MapFlagLocation>(
+            "map_flag_location",
+            &self.map_flag_location,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<MapSpawnPoint>(
+            "map_spawn_point",
+            &self.map_spawn_point,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<MapWall>("map_wall", &self.map_wall, event);
+        callbacks.invoke_table_row_callbacks::<PendingPhotonBeam>(
+            "pending_photon_beam",
+            &self.pending_photon_beam,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<PhotonBeam>("photon_beam", &self.photon_beam, event);
+        callbacks.invoke_table_row_callbacks::<PhotonRifleCharge>(
+            "photon_rifle_charge",
+            &self.photon_rifle_charge,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<PhysicsTickHeartbeat>(
             "physics_tick_heartbeat",
             &self.physics_tick_heartbeat,
@@ -658,6 +810,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<RigidBodyProperties>(
             "rapier_rigid_body_properties",
             &self.rapier_rigid_body_properties,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<SensorCollision>(
+            "rapier_sensor_collision",
+            &self.rapier_sensor_collision,
             event,
         );
         callbacks.invoke_table_row_callbacks::<Trigger>(
@@ -1385,13 +1542,19 @@ impl __sdk::SpacetimeModule for RemoteModule {
 
     fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
         damage_zone_table::register_table(client_cache);
+        debug_photon_beam_target_table::register_table(client_cache);
         game_config_table::register_table(client_cache);
         grenade_table::register_table(client_cache);
         kill_event_table::register_table(client_cache);
         lobby_table::register_table(client_cache);
         lobby_player_table::register_table(client_cache);
         lobby_secret_table::register_table(client_cache);
+        map_flag_location_table::register_table(client_cache);
+        map_spawn_point_table::register_table(client_cache);
         map_wall_table::register_table(client_cache);
+        pending_photon_beam_table::register_table(client_cache);
+        photon_beam_table::register_table(client_cache);
+        photon_rifle_charge_table::register_table(client_cache);
         physics_tick_heartbeat_table::register_table(client_cache);
         physics_tick_timer_table::register_table(client_cache);
         player_table::register_table(client_cache);
@@ -1401,6 +1564,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         rapier_raycast_table::register_table(client_cache);
         rapier_rigid_body_table::register_table(client_cache);
         rapier_rigid_body_properties_table::register_table(client_cache);
+        rapier_sensor_collision_table::register_table(client_cache);
         rapier_trigger_table::register_table(client_cache);
     }
 }

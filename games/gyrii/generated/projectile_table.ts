@@ -13,7 +13,17 @@ import {
 export default __t.row({
   rigidBodyId: __t.u64().primaryKey().name("rigid_body_id"),
   ownerId: __t.identity().name("owner_id"),
+  worldId: __t.u64().name("world_id"),
   damage: __t.f32(),
   radius: __t.f32(),
   canDetonate: __t.bool().name("can_detonate"),
+  expiresAtMicros: __t.u64().name("expires_at_micros"),
+  positionX: __t.f32().name("position_x"),
+  positionY: __t.f32().name("position_y"),
+  positionZ: __t.f32().name("position_z"),
+  velocityX: __t.f32().name("velocity_x"),
+  velocityY: __t.f32().name("velocity_y"),
+  velocityZ: __t.f32().name("velocity_z"),
+  projectileType: __t.u8().name("projectile_type"),
+  gravityScale: __t.f32().name("gravity_scale"),
 });

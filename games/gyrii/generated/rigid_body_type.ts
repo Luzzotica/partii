@@ -33,6 +33,7 @@ export default __t.object("RigidBody", {
   },
   colliderId: __t.u64(),
   propertiesId: __t.u64(),
+  gravityScale: __t.f32(),
   enabled: __t.bool(),
 });
 

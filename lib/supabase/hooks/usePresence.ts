@@ -1,9 +1,9 @@
-'use client';
+"use client";
 
-import { useEffect, useState, useCallback, useRef } from 'react';
-import { createClient } from '../client';
-import { useAuth } from '../auth-context';
-import type { RealtimeChannel } from '@supabase/supabase-js';
+import { useEffect, useState, useCallback, useRef } from "react";
+import { createClient } from "../client";
+import { useAuth } from "../auth-context";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 
 interface PresenceState {
   user_id: string;
@@ -45,36 +45,39 @@ export function usePresence(gameId?: string) {
         currentGamePlayers: gameId ? playersInGame.get(gameId) || 0 : 0,
       });
     },
-    [gameId]
+    [gameId],
   );
 
   useEffect(() => {
-    const channel = supabase.channel('online-users', {
+    const channel = supabase.channel("online-users", {
       config: {
         presence: {
-          key: user?.id || `anon-${Math.random().toString(36).slice(2)}`,
+          key:
+            user?.id ??
+            `anon-${(Math.random() as number).toString(36).slice(2)}`,
         },
       },
     });
 
     channel
-      .on('presence', { event: 'sync' }, () => {
+      .on("presence", { event: "sync" }, () => {
         const state = channel.presenceState<PresenceState>();
         updatePresence(state);
       })
-      .on('presence', { event: 'join' }, ({ newPresences }) => {
-        console.log('User joined:', newPresences);
+      .on("presence", { event: "join" }, ({ newPresences }) => {
+        console.log("User joined:", newPresences);
       })
-      .on('presence', { event: 'leave' }, ({ leftPresences }) => {
-        console.log('User left:', leftPresences);
+      .on("presence", { event: "leave" }, ({ leftPresences }) => {
+        console.log("User left:", leftPresences);
       })
       .subscribe(async (status) => {
-        if (status === 'SUBSCRIBED') {
+        if (status === "SUBSCRIBED") {
           await channel.track({
-            user_id: user?.id || 'anonymous',
+            user_id: user?.id || "anonymous",
             game_id: gameId || null,
             online_at: new Date().toISOString(),
-            user_name: user?.user_metadata?.full_name || user?.email?.split('@')[0],
+            user_name:
+              user?.user_metadata?.full_name || user?.email?.split("@")[0],
           });
         }
       });
@@ -90,14 +93,15 @@ export function usePresence(gameId?: string) {
     async (newGameId: string | null) => {
       if (channelRef.current) {
         await channelRef.current.track({
-          user_id: user?.id || 'anonymous',
+          user_id: user?.id || "anonymous",
           game_id: newGameId,
           online_at: new Date().toISOString(),
-          user_name: user?.user_metadata?.full_name || user?.email?.split('@')[0],
+          user_name:
+            user?.user_metadata?.full_name || user?.email?.split("@")[0],
         });
       }
     },
-    [user]
+    [user],
   );
 
   return {

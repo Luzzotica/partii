@@ -13,9 +13,19 @@ import {
 export default __t.object("Projectile", {
   rigidBodyId: __t.u64(),
   ownerId: __t.identity(),
+  worldId: __t.u64(),
   damage: __t.f32(),
   radius: __t.f32(),
   canDetonate: __t.bool(),
+  expiresAtMicros: __t.u64(),
+  positionX: __t.f32(),
+  positionY: __t.f32(),
+  positionZ: __t.f32(),
+  velocityX: __t.f32(),
+  velocityY: __t.f32(),
+  velocityZ: __t.f32(),
+  projectileType: __t.u8(),
+  gravityScale: __t.f32(),
 });
 
 

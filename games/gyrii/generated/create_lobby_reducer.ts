@@ -24,4 +24,5 @@ export default {
   maxPlayers: __t.u8(),
   scoreLimit: __t.i32(),
   password: __t.string(),
+  customMapJson: __t.string(),
 };

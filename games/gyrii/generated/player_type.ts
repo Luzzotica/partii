@@ -21,6 +21,9 @@ export default __t.object("Player", {
   positionX: __t.f32(),
   positionY: __t.f32(),
   positionZ: __t.f32(),
+  spawnX: __t.f32(),
+  spawnY: __t.f32(),
+  spawnZ: __t.f32(),
   health: __t.i32(),
   maxHealth: __t.i32(),
   isAlive: __t.bool(),
@@ -33,8 +36,6 @@ export default __t.object("Player", {
   get secondary() {
     return SecondaryType;
   },
-  ammo: __t.i32(),
-  maxAmmo: __t.i32(),
   grenades: __t.i32(),
   molotovs: __t.i32(),
   colorR: __t.f32(),
@@ -45,6 +46,7 @@ export default __t.object("Player", {
   secondaryColorG: __t.f32(),
   secondaryColorB: __t.f32(),
   velocityX: __t.f32(),
+  velocityY: __t.f32(),
   velocityZ: __t.f32(),
   inputX: __t.f32(),
   inputZ: __t.f32(),
@@ -54,6 +56,10 @@ export default __t.object("Player", {
   respawnAt: __t.i64(),
   lastShotAt: __t.i64(),
   joinedAt: __t.timestamp(),
+  lastImpulseX: __t.f32(),
+  lastImpulseY: __t.f32(),
+  lastImpulseZ: __t.f32(),
+  lastImpulseTime: __t.i64(),
 });
 
 

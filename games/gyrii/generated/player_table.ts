@@ -21,6 +21,9 @@ export default __t.row({
   positionX: __t.f32().name("position_x"),
   positionY: __t.f32().name("position_y"),
   positionZ: __t.f32().name("position_z"),
+  spawnX: __t.f32().name("spawn_x"),
+  spawnY: __t.f32().name("spawn_y"),
+  spawnZ: __t.f32().name("spawn_z"),
   health: __t.i32(),
   maxHealth: __t.i32().name("max_health"),
   isAlive: __t.bool().name("is_alive"),
@@ -33,8 +36,6 @@ export default __t.row({
   get secondary() {
     return SecondaryType;
   },
-  ammo: __t.i32(),
-  maxAmmo: __t.i32().name("max_ammo"),
   grenades: __t.i32(),
   molotovs: __t.i32(),
   colorR: __t.f32().name("color_r"),
@@ -45,6 +46,7 @@ export default __t.row({
   secondaryColorG: __t.f32().name("secondary_color_g"),
   secondaryColorB: __t.f32().name("secondary_color_b"),
   velocityX: __t.f32().name("velocity_x"),
+  velocityY: __t.f32().name("velocity_y"),
   velocityZ: __t.f32().name("velocity_z"),
   inputX: __t.f32().name("input_x"),
   inputZ: __t.f32().name("input_z"),
@@ -54,4 +56,8 @@ export default __t.row({
   respawnAt: __t.i64().name("respawn_at"),
   lastShotAt: __t.i64().name("last_shot_at"),
   joinedAt: __t.timestamp().name("joined_at"),
+  lastImpulseX: __t.f32().name("last_impulse_x"),
+  lastImpulseY: __t.f32().name("last_impulse_y"),
+  lastImpulseZ: __t.f32().name("last_impulse_z"),
+  lastImpulseTime: __t.i64().name("last_impulse_time"),
 });

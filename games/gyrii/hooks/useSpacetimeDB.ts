@@ -1,6 +1,16 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { SecondaryType, useGyriiStore, WeaponType } from "../store/gameStore";
+import {
+  canonicalPlayerId,
+  identityToHex,
+  useGyriiStore,
+} from "../store/gameStore";
 import { DbConnection } from "../generated";
+import {
+  setConnectionGetters,
+  setupAllRowCallbacks,
+  syncLobbyEntitySubscriptions,
+  syncPlayers,
+} from "./lobbySubscriptions";
 
 // SpacetimeDB connection configuration
 const SPACETIMEDB_URL =
@@ -20,6 +30,27 @@ let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
 let isGyriiActive = false;
 
 const RECONNECT_DELAY_MS = 3000;
+
+function weaponToServerTag(weapon: string): string {
+  const map: Record<string, string> = {
+    smg: "Smg",
+    dualMachineGun: "DualMachineGun",
+    chainGun: "ChainGun",
+    photonRifle: "PhotonRifle",
+    bazooka: "Bazooka",
+    flamethrower: "Flamethrower",
+  };
+  return map[weapon] ?? "Smg";
+}
+
+function secondaryToServerTag(secondary: string): string {
+  const map: Record<string, string> = {
+    popupKnives: "PopupKnives",
+    bubbleShield: "BubbleShield",
+    selfDestructNuke: "SelfDestructNuke",
+  };
+  return map[secondary] ?? "PopupKnives";
+}
 
 /** Call when entering the Gyrii page to enable connection. */
 export function activateSpacetimeDB() {
@@ -92,7 +123,9 @@ function convertLobby(lobby: any, connection: DbConnection) {
     hostId: lobby.hostId.toString(),
     mapId: mapIdStr,
     physicsWorldId:
-      lobby.physicsWorldId != null ? Number(lobby.physicsWorldId) : undefined,
+      (lobby.physicsWorldId ?? lobby.physics_world_id) != null
+        ? Number(lobby.physicsWorldId ?? lobby.physics_world_id)
+        : undefined,
     maxPlayers: lobby.maxPlayers,
     playerCount,
     gameMode: gameModeStr as "freeForAll" | "teamDeathmatch" | "captureTheFlag",
@@ -114,136 +147,11 @@ function syncLobbies() {
   }
 }
 
-function identityToHex(identity: any): string {
-  if (!identity) return "";
-  if (typeof identity.toHexString === "function")
-    return identity.toHexString().replace(/^0x/i, "").toLowerCase();
-  const s = String(identity);
-  return s
-    .replace(/^0x/i, "")
-    .replace(/^Identity\(|\)$/g, "")
-    .toLowerCase();
-}
-
-// Convert server Player row to store Player format
-function convertServerPlayer(row: any): {
-  id: string;
-  player: import("../store/gameStore").Player;
-} {
-  const id =
-    identityToHex(row.identity) || row.identity?.toString?.() || "unknown";
-  const weaponTag =
-    typeof row.weapon === "object" ? row.weapon?.tag : row.weapon;
-  const weaponMap: Record<string, WeaponType> = {
-    Smg: "smg",
-    DualMachineGun: "dualMachineGun",
-    ChainGun: "chainGun",
-    PhotonRifle: "photonRifle",
-    Bazooka: "bazooka",
-    Flamethrower: "flamethrower",
-  };
-  const secondaryTag =
-    typeof row.secondary === "object" ? row.secondary?.tag : row.secondary;
-  const secondaryMap: Record<string, SecondaryType> = {
-    PopupKnives: "popupKnives",
-    BubbleShield: "bubbleShield",
-    SelfDestructNuke: "selfDestructNuke",
-  };
-  const mainColor = {
-    r: Math.round((row.colorR ?? 0) * 255),
-    g: Math.round((row.colorG ?? 0.5) * 255),
-    b: Math.round((row.colorB ?? 0.5) * 255),
-  };
-  const marbleConfig = {
-    designId: Math.min(
-      4,
-      row.designId ?? 0,
-    ) as import("../store/gameStore").MarbleDesignId,
-    mainColor,
-    secondaryColor: {
-      r: Math.round((row.secondaryColorR ?? 0.5) * 255),
-      g: Math.round((row.secondaryColorG ?? 0) * 255),
-      b: Math.round((row.secondaryColorB ?? 0.5) * 255),
-    },
-  };
-  return {
-    id,
-    player: {
-      id,
-      name: row.name ?? "Unknown",
-      position: {
-        x: row.positionX ?? 0,
-        y: row.positionY ?? 0.5,
-        z: row.positionZ ?? 0,
-      },
-      rotation: 0,
-      health: row.health ?? 100,
-      kills: row.kills ?? 0,
-      deaths: row.deaths ?? 0,
-      team: row.team ?? 0,
-      color: mainColor,
-      marbleConfig,
-      weapon: weaponMap[weaponTag] ?? "smg",
-      secondary: secondaryMap[secondaryTag] ?? "popupKnives",
-      ammo: row.ammo ?? 30,
-      grenadeCount: row.grenades ?? 2,
-      molotovCount: row.molotovs ?? 1,
-    },
-  };
-}
-
-function syncPlayers() {
-  if (!singletonConnection || !singletonIdentity) return;
-  const store = useGyriiStore.getState();
-  const lobby = store.currentLobby;
-  if (!lobby) return;
-
-  const lobbyId = BigInt(lobby.id);
-  const ourHex = singletonIdentity
-    .replace(/^0x/i, "")
-    .replace(/^Identity\(|\)$/g, "")
-    .toLowerCase();
-
-  try {
-    const conn = singletonConnection;
-    const serverPlayers = Array.from(conn.db.player.iter()).filter(
-      (p: any) => p.lobbyId === lobbyId,
-    );
-
-    const seenIds = new Set<string>();
-    for (const row of serverPlayers) {
-      const { id, player } = convertServerPlayer(row);
-      seenIds.add(id);
-      if (identityToHex(row.identity) === ourHex) {
-        store.setLocalPlayer(player);
-      } else {
-        store.updatePlayer(id, player);
-      }
-    }
-
-    // Remove players no longer in the lobby
-    const currentPlayers = store.players;
-    for (const id of currentPlayers.keys()) {
-      if (!seenIds.has(id)) {
-        store.removePlayer(id);
-      }
-    }
-    if (store.localPlayer && !seenIds.has(store.localPlayer.id)) {
-      store.setLocalPlayer(null);
-    }
-  } catch (e) {
-    console.warn("Error syncing players:", e);
-  }
-}
-
 function checkOurLobby() {
   if (!singletonConnection || !singletonIdentity) return;
   const conn = singletonConnection;
   const store = useGyriiStore.getState();
-  const ourHex = singletonIdentity
-    .replace(/^0x/i, "")
-    .replace(/^Identity\(|\)$/g, "")
-    .toLowerCase();
+  const ourHex = canonicalPlayerId(singletonIdentity);
 
   try {
     const ourLobbyPlayer = Array.from(conn.db.lobbyPlayer.iter()).find(
@@ -252,8 +160,8 @@ function checkOurLobby() {
 
     if (store.pendingLeaveLobby) {
       if (!ourLobbyPlayer) {
+        syncLobbyEntitySubscriptions(conn, null);
         store.setCurrentLobby(null);
-        store.clearPlayers();
         store.setPendingLeaveLobby(false);
       }
       return;
@@ -267,14 +175,21 @@ function checkOurLobby() {
           (l: any) => l.id === ourLobbyPlayer.lobbyId,
         );
         if (lobby) {
+          const lobbyId = lobby.id.toString();
+          const worldId = Number(
+            (lobby as any).physicsWorldId ??
+              (lobby as any).physics_world_id ??
+              0,
+          );
+          syncLobbyEntitySubscriptions(conn, { lobbyId, worldId });
           store.setCurrentLobby(convertLobby(lobby, conn));
           syncPlayers();
         }
       }
     } else {
       if (store.currentLobby !== null) {
+        syncLobbyEntitySubscriptions(conn, null);
         store.setCurrentLobby(null);
-        store.clearPlayers();
       }
     }
   } catch (e) {
@@ -317,15 +232,30 @@ function setupSubscriptions(connection: DbConnection) {
       checkOurLobby();
     });
 
-    // Subscribe to player table for multiplayer sync
+    setConnectionGetters(
+      () => singletonConnection,
+      () => singletonIdentity,
+    );
+    setupAllRowCallbacks(connection);
+
+    // Debug: sync players inside photon beam triggers for highlight
     connection
       .subscriptionBuilder()
-      .onApplied(() => syncPlayers())
-      .subscribe("SELECT * FROM player");
-
-    connection.db.player.onInsert(() => syncPlayers());
-    connection.db.player.onDelete(() => syncPlayers());
-    connection.db.player.onUpdate?.(() => syncPlayers());
+      .subscribe("SELECT * FROM debug_photon_beam_target");
+    const syncBeamHighlight = () => {
+      const rows = Array.from(connection.db.debugPhotonBeamTarget.iter());
+      const ids = new Set(
+        rows.map((r: any) =>
+          canonicalPlayerId(
+            identityToHex(r.identity) ?? r.identity?.toString?.() ?? "",
+          ),
+        ),
+      );
+      useGyriiStore.getState().setPlayersInBeamHighlight(ids);
+    };
+    connection.db.debugPhotonBeamTarget.onInsert(() => syncBeamHighlight());
+    connection.db.debugPhotonBeamTarget.onDelete(() => syncBeamHighlight());
+    syncBeamHighlight(); // initial sync
   } catch (e) {
     console.warn("Error setting up subscriptions:", e);
     singletonSubscribed = false;
@@ -457,6 +387,7 @@ export function useSpacetimeDB() {
           maxPlayers,
           scoreLimit: 50,
           password,
+          customMapJson: "", // use built-in map for mapId; pass custom JSON for player-made maps
         });
         console.log("Create lobby:", { name, mapId, maxPlayers, gameMode });
       } catch (error) {
@@ -516,7 +447,6 @@ export function useSpacetimeDB() {
       directionZ: number,
       aimDirectionX: number,
       aimDirectionZ: number,
-      isShooting: boolean,
     ) => {
       if (!singletonConnection) return;
       try {
@@ -525,10 +455,25 @@ export function useSpacetimeDB() {
           inputZ: directionZ,
           aimX: aimDirectionX,
           aimZ: aimDirectionZ,
-          isShooting,
         });
       } catch (e) {
         // Silently ignore - player might not exist yet
+      }
+    },
+    [],
+  );
+
+  const setShooting = useCallback(
+    async (isShooting: boolean, aimX: number, aimZ: number) => {
+      if (!singletonConnection) return;
+      try {
+        await singletonConnection.reducers.setShooting({
+          isShooting,
+          aimX,
+          aimZ,
+        });
+      } catch {
+        // Swallow reducer errors (e.g. not in game)
       }
     },
     [],
@@ -558,6 +503,32 @@ export function useSpacetimeDB() {
     if (!singletonConnection) return;
     console.log("Set loadout:", { weapon, secondary });
   }, []);
+
+  const requestSpawn = useCallback(
+    async (weapon: string, secondary: string) => {
+      if (!singletonConnection) {
+        console.warn("Not connected to SpacetimeDB");
+        return;
+      }
+      try {
+        const weaponTag = weaponToServerTag(weapon);
+        const secondaryTag = secondaryToServerTag(secondary);
+        await singletonConnection.reducers.requestSpawn({
+          weapon: { tag: weaponTag } as any,
+          secondary: { tag: secondaryTag } as any,
+        });
+      } catch (error) {
+        console.error("Failed to request spawn:", error);
+        useGyriiStore
+          .getState()
+          .setConnectionError(
+            error instanceof Error ? error.message : "Failed to spawn",
+          );
+        throw error;
+      }
+    },
+    [],
+  );
 
   const refreshLobbies = useCallback(() => {
     syncLobbies();
@@ -603,10 +574,12 @@ export function useSpacetimeDB() {
     toggleReady,
     startGame,
     updateInput,
+    setShooting,
     shoot,
     throwGrenade,
     throwMolotov,
     useSecondary,
     setLoadout,
+    requestSpawn,
   };
 }

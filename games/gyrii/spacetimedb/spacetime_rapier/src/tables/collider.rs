@@ -27,6 +27,8 @@ pub enum ColliderType {
     Triangle,
     /// Heightfield - not yet implemented
     Heightfield,
+    /// Half-space (infinite plane): solid region in direction of normal. Uses normal_x, normal_y, normal_z.
+    HalfSpace,
 }
 
 /// A collider (collision shape) in the physics simulation
@@ -89,6 +91,24 @@ pub struct Collider {
     /// Whether this is a sensor (trigger) - no physical response
     #[builder(default = false)]
     pub is_sensor: bool,
+
+    /// Collision group membership (bits). Default 0xFFFF = all.
+    #[builder(default = 0xFFFFu32)]
+    pub collision_memberships: u32,
+
+    /// Collision group filter (bits). Default 0xFFFF = all.
+    #[builder(default = 0xFFFFu32)]
+    pub collision_filter: u32,
+
+    /// For HalfSpace: plane outward normal x (unit vector)
+    #[builder(default = 0.0)]
+    pub normal_x: f32,
+    /// For HalfSpace: plane outward normal y
+    #[builder(default = 1.0)]
+    pub normal_y: f32,
+    /// For HalfSpace: plane outward normal z
+    #[builder(default = 0.0)]
+    pub normal_z: f32,
 }
 
 impl Collider {
@@ -175,6 +195,20 @@ impl Collider {
             collider_type: ColliderType::Cone,
             half_height,
             radius,
+            ..Default::default()
+        }
+    }
+
+    /// Create a half-space collider (infinite plane). Normal points to the "solid" side.
+    /// E.g. floor at y=0 with normal (0, 1, 0) has solid below the plane.
+    pub fn halfspace(world_id: u64, normal_x: f32, normal_y: f32, normal_z: f32) -> Self {
+        Self {
+            id: 0,
+            world_id,
+            collider_type: ColliderType::HalfSpace,
+            normal_x,
+            normal_y,
+            normal_z,
             ..Default::default()
         }
     }

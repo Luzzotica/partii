@@ -14,6 +14,7 @@ export default __t.object("LobbyPlayer", {
   id: __t.u64(),
   lobbyId: __t.u64(),
   playerIdentity: __t.identity(),
+  name: __t.string(),
   team: __t.i32(),
   isReady: __t.bool(),
   joinedAt: __t.timestamp(),

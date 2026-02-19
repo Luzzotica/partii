@@ -17,6 +17,9 @@ pub struct Player {
     pub position_x: f32,
     pub position_y: f32,
     pub position_z: f32,
+    pub spawn_x: f32,
+    pub spawn_y: f32,
+    pub spawn_z: f32,
     pub health: i32,
     pub max_health: i32,
     pub is_alive: bool,
@@ -25,8 +28,6 @@ pub struct Player {
     pub deaths: i32,
     pub weapon: WeaponType,
     pub secondary: SecondaryType,
-    pub ammo: i32,
-    pub max_ammo: i32,
     pub grenades: i32,
     pub molotovs: i32,
     pub color_r: f32,
@@ -37,6 +38,7 @@ pub struct Player {
     pub secondary_color_g: f32,
     pub secondary_color_b: f32,
     pub velocity_x: f32,
+    pub velocity_y: f32,
     pub velocity_z: f32,
     pub input_x: f32,
     pub input_z: f32,
@@ -46,6 +48,10 @@ pub struct Player {
     pub respawn_at: i64,
     pub last_shot_at: i64,
     pub joined_at: __sdk::Timestamp,
+    pub last_impulse_x: f32,
+    pub last_impulse_y: f32,
+    pub last_impulse_z: f32,
+    pub last_impulse_time: i64,
 }
 
 impl __sdk::InModule for Player {

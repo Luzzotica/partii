@@ -54,6 +54,8 @@ import LeaveLobbyReducer from "./leave_lobby_reducer";
 export { LeaveLobbyReducer };
 import PhysicsTickReducer from "./physics_tick_reducer";
 export { PhysicsTickReducer };
+import RequestSpawnReducer from "./request_spawn_reducer";
+export { RequestSpawnReducer };
 import SetLoadoutReducer from "./set_loadout_reducer";
 export { SetLoadoutReducer };
 import SetMarbleConfigReducer from "./set_marble_config_reducer";
@@ -62,6 +64,8 @@ import SetPlayerColorReducer from "./set_player_color_reducer";
 export { SetPlayerColorReducer };
 import SetReadyReducer from "./set_ready_reducer";
 export { SetReadyReducer };
+import SetShootingReducer from "./set_shooting_reducer";
+export { SetShootingReducer };
 import ShootReducer from "./shoot_reducer";
 export { ShootReducer };
 import StartGameReducer from "./start_game_reducer";
@@ -80,6 +84,8 @@ export { UseSecondaryReducer };
 // Import and reexport all table handle types
 import DamageZoneRow from "./damage_zone_table";
 export { DamageZoneRow };
+import DebugPhotonBeamTargetRow from "./debug_photon_beam_target_table";
+export { DebugPhotonBeamTargetRow };
 import GameConfigRow from "./game_config_table";
 export { GameConfigRow };
 import GrenadeRow from "./grenade_table";
@@ -92,8 +98,18 @@ import LobbyPlayerRow from "./lobby_player_table";
 export { LobbyPlayerRow };
 import LobbySecretRow from "./lobby_secret_table";
 export { LobbySecretRow };
+import MapFlagLocationRow from "./map_flag_location_table";
+export { MapFlagLocationRow };
+import MapSpawnPointRow from "./map_spawn_point_table";
+export { MapSpawnPointRow };
 import MapWallRow from "./map_wall_table";
 export { MapWallRow };
+import PendingPhotonBeamRow from "./pending_photon_beam_table";
+export { PendingPhotonBeamRow };
+import PhotonBeamRow from "./photon_beam_table";
+export { PhotonBeamRow };
+import PhotonRifleChargeRow from "./photon_rifle_charge_table";
+export { PhotonRifleChargeRow };
 import PhysicsTickHeartbeatRow from "./physics_tick_heartbeat_table";
 export { PhysicsTickHeartbeatRow };
 import PhysicsTickTimerRow from "./physics_tick_timer_table";
@@ -112,6 +128,8 @@ import RapierRigidBodyRow from "./rapier_rigid_body_table";
 export { RapierRigidBodyRow };
 import RapierRigidBodyPropertiesRow from "./rapier_rigid_body_properties_table";
 export { RapierRigidBodyPropertiesRow };
+import RapierSensorCollisionRow from "./rapier_sensor_collision_table";
+export { RapierSensorCollisionRow };
 import RapierTriggerRow from "./rapier_trigger_table";
 export { RapierTriggerRow };
 
@@ -122,6 +140,10 @@ import ColliderType from "./collider_type_type";
 export { ColliderType };
 import DamageZone from "./damage_zone_type";
 export { DamageZone };
+import DebugPhotonBeamTarget from "./debug_photon_beam_target_type";
+export { DebugPhotonBeamTarget };
+import FriendlyFire from "./friendly_fire_type";
+export { FriendlyFire };
 import GameConfig from "./game_config_type";
 export { GameConfig };
 import GameMode from "./game_mode_type";
@@ -138,10 +160,20 @@ import LobbyPlayer from "./lobby_player_type";
 export { LobbyPlayer };
 import LobbySecret from "./lobby_secret_type";
 export { LobbySecret };
+import MapFlagLocation from "./map_flag_location_type";
+export { MapFlagLocation };
 import MapId from "./map_id_type";
 export { MapId };
+import MapSpawnPoint from "./map_spawn_point_type";
+export { MapSpawnPoint };
 import MapWall from "./map_wall_type";
 export { MapWall };
+import PendingPhotonBeam from "./pending_photon_beam_type";
+export { PendingPhotonBeam };
+import PhotonBeam from "./photon_beam_type";
+export { PhotonBeam };
+import PhotonRifleCharge from "./photon_rifle_charge_type";
+export { PhotonRifleCharge };
 import PhysicsTickHeartbeat from "./physics_tick_heartbeat_type";
 export { PhysicsTickHeartbeat };
 import PhysicsTickTimer from "./physics_tick_timer_type";
@@ -164,6 +196,8 @@ import RigidBodyType from "./rigid_body_type_type";
 export { RigidBodyType };
 import SecondaryType from "./secondary_type_type";
 export { SecondaryType };
+import SensorCollision from "./sensor_collision_type";
+export { SensorCollision };
 import Trigger from "./trigger_type";
 export { Trigger };
 import WeaponType from "./weapon_type_type";
@@ -182,6 +216,17 @@ const tablesSchema = __schema(
       { name: 'damage_zone_trigger_id_key', constraint: 'unique', columns: ['triggerId'] },
     ],
   }, DamageZoneRow),
+  __table({
+    name: 'debug_photon_beam_target',
+    indexes: [
+      { name: 'identity', algorithm: 'btree', columns: [
+        'identity',
+      ] },
+    ],
+    constraints: [
+      { name: 'debug_photon_beam_target_identity_key', constraint: 'unique', columns: ['identity'] },
+    ],
+  }, DebugPhotonBeamTargetRow),
   __table({
     name: 'game_config',
     indexes: [
@@ -249,6 +294,28 @@ const tablesSchema = __schema(
     ],
   }, LobbySecretRow),
   __table({
+    name: 'map_flag_location',
+    indexes: [
+      { name: 'id', algorithm: 'btree', columns: [
+        'id',
+      ] },
+    ],
+    constraints: [
+      { name: 'map_flag_location_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, MapFlagLocationRow),
+  __table({
+    name: 'map_spawn_point',
+    indexes: [
+      { name: 'id', algorithm: 'btree', columns: [
+        'id',
+      ] },
+    ],
+    constraints: [
+      { name: 'map_spawn_point_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, MapSpawnPointRow),
+  __table({
     name: 'map_wall',
     indexes: [
       { name: 'id', algorithm: 'btree', columns: [
@@ -259,6 +326,42 @@ const tablesSchema = __schema(
       { name: 'map_wall_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, MapWallRow),
+  __table({
+    name: 'pending_photon_beam',
+    indexes: [
+      { name: 'raycast_id', algorithm: 'btree', columns: [
+        'raycastId',
+      ] },
+    ],
+    constraints: [
+      { name: 'pending_photon_beam_raycast_id_key', constraint: 'unique', columns: ['raycastId'] },
+    ],
+  }, PendingPhotonBeamRow),
+  __table({
+    name: 'photon_beam',
+    indexes: [
+      { name: 'id', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { name: 'world_id', algorithm: 'btree', columns: [
+        'worldId',
+      ] },
+    ],
+    constraints: [
+      { name: 'photon_beam_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, PhotonBeamRow),
+  __table({
+    name: 'photon_rifle_charge',
+    indexes: [
+      { name: 'identity', algorithm: 'btree', columns: [
+        'identity',
+      ] },
+    ],
+    constraints: [
+      { name: 'photon_rifle_charge_identity_key', constraint: 'unique', columns: ['identity'] },
+    ],
+  }, PhotonRifleChargeRow),
   __table({
     name: 'physics_tick_heartbeat',
     indexes: [
@@ -287,6 +390,9 @@ const tablesSchema = __schema(
       { name: 'identity', algorithm: 'btree', columns: [
         'identity',
       ] },
+      { name: 'lobby_id', algorithm: 'btree', columns: [
+        'lobbyId',
+      ] },
     ],
     constraints: [
       { name: 'player_identity_key', constraint: 'unique', columns: ['identity'] },
@@ -297,6 +403,9 @@ const tablesSchema = __schema(
     indexes: [
       { name: 'rigid_body_id', algorithm: 'btree', columns: [
         'rigidBodyId',
+      ] },
+      { name: 'world_id', algorithm: 'btree', columns: [
+        'worldId',
       ] },
     ],
     constraints: [
@@ -371,6 +480,20 @@ const tablesSchema = __schema(
     ],
   }, RapierRigidBodyPropertiesRow),
   __table({
+    name: 'rapier_sensor_collision',
+    indexes: [
+      { name: 'id', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { name: 'world_id', algorithm: 'btree', columns: [
+        'worldId',
+      ] },
+    ],
+    constraints: [
+      { name: 'rapier_sensor_collision_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, RapierSensorCollisionRow),
+  __table({
     name: 'rapier_trigger',
     indexes: [
       { name: 'id', algorithm: 'btree', columns: [
@@ -397,10 +520,12 @@ const reducersSchema = __reducers(
   __reducerSchema("join_lobby", JoinLobbyReducer),
   __reducerSchema("leave_lobby", LeaveLobbyReducer),
   __reducerSchema("physics_tick", PhysicsTickReducer),
+  __reducerSchema("request_spawn", RequestSpawnReducer),
   __reducerSchema("set_loadout", SetLoadoutReducer),
   __reducerSchema("set_marble_config", SetMarbleConfigReducer),
   __reducerSchema("set_player_color", SetPlayerColorReducer),
   __reducerSchema("set_ready", SetReadyReducer),
+  __reducerSchema("set_shooting", SetShootingReducer),
   __reducerSchema("shoot", ShootReducer),
   __reducerSchema("start_game", StartGameReducer),
   __reducerSchema("throw_grenade", ThrowGrenadeReducer),

@@ -14,5 +14,4 @@ export default __t.row({
   id: __t.u64().primaryKey(),
   respawnTimeMs: __t.u64().name("respawn_time_ms"),
   defaultHealth: __t.i32().name("default_health"),
-  defaultMaxAmmo: __t.i32().name("default_max_ammo"),
 });

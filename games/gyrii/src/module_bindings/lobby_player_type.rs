@@ -10,6 +10,7 @@ pub struct LobbyPlayer {
     pub id: u64,
     pub lobby_id: u64,
     pub player_identity: __sdk::Identity,
+    pub name: String,
     pub team: i32,
     pub is_ready: bool,
     pub joined_at: __sdk::Timestamp,

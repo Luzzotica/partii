@@ -2,6 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
+use super::friendly_fire_type::FriendlyFire;
 use super::game_mode_type::GameMode;
 use super::game_state_type::GameState;
 use super::lobby_type::Lobby;

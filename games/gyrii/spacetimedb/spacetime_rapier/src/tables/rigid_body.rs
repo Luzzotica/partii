@@ -80,6 +80,10 @@ pub struct RigidBody {
     /// ID of the properties (mass, friction, restitution)
     pub properties_id: u64,
 
+    /// Scaling factor for gravity (0 = ignore gravity, 1 = full). Default 1.0.
+    #[builder(default = 1.0)]
+    pub gravity_scale: f32,
+
     /// Whether this body is currently enabled
     #[builder(default = true)]
     pub enabled: bool,

@@ -14,7 +14,6 @@ export default __t.object("GameConfig", {
   id: __t.u64(),
   respawnTimeMs: __t.u64(),
   defaultHealth: __t.i32(),
-  defaultMaxAmmo: __t.i32(),
 });
 
 

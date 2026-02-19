@@ -12,6 +12,7 @@ import {
 import MapId from "./map_id_type";
 import GameMode from "./game_mode_type";
 import GameState from "./game_state_type";
+import FriendlyFire from "./friendly_fire_type";
 
 
 export default __t.row({
@@ -21,6 +22,8 @@ export default __t.row({
   get mapId() {
     return MapId.name("map_id");
   },
+  mapWidth: __t.u32().name("map_width"),
+  mapHeight: __t.u32().name("map_height"),
   physicsWorldId: __t.u64().name("physics_world_id"),
   maxPlayers: __t.u8().name("max_players"),
   get gameState() {
@@ -33,4 +36,7 @@ export default __t.row({
   scoreLimit: __t.i32().name("score_limit"),
   timeLimitSeconds: __t.i32().name("time_limit_seconds"),
   hasPassword: __t.bool().name("has_password"),
+  get friendlyFire() {
+    return FriendlyFire.name("friendly_fire");
+  },
 });

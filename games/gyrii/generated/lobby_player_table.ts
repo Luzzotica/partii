@@ -14,6 +14,7 @@ export default __t.row({
   id: __t.u64().primaryKey(),
   lobbyId: __t.u64().name("lobby_id"),
   playerIdentity: __t.identity().name("player_identity"),
+  name: __t.string(),
   team: __t.i32(),
   isReady: __t.bool().name("is_ready"),
   joinedAt: __t.timestamp().name("joined_at"),

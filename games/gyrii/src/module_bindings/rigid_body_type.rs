@@ -27,6 +27,7 @@ pub struct RigidBody {
     pub body_type: RigidBodyType,
     pub collider_id: u64,
     pub properties_id: u64,
+    pub gravity_scale: f32,
     pub enabled: bool,
 }
 

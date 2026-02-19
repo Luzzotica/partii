@@ -1,5 +1,11 @@
 import * as BABYLON from "@babylonjs/core";
 import { createExplosion, createFireEffect } from "../effects/ParticleEffects";
+import {
+  createThrowableBody,
+  getThrowablePosition,
+  removeThrowableBody,
+  type WorldHandle,
+} from "../physics";
 
 export type ThrowableType = "grenade" | "molotov";
 
@@ -30,10 +36,11 @@ export const THROWABLE_CONFIGS: Record<ThrowableType, ThrowableConfig> = {
 
 interface ActiveThrowable {
   mesh: BABYLON.Mesh;
-  velocity: BABYLON.Vector3;
   config: ThrowableConfig;
   spawnTime: number;
   ownerId: string;
+  /** Molotov: true once we've triggered fire on impact. */
+  impactTriggered?: boolean;
 }
 
 interface ActiveFireZone {
@@ -45,20 +52,21 @@ interface ActiveFireZone {
 }
 
 /**
- * Renders grenades and molotovs in the scene
+ * Renders grenades and molotovs. Physics (gravity, walls, floor) is handled by the client Rapier world.
  */
 export class ThrowableRenderer {
   private scene: BABYLON.Scene;
+  private physicsHandle: WorldHandle;
   private throwables: Map<string, ActiveThrowable> = new Map();
   private fireZones: Map<string, ActiveFireZone> = new Map();
-  private gravity = new BABYLON.Vector3(0, -15, 0);
 
-  constructor(scene: BABYLON.Scene) {
+  constructor(scene: BABYLON.Scene, physicsHandle: WorldHandle) {
     this.scene = scene;
+    this.physicsHandle = physicsHandle;
   }
 
   /**
-   * Throw a grenade or molotov
+   * Throw a grenade or molotov. Creates a Rapier dynamic body and a mesh; position is driven by physics each frame.
    */
   throw(
     origin: BABYLON.Vector3,
@@ -70,16 +78,24 @@ export class ThrowableRenderer {
     const id = `throwable_${Date.now()}_${Math.random()}`;
     const config = THROWABLE_CONFIGS[type];
 
-    // Create mesh
+    const radius = type === "grenade" ? 0.15 : 0.125;
+    const x = origin.x;
+    const y = origin.y + 0.5;
+    const z = origin.z;
+    const arcHeight = 5 * (throwStrength / 20);
+    const vx = direction.x * throwStrength;
+    const vy = arcHeight;
+    const vz = direction.z * throwStrength;
+
+    createThrowableBody(this.physicsHandle, id, x, y, z, vx, vy, vz, radius, 1);
+
     const mesh = BABYLON.MeshBuilder.CreateSphere(
       id,
-      { diameter: type === "grenade" ? 0.3 : 0.25 },
+      { diameter: radius * 2 },
       this.scene,
     );
-    mesh.position = origin.clone();
-    mesh.position.y += 0.5; // Start from slightly above player
+    mesh.position.set(x, y, z);
 
-    // Material
     const material = new BABYLON.StandardMaterial(`${id}_mat`, this.scene);
     if (type === "grenade") {
       material.diffuseColor = new BABYLON.Color3(0.2, 0.4, 0.2);
@@ -90,17 +106,8 @@ export class ThrowableRenderer {
     }
     mesh.material = material;
 
-    // Calculate arc velocity - up and forward
-    const arcHeight = 5 * (throwStrength / 20);
-    const velocity = new BABYLON.Vector3(
-      direction.x * throwStrength,
-      arcHeight,
-      direction.z * throwStrength,
-    );
-
     this.throwables.set(id, {
       mesh,
-      velocity,
       config,
       spawnTime: Date.now(),
       ownerId,
@@ -110,60 +117,40 @@ export class ThrowableRenderer {
   }
 
   /**
-   * Update all throwables (call in render loop)
+   * Update all throwables: read position from Rapier, set mesh; handle fuse/impact removal.
    */
-  update(deltaTime: number) {
+  update(_deltaTime: number) {
     const currentTime = Date.now();
     const toRemove: string[] = [];
 
-    // Update throwables
     this.throwables.forEach((throwable, id) => {
-      // Apply gravity
-      throwable.velocity.addInPlace(this.gravity.scale(deltaTime));
+      const pos = getThrowablePosition(this.physicsHandle, id);
+      if (!pos) {
+        toRemove.push(id);
+        return;
+      }
+      throwable.mesh.position.set(pos.x, pos.y, pos.z);
 
-      // Move
-      throwable.mesh.position.addInPlace(throwable.velocity.scale(deltaTime));
-
-      // Ground collision/bounce
-      if (throwable.mesh.position.y <= 0.15) {
-        throwable.mesh.position.y = 0.15;
-
-        if (throwable.config.type === "molotov") {
-          // Molotov breaks on impact
+      // Molotov: trigger fire on first impact (near floor)
+      if (throwable.config.type === "molotov") {
+        if (!throwable.impactTriggered && pos.y <= 0.2) {
+          throwable.impactTriggered = true;
           this.createFireZone(
-            throwable.mesh.position.clone(),
+            new BABYLON.Vector3(pos.x, pos.y, pos.z),
             throwable.config.radius,
             5000,
           );
           toRemove.push(id);
-        } else {
-          // Grenade bounces
-          if (Math.abs(throwable.velocity.y) > 0.5) {
-            throwable.velocity.y =
-              -throwable.velocity.y * throwable.config.bounceRestitution;
-            // Reduce horizontal velocity on bounce
-            throwable.velocity.x *= 0.7;
-            throwable.velocity.z *= 0.7;
-          } else {
-            // Come to rest
-            throwable.velocity.y = 0;
-            throwable.velocity.x *= 0.9;
-            throwable.velocity.z *= 0.9;
-          }
         }
       }
 
-      // Wall collision (simple box check)
-      this.checkWallCollision(throwable);
-
-      // Check fuse time for grenades
+      // Grenade: fuse timer
       if (throwable.config.type === "grenade") {
         const elapsed = (currentTime - throwable.spawnTime) / 1000;
         if (elapsed >= throwable.config.fuseTime) {
-          // Explode
           createExplosion(
             this.scene,
-            throwable.mesh.position,
+            throwable.mesh.position.clone(),
             throwable.config.radius,
           );
           toRemove.push(id);
@@ -171,8 +158,8 @@ export class ThrowableRenderer {
       }
     });
 
-    // Clean up exploded throwables
     toRemove.forEach((id) => {
+      removeThrowableBody(this.physicsHandle, id);
       const throwable = this.throwables.get(id);
       if (throwable) {
         throwable.mesh.dispose();
@@ -193,36 +180,6 @@ export class ThrowableRenderer {
       }
     });
     zonesToRemove.forEach((id) => this.fireZones.delete(id));
-  }
-
-  private checkWallCollision(throwable: ActiveThrowable) {
-    // Cast rays in movement direction to detect walls
-    const ray = new BABYLON.Ray(
-      throwable.mesh.position,
-      throwable.velocity.normalize(),
-      0.3,
-    );
-
-    const hit = this.scene.pickWithRay(
-      ray,
-      (mesh) => mesh.name.startsWith("wall") || mesh.name === "obstacle",
-    );
-
-    if (hit?.pickedMesh && hit.pickedPoint) {
-      // Calculate reflection
-      const normal = hit.getNormal(true);
-      if (normal) {
-        const reflection = throwable.velocity.subtract(
-          normal.scale(2 * BABYLON.Vector3.Dot(throwable.velocity, normal)),
-        );
-        throwable.velocity = reflection.scale(
-          throwable.config.bounceRestitution,
-        );
-
-        // Push back from wall
-        throwable.mesh.position.addInPlace(normal.scale(0.1));
-      }
-    }
   }
 
   private createFireZone(

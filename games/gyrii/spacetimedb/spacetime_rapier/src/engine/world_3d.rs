@@ -4,17 +4,67 @@
 
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
+use std::sync::Mutex;
 
 use spacetimedb::ReducerContext;
 use rapier3d::prelude::*;
+use rapier3d::pipeline::EventHandler;
+use rapier3d::prelude::{CollisionEvent, CollisionEventFlags};
 use nalgebra::{Vector3, Point3, UnitQuaternion, Quaternion};
 
 use crate::tables::{
     PhysicsWorld, RigidBody, RigidBodyType, Collider, ColliderType,
-    RigidBodyProperties, Trigger, RayCast, RayCastHit,
+    RigidBodyProperties, Trigger, RayCast, RayCastHit, SensorCollision,
 };
 use crate::math::{Vec3, Quat};
 use super::KinematicBody;
+
+/// Collects sensor collision events during PhysicsPipeline::step (Rapier best practice).
+/// Only CollisionEvent::Started with SENSOR flag are recorded; we then insert them into DB after the step.
+struct SensorCollisionEventCollector {
+    collider_to_body: HashMap<ColliderHandle, u64>,
+    body_is_sensor: HashMap<u64, bool>,
+    sensor_collisions: Mutex<Vec<(u64, u64)>>,
+}
+
+impl EventHandler for SensorCollisionEventCollector {
+    fn handle_collision_event(
+        &self,
+        _bodies: &RigidBodySet,
+        _colliders: &ColliderSet,
+        event: CollisionEvent,
+        _contact_pair: Option<&ContactPair>,
+    ) {
+        if let CollisionEvent::Started(h1, h2, flags) = event {
+            if !flags.contains(CollisionEventFlags::SENSOR) {
+                return;
+            }
+            let (id1, id2) = match (self.collider_to_body.get(&h1).copied(), self.collider_to_body.get(&h2).copied()) {
+                (Some(a), Some(b)) => (a, b),
+                _ => return,
+            };
+            let (sensor, other) = if self.body_is_sensor.get(&id1).copied().unwrap_or(false) {
+                (id1, id2)
+            } else {
+                (id2, id1)
+            };
+            if let Ok(mut v) = self.sensor_collisions.lock() {
+                v.push((sensor, other));
+            }
+        }
+    }
+
+    fn handle_contact_force_event(
+        &self,
+        _dt: f32,
+        _bodies: &RigidBodySet,
+        _colliders: &ColliderSet,
+        _contact_pair: &ContactPair,
+        _total_force_magnitude: f32,
+    ) {
+        // We only care about sensor collision events.
+    }
+}
 
 /// Step the 3D physics world
 ///
@@ -58,13 +108,25 @@ pub fn step_world_3d(
     let mut rigid_body_set = RigidBodySet::new();
     let mut collider_set = ColliderSet::new();
 
-    // Maps from our IDs to Rapier handles
+    // Maps from our IDs to Rapier handles (and reverse for event handler)
     let mut id_to_rb_handle: HashMap<u64, RigidBodyHandle> = HashMap::new();
     let mut rb_handle_to_id: HashMap<RigidBodyHandle, u64> = HashMap::new();
     let mut id_to_collider: HashMap<u64, ColliderHandle> = HashMap::new();
+    let mut collider_handle_to_body_id: HashMap<ColliderHandle, u64> = HashMap::new();
+
+    // Clear sensor collisions from previous tick
+    SensorCollision::clear_for_world(ctx, world.id);
 
     // Load colliders first (we need them to create rigid bodies)
     let colliders: Vec<_> = Collider::all_in_world(ctx, world.id).collect();
+    let collider_is_sensor: HashMap<u64, bool> = colliders
+        .iter()
+        .map(|c| (c.id, c.is_sensor))
+        .collect();
+    let collider_groups: HashMap<u64, (u32, u32)> = colliders
+        .iter()
+        .map(|c| (c.id, (c.collision_memberships, c.collision_filter)))
+        .collect();
     let properties: HashMap<u64, RigidBodyProperties> = RigidBodyProperties::all_in_world(ctx, world.id)
         .map(|p| (p.id, p))
         .collect();
@@ -89,6 +151,16 @@ pub fn step_world_3d(
                     Point3::new(c.vertex_c_x, c.vertex_c_y, c.vertex_c_z),
                 ),
                 ColliderType::Heightfield => SharedShape::ball(1.0), // Placeholder
+                ColliderType::HalfSpace => {
+                    let n = Vector3::new(c.normal_x, c.normal_y, c.normal_z);
+                    let len_sq = n.norm_squared();
+                    let unit = if len_sq > 1e-10f32 {
+                        nalgebra::Unit::new_normalize(n)
+                    } else {
+                        nalgebra::Unit::new_unchecked(Vector3::new(0.0, 1.0, 0.0))
+                    };
+                    SharedShape::halfspace(unit)
+                }
             };
             (c.id, shape)
         })
@@ -129,7 +201,8 @@ pub fn step_world_3d(
                 body.angular_velocity_x,
                 body.angular_velocity_y,
                 body.angular_velocity_z,
-            ));
+            ))
+            .gravity_scale(body.gravity_scale);
 
         // Apply properties if available
         if let Some(props) = properties.get(&body.properties_id) {
@@ -146,11 +219,22 @@ pub fn step_world_3d(
         // Attach collider to rigid body
         if let Some(shape) = collider_shapes.get(&body.collider_id) {
             let props = properties.get(&body.properties_id);
-            
+            let is_sensor = *collider_is_sensor.get(&body.collider_id).unwrap_or(&false);
+            let (mem, filt) = *collider_groups.get(&body.collider_id).unwrap_or(&(0xFFFF, 0xFFFF));
+
+            let groups = if mem == 0xFFFF && filt == 0xFFFF {
+                InteractionGroups::all()
+            } else {
+                // log::info!("[COLLISION_GROUPS] rb={} collider={} memberships={} filter={}", body.id, body.collider_id, mem, filt);
+                InteractionGroups::new(
+                    Group::from_bits_truncate(mem),
+                    Group::from_bits_truncate(filt),
+                )
+            };
             let mut collider_builder = ColliderBuilder::new(shape.clone())
-                .sensor(false) // solid collision (triggers use sensor=true separately)
-                .collision_groups(InteractionGroups::all())
-                .solver_groups(InteractionGroups::all())
+                .sensor(is_sensor)
+                .collision_groups(groups)
+                .solver_groups(groups)
                 .active_collision_types(ActiveCollisionTypes::default())
                 .active_events(ActiveEvents::COLLISION_EVENTS)
                 .contact_skin(0.005);
@@ -168,8 +252,21 @@ pub fn step_world_3d(
                 &mut rigid_body_set,
             );
             id_to_collider.insert(body.id, collider_handle);
+            collider_handle_to_body_id.insert(collider_handle, body.id);
         }
     }
+
+    // Event collector for sensor collisions (Rapier emits these during step; we process after)
+    let body_is_sensor_map: HashMap<u64, bool> = bodies
+        .iter()
+        .filter(|b| b.enabled)
+        .map(|b| (b.id, collider_is_sensor.get(&b.collider_id).copied().unwrap_or(false)))
+        .collect();
+    let sensor_collision_collector = SensorCollisionEventCollector {
+        collider_to_body: collider_handle_to_body_id,
+        body_is_sensor: body_is_sensor_map,
+        sensor_collisions: Mutex::new(Vec::new()),
+    };
 
     // Load and create triggers (sensors)
     let triggers: Vec<_> = Trigger::all_in_world(ctx, world.id).collect();
@@ -214,11 +311,18 @@ pub fn step_world_3d(
         &mut ccd_solver,
         Some(&mut query_pipeline),
         &physics_hooks,
-        &(),
+        &sensor_collision_collector,
     );
 
+    // Process sensor collision events collected during the step (Rapier best practice)
+    if let Ok(mut events) = sensor_collision_collector.sensor_collisions.lock() {
+        for (sensor_body_id, other_body_id) in events.drain(..) {
+            SensorCollision::insert_event(ctx, sensor_body_id, other_body_id, world.id);
+        }
+    }
+
     // Write results back to SpacetimeDB
-    for body in bodies {
+    for body in &bodies {
         if !body.enabled {
             continue;
         }
@@ -254,6 +358,8 @@ pub fn step_world_3d(
         }
     }
 
+    // Sensor collisions are now handled by SensorCollisionEventCollector during the step (see above).
+
     // Update trigger events
     for trigger in triggers {
         if !trigger.enabled {
@@ -270,7 +376,7 @@ pub fn step_world_3d(
         if let Some(trigger_handle) = trigger_collider {
             // Check for intersections with all rigid body colliders
             for (&body_id, &collider_handle) in &id_to_collider {
-                if narrow_phase.intersection_pair(trigger_handle, collider_handle).is_some() {
+                if narrow_phase.intersection_pair(trigger_handle, collider_handle) == Some(true) {
                     current_inside.push(body_id);
                 }
             }

@@ -91,32 +91,7 @@ export function createMarbleMaterial(
   return mat;
 }
 
-/** Fallback: solid PBR material when shader fails */
-export function createSolidMarbleMaterial(
-  BABYLON: typeof import("@babylonjs/core"),
-  scene: any,
-  config: MarbleConfig,
-  name: string,
-): any {
-  const main = config.mainColor;
-  const mat = new BABYLON.PBRMaterial(name, scene);
-  mat.albedoColor = new BABYLON.Color3(
-    main.r / 255,
-    main.g / 255,
-    main.b / 255,
-  );
-  mat.emissiveColor = new BABYLON.Color3(
-    (main.r / 255) * 0.5,
-    (main.g / 255) * 0.5,
-    (main.b / 255) * 0.5,
-  );
-  mat.metallic = 0.3;
-  mat.roughness = 0.4;
-  return mat;
-}
-
 export const MARBLE_DESIGNS: { id: MarbleDesignId; name: string }[] = [
-  { id: 0, name: "Solid" },
   { id: 1, name: "Stripes" },
   { id: 2, name: "Spots" },
   { id: 3, name: "Gradient" },

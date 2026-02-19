@@ -9,9 +9,19 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub struct Projectile {
     pub rigid_body_id: u64,
     pub owner_id: __sdk::Identity,
+    pub world_id: u64,
     pub damage: f32,
     pub radius: f32,
     pub can_detonate: bool,
+    pub expires_at_micros: u64,
+    pub position_x: f32,
+    pub position_y: f32,
+    pub position_z: f32,
+    pub velocity_x: f32,
+    pub velocity_y: f32,
+    pub velocity_z: f32,
+    pub projectile_type: u8,
+    pub gravity_scale: f32,
 }
 
 impl __sdk::InModule for Projectile {

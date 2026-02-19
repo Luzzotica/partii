@@ -10,7 +10,6 @@ pub struct GameConfig {
     pub id: u64,
     pub respawn_time_ms: u64,
     pub default_health: i32,
-    pub default_max_ammo: i32,
 }
 
 impl __sdk::InModule for GameConfig {

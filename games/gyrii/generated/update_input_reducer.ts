@@ -15,5 +15,4 @@ export default {
   inputZ: __t.f32(),
   aimX: __t.f32(),
   aimZ: __t.f32(),
-  isShooting: __t.bool(),
 };

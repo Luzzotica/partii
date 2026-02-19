@@ -27,7 +27,7 @@ function randomColor() {
 
 export function randomMarbleConfig(): MarbleConfig {
   return {
-    designId: Math.floor(Math.random() * 5) as MarbleDesignId,
+    designId: (Math.floor(Math.random() * 4) + 1) as MarbleDesignId,
     mainColor: randomColor(),
     secondaryColor: randomColor(),
   };
@@ -147,36 +147,34 @@ export default function MarbleDesigner() {
         </div>
       </div>
 
-      {/* Secondary color (for non-solid designs) */}
-      {marbleConfig.designId !== 0 && (
-        <div>
-          <p className="text-xs text-gray-500 mb-2">Secondary Color</p>
-          <div className="flex flex-wrap gap-2">
-            {NEON_COLORS.map((color) => {
-              const isSelected =
-                marbleConfig.secondaryColor.r === color.r &&
-                marbleConfig.secondaryColor.g === color.g &&
-                marbleConfig.secondaryColor.b === color.b;
-              return (
-                <button
-                  key={color.name}
-                  onClick={() => handleSecondaryColorChange(color)}
-                  className={`w-9 h-9 rounded-full transition-transform hover:scale-110 ${
-                    isSelected
-                      ? "ring-2 ring-cyan-400 ring-offset-2 ring-offset-gray-900"
-                      : ""
-                  }`}
-                  style={{
-                    backgroundColor: `rgb(${color.r}, ${color.g}, ${color.b})`,
-                    boxShadow: `0 0 10px rgb(${color.r}, ${color.g}, ${color.b})`,
-                  }}
-                  title={color.name}
-                />
-              );
-            })}
-          </div>
+      {/* Secondary color */}
+      <div>
+        <p className="text-xs text-gray-500 mb-2">Secondary Color</p>
+        <div className="flex flex-wrap gap-2">
+          {NEON_COLORS.map((color) => {
+            const isSelected =
+              marbleConfig.secondaryColor.r === color.r &&
+              marbleConfig.secondaryColor.g === color.g &&
+              marbleConfig.secondaryColor.b === color.b;
+            return (
+              <button
+                key={color.name}
+                onClick={() => handleSecondaryColorChange(color)}
+                className={`w-9 h-9 rounded-full transition-transform hover:scale-110 ${
+                  isSelected
+                    ? "ring-2 ring-cyan-400 ring-offset-2 ring-offset-gray-900"
+                    : ""
+                }`}
+                style={{
+                  backgroundColor: `rgb(${color.r}, ${color.g}, ${color.b})`,
+                  boxShadow: `0 0 10px rgb(${color.r}, ${color.g}, ${color.b})`,
+                }}
+                title={color.name}
+              />
+            );
+          })}
         </div>
-      )}
+      </div>
 
       {/* Randomize button */}
       <button

@@ -10,6 +10,7 @@ mod collider;
 mod properties;
 mod trigger;
 mod raycast;
+mod sensor_collision;
 
 pub use physics_world::*;
 pub use rigid_body::*;
@@ -17,3 +18,4 @@ pub use collider::*;
 pub use properties::*;
 pub use trigger::*;
 pub use raycast::*;
+pub use sensor_collision::*;

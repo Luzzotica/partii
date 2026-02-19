@@ -122,7 +122,8 @@ pub fn step_world_2d(
                 body.linear_velocity_x,
                 body.linear_velocity_y,
             ))
-            .angvel(body.angular_velocity_z); // 2D uses only Z angular velocity
+            .angvel(body.angular_velocity_z) // 2D uses only Z angular velocity
+            .gravity_scale(body.gravity_scale);
 
         // Apply properties if available
         if let Some(props) = properties.get(&body.properties_id) {
@@ -265,7 +266,7 @@ pub fn step_world_2d(
         if let Some(trigger_handle) = trigger_collider {
             // Check for intersections with all rigid body colliders
             for (&body_id, &collider_handle) in &id_to_collider {
-                if narrow_phase.intersection_pair(trigger_handle, collider_handle).is_some() {
+                if narrow_phase.intersection_pair(trigger_handle, collider_handle) == Some(true) {
                     current_inside.push(body_id);
                 }
             }

@@ -1,0 +1,1 @@
+impl Iterator<Item = <sensor_collision::rapier_sensor_collision__TableHandle as Table>::Row>

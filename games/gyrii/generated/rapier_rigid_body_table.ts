@@ -33,5 +33,6 @@ export default __t.row({
   },
   colliderId: __t.u64().name("collider_id"),
   propertiesId: __t.u64().name("properties_id"),
+  gravityScale: __t.f32().name("gravity_scale"),
   enabled: __t.bool(),
 });

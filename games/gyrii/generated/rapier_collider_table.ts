@@ -33,4 +33,9 @@ export default __t.row({
   vertexCY: __t.f32().name("vertex_c_y"),
   vertexCZ: __t.f32().name("vertex_c_z"),
   isSensor: __t.bool().name("is_sensor"),
+  collisionMemberships: __t.u32().name("collision_memberships"),
+  collisionFilter: __t.u32().name("collision_filter"),
+  normalX: __t.f32().name("normal_x"),
+  normalY: __t.f32().name("normal_y"),
+  normalZ: __t.f32().name("normal_z"),
 });

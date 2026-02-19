@@ -1,5 +1,33 @@
 import * as BABYLON from "@babylonjs/core";
 
+/** Create a particle-friendly texture from canvas (avoids WebGL base64/texImage2D issues) */
+function createParticleTexture(
+  scene: BABYLON.Scene,
+  name: string,
+): BABYLON.Texture {
+  const size = 16;
+  const tex = new BABYLON.DynamicTexture(
+    name,
+    { width: size, height: size },
+    scene,
+    false,
+    BABYLON.Texture.NEAREST_SAMPLINGMODE,
+  );
+  tex.hasAlpha = true;
+  tex.getContext().clearRect(0, 0, size, size);
+  const ctx = tex.getContext();
+  const cx = size / 2;
+  const gradient = ctx.createRadialGradient(cx, cx, 0, cx, cx, cx);
+  gradient.addColorStop(0, "rgba(255,255,255,1)");
+  gradient.addColorStop(0.3, "rgba(255,255,255,0.8)");
+  gradient.addColorStop(0.6, "rgba(255,255,255,0.3)");
+  gradient.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, size, size);
+  tex.update();
+  return tex;
+}
+
 // Neon colors for tie-dye effect
 const NEON_COLORS = [
   new BABYLON.Color4(0, 1, 1, 1), // Cyan
@@ -23,10 +51,7 @@ export function createDeathExplosion(
 
   // Main explosion particles
   const mainSystem = new BABYLON.ParticleSystem("deathExplosion", 500, scene);
-  mainSystem.particleTexture = new BABYLON.Texture(
-    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAADRJREFUeNpi+P//PwMDAwMjiP0fCRhgbJBiJhgbxAYxYQLMEIqFgYGRAQNgDAYGAIMCAKNlB28AAAAASUVORK5CYII=",
-    scene,
-  );
+  mainSystem.particleTexture = createParticleTexture(scene, "deathExplosion");
 
   // Emitter
   mainSystem.emitter = position.clone();
@@ -184,10 +209,7 @@ export function createMuzzleFlash(
   direction: BABYLON.Vector3,
 ): BABYLON.ParticleSystem {
   const system = new BABYLON.ParticleSystem("muzzleFlash", 20, scene);
-  system.particleTexture = new BABYLON.Texture(
-    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAADRJREFUeNpi+P//PwMDAwMjiP0fCRhgbJBiJhgbxAYxYQLMEIqFgYGRAQNgDAYGAIMCAKNlB28AAAAASUVORK5CYII=",
-    scene,
-  );
+  system.particleTexture = createParticleTexture(scene, "muzzleFlash");
 
   system.emitter = position.clone();
   system.minEmitBox = new BABYLON.Vector3(-0.05, -0.05, -0.05);
@@ -236,10 +258,7 @@ export function createExplosion(
 
   // Fire/smoke
   const fireSystem = new BABYLON.ParticleSystem("explosion", 300, scene);
-  fireSystem.particleTexture = new BABYLON.Texture(
-    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAADRJREFUeNpi+P//PwMDAwMjiP0fCRhgbJBiJhgbxAYxYQLMEIqFgYGRAQNgDAYGAIMCAKNlB28AAAAASUVORK5CYII=",
-    scene,
-  );
+  fireSystem.particleTexture = createParticleTexture(scene, "explosion");
 
   fireSystem.emitter = position.clone();
   fireSystem.minEmitBox = new BABYLON.Vector3(
@@ -299,10 +318,7 @@ export function createFireEffect(
   radius: number = 2,
 ): BABYLON.ParticleSystem {
   const system = new BABYLON.ParticleSystem("fire", 100, scene);
-  system.particleTexture = new BABYLON.Texture(
-    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAADRJREFUeNpi+P//PwMDAwMjiP0fCRhgbJBiJhgbxAYxYQLMEIqFgYGRAQNgDAYGAIMCAKNlB28AAAAASUVORK5CYII=",
-    scene,
-  );
+  system.particleTexture = createParticleTexture(scene, "fire");
 
   system.emitter = position.clone();
   system.minEmitBox = new BABYLON.Vector3(-radius, 0, -radius);
@@ -331,4 +347,69 @@ export function createFireEffect(
   system.blendMode = BABYLON.ParticleSystem.BLENDMODE_ADD;
 
   return system;
+}
+
+/** Unique id for death decal names */
+let deathDecalCounter = 0;
+
+/**
+ * Creates a decal on the ground mesh at the given position in the player's main color.
+ * Uses Babylon's mesh decal projected onto the scene's "ground" mesh.
+ * Returns the decal mesh, or null if ground mesh is not found.
+ */
+export function createDeathDecal(
+  scene: BABYLON.Scene,
+  position: BABYLON.Vector3,
+  mainColor: BABYLON.Color3,
+): BABYLON.Mesh | null {
+  const ground = scene.getMeshByName("ground") as BABYLON.Mesh | undefined;
+  if (!ground) return null;
+
+  const name = `deathDecal-${deathDecalCounter++}`;
+  const decalPosition = new BABYLON.Vector3(position.x, 0, position.z);
+  const normal = new BABYLON.Vector3(0, -1, 0);
+  const size = new BABYLON.Vector3(1, 1, 1);
+  const angle = (Math.random() - 0.5) * Math.PI * 0.5;
+
+  const decal = BABYLON.MeshBuilder.CreateDecal(name, ground, {
+    position: decalPosition,
+    normal,
+    size,
+    angle,
+  });
+  if (!decal) return null;
+
+  const texSize = 64;
+  const texture = new BABYLON.DynamicTexture(
+    `${name}-tex`,
+    { width: texSize, height: texSize },
+    scene,
+    false,
+    BABYLON.Texture.BILINEAR_SAMPLINGMODE,
+  );
+  texture.hasAlpha = true;
+  const ctx = texture.getContext();
+  const cx = texSize / 2;
+  const gradient = ctx.createRadialGradient(cx, cx, 0, cx, cx, cx);
+  const r = Math.round(mainColor.r * 255);
+  const g = Math.round(mainColor.g * 255);
+  const b = Math.round(mainColor.b * 255);
+  gradient.addColorStop(0, `rgba(${r},${g},${b},0.95)`);
+  gradient.addColorStop(0.4, `rgba(${r},${g},${b},0.7)`);
+  gradient.addColorStop(0.7, `rgba(${r},${g},${b},0.3)`);
+  gradient.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, texSize, texSize);
+  texture.update();
+
+  const mat = new BABYLON.StandardMaterial(`${name}-mat`, scene);
+  mat.diffuseTexture = texture;
+  mat.emissiveTexture = texture;
+  mat.opacityTexture = texture;
+  mat.backFaceCulling = false;
+  mat.disableLighting = true;
+  mat.alpha = 0.98;
+  decal.material = mat;
+
+  return decal;
 }

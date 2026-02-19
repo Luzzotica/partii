@@ -21,6 +21,8 @@ pub enum ColliderType {
     Triangle,
 
     Heightfield,
+
+    HalfSpace,
 }
 
 impl __sdk::InModule for ColliderType {

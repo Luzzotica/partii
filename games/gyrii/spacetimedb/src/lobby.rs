@@ -4,8 +4,12 @@ use spacetimedb::{reducer, table, Identity, ReducerContext, SpacetimeType, Table
 use spacetime_rapier::PhysicsWorld;
 
 use crate::game::{schedule_physics_tick, GameState};
-use crate::maps::{create_map_geometry, MapId};
-use crate::player::{create_player_in_lobby, remove_player};
+use crate::map_parser::{get_builtin_map_json, parse_map_json};
+use crate::maps::{
+    create_map_geometry, map_flag_location, map_spawn_point, map_wall, MapFlagLocation, MapId,
+    MapSpawnPoint,
+};
+use crate::player::remove_player;
 
 // Re-export table traits for other modules
 pub use lobby::lobby;
@@ -25,6 +29,8 @@ pub struct Lobby {
     pub name: String,
     pub host_id: Identity,
     pub map_id: MapId,
+    pub map_width: u32,
+    pub map_height: u32,
     pub physics_world_id: u64,
     pub max_players: u8,
     pub game_state: GameState,
@@ -33,6 +39,7 @@ pub struct Lobby {
     pub score_limit: i32,
     pub time_limit_seconds: i32,
     pub has_password: bool,
+    pub friendly_fire: FriendlyFire,
 }
 
 // ============================================================================
@@ -59,6 +66,7 @@ pub struct LobbyPlayer {
     pub id: u64,
     pub lobby_id: u64,
     pub player_identity: Identity,
+    pub name: String,
     pub team: i32,
     pub is_ready: bool,
     pub joined_at: Timestamp,
@@ -75,6 +83,13 @@ pub enum GameMode {
     CaptureTheFlag,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug, SpacetimeType)]
+pub enum FriendlyFire {
+    Off,
+    Reduced,
+    Full,
+}
+
 // ============================================================================
 // LOBBY REDUCERS
 // ============================================================================
@@ -88,67 +103,90 @@ pub fn create_lobby(
     max_players: u8,
     score_limit: i32,
     password: String, // empty string = no password
+    custom_map_json: String, // non-empty = use this JSON instead of built-in for map_id
 ) -> Result<(), String> {
     let identity = ctx.sender;
-    
-    // Check if player already in a lobby
+
     if ctx.db.lobby_player().iter().any(|lp| lp.player_identity == identity) {
         return Err("Already in a lobby".to_string());
     }
-    
+
     let has_password = !password.is_empty();
-    
-    // Create physics world for this lobby
+
+    // Parse map JSON once: custom or built-in
+    let json = if custom_map_json.is_empty() {
+        get_builtin_map_json(map_id)
+    } else {
+        custom_map_json.as_str()
+    };
+    let parsed = parse_map_json(json)?;
+
     let world = PhysicsWorld::builder()
         .ticks_per_second(60.0)
         .gravity_y(-9.81)
         .build()
         .insert(ctx);
-    
-    // Create the lobby
+
     let lobby = Lobby {
-        id: 0, // auto_inc
+        id: 0,
         name: name.clone(),
         host_id: identity,
         map_id,
+        map_width: parsed.width,
+        map_height: parsed.height,
         physics_world_id: world.id,
         max_players: max_players.clamp(2, 16),
         game_state: GameState::Waiting,
         game_mode,
         created_at: ctx.timestamp,
         score_limit,
-        time_limit_seconds: 600, // 10 minutes default
+        time_limit_seconds: 600,
         has_password,
+        friendly_fire: FriendlyFire::Off,
     };
     let lobby = ctx.db.lobby().insert(lobby);
-    
-    // Store password in private table if set
+
     if has_password {
         ctx.db.lobby_secret().insert(LobbySecret {
             lobby_id: lobby.id,
             password,
         });
     }
-    
-    // Create map geometry
-    create_map_geometry(ctx, lobby.id, lobby.physics_world_id, map_id);
 
-    // Start physics tick so player positions sync from Rapier immediately (movement works in lobby)
+    // Store spawn points and flag locations (parsed once, used for spawn/CTF)
+    for (x, z, team) in &parsed.spawn_points {
+        ctx.db.map_spawn_point().insert(MapSpawnPoint {
+            id: 0,
+            lobby_id: lobby.id,
+            position_x: *x,
+            position_z: *z,
+            team: team.unwrap_or(-1),
+        });
+    }
+    for (x, z, team) in &parsed.flag_locations {
+        ctx.db.map_flag_location().insert(MapFlagLocation {
+            id: 0,
+            lobby_id: lobby.id,
+            position_x: *x,
+            position_z: *z,
+            team: *team,
+        });
+    }
+
+    create_map_geometry(ctx, lobby.id, lobby.physics_world_id, &parsed);
+
     schedule_physics_tick(ctx, lobby.physics_world_id);
 
-    // Add host as first player
     ctx.db.lobby_player().insert(LobbyPlayer {
         id: 0,
         lobby_id: lobby.id,
         player_identity: identity,
+        name: "Host".to_string(),
         team: 0,
         is_ready: false,
         joined_at: ctx.timestamp,
     });
-    
-    // Create player entity
-    create_player_in_lobby(ctx, identity, "Host".to_string(), &lobby, 0)?;
-    
+
     log::info!("Lobby '{}' created by {:?}", name, identity);
     Ok(())
 }
@@ -207,13 +245,11 @@ pub fn join_lobby(ctx: &ReducerContext, lobby_id: u64, player_name: String, pass
         id: 0,
         lobby_id,
         player_identity: identity,
+        name: player_name.clone(),
         team,
         is_ready: false,
         joined_at: ctx.timestamp,
     });
-    
-    // Create player entity
-    create_player_in_lobby(ctx, identity, player_name.clone(), &lobby, team)?;
     
     log::info!("{} joined lobby {}", player_name, lobby_id);
     Ok(())
@@ -241,12 +277,20 @@ pub fn leave_lobby(ctx: &ReducerContext) -> Result<(), String> {
         .collect();
     
     if remaining_players.is_empty() {
-        // Delete empty lobby and its secret
         if let Some(lobby) = ctx.db.lobby().id().find(lobby_id) {
-            if let Some(world) = PhysicsWorld::find(ctx, lobby.physics_world_id) {
+            let world_id = lobby.physics_world_id;
+            if let Some(world) = PhysicsWorld::find(ctx, world_id) {
                 world.delete(ctx);
             }
-            // Clean up password secret if it exists
+            for row in ctx.db.map_spawn_point().iter().filter(|s| s.lobby_id == lobby_id) {
+                ctx.db.map_spawn_point().id().delete(row.id);
+            }
+            for row in ctx.db.map_flag_location().iter().filter(|f| f.lobby_id == lobby_id) {
+                ctx.db.map_flag_location().id().delete(row.id);
+            }
+            for row in ctx.db.map_wall().iter().filter(|w| w.lobby_id == lobby_id) {
+                ctx.db.map_wall().id().delete(row.id);
+            }
             ctx.db.lobby_secret().lobby_id().delete(lobby_id);
             ctx.db.lobby().id().delete(lobby_id);
             log::info!("Deleted empty lobby {}", lobby_id);

@@ -12,6 +12,7 @@ import {
 import MapId from "./map_id_type";
 import GameMode from "./game_mode_type";
 import GameState from "./game_state_type";
+import FriendlyFire from "./friendly_fire_type";
 
 
 export default __t.object("Lobby", {
@@ -21,6 +22,8 @@ export default __t.object("Lobby", {
   get mapId() {
     return MapId;
   },
+  mapWidth: __t.u32(),
+  mapHeight: __t.u32(),
   physicsWorldId: __t.u64(),
   maxPlayers: __t.u8(),
   get gameState() {
@@ -33,6 +36,9 @@ export default __t.object("Lobby", {
   scoreLimit: __t.i32(),
   timeLimitSeconds: __t.i32(),
   hasPassword: __t.bool(),
+  get friendlyFire() {
+    return FriendlyFire;
+  },
 });
 
 

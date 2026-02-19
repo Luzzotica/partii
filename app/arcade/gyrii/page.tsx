@@ -11,6 +11,7 @@ import {
 import { UserMenu } from "@/components/auth/UserMenu";
 import { usePresence } from "@/lib/supabase/hooks";
 import LobbyUI from "@/games/gyrii/components/LobbyUI";
+import SpawnLoadoutScreen from "@/games/gyrii/components/SpawnLoadoutScreen";
 import ConnectionIndicator from "@/games/gyrii/components/ConnectionIndicator";
 
 // Dynamically import the game (Babylon) - only loads when user has joined a lobby
@@ -42,6 +43,7 @@ const LoadingSpinner = () => (
 export default function GyriiPage() {
   const [mounted, setMounted] = useState(false);
   const currentLobby = useGyriiStore((state) => state.currentLobby);
+  const localPlayer = useGyriiStore((state) => state.localPlayer);
   const { currentGamePlayers } = usePresence("gyrii");
 
   useEffect(() => {
@@ -90,12 +92,16 @@ export default function GyriiPage() {
     );
   }
 
-  // User has joined a lobby - load Babylon and the game (no TopNav or ConnectionIndicator in game)
+  // In lobby: load Babylon scene immediately, overlay spawn UI when waiting to spawn
+  // (same overlay appears after death - player sees fights/sounds while choosing loadout)
   return (
     <main className="relative w-full h-screen overflow-hidden bg-black">
       <Suspense fallback={<LoadingSpinner />}>
         <GyriiGame />
       </Suspense>
+      {(!localPlayer || localPlayer.isAlive === false) && (
+        <SpawnLoadoutScreen />
+      )}
     </main>
   );
 }

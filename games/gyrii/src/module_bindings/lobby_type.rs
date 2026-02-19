@@ -4,6 +4,7 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::friendly_fire_type::FriendlyFire;
 use super::game_mode_type::GameMode;
 use super::game_state_type::GameState;
 use super::map_id_type::MapId;
@@ -15,6 +16,8 @@ pub struct Lobby {
     pub name: String,
     pub host_id: __sdk::Identity,
     pub map_id: MapId,
+    pub map_width: u32,
+    pub map_height: u32,
     pub physics_world_id: u64,
     pub max_players: u8,
     pub game_state: GameState,
@@ -23,6 +26,7 @@ pub struct Lobby {
     pub score_limit: i32,
     pub time_limit_seconds: i32,
     pub has_password: bool,
+    pub friendly_fire: FriendlyFire,
 }
 
 impl __sdk::InModule for Lobby {

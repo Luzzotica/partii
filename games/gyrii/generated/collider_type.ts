@@ -33,6 +33,11 @@ export default __t.object("Collider", {
   vertexCY: __t.f32(),
   vertexCZ: __t.f32(),
   isSensor: __t.bool(),
+  collisionMemberships: __t.u32(),
+  collisionFilter: __t.u32(),
+  normalX: __t.f32(),
+  normalY: __t.f32(),
+  normalZ: __t.f32(),
 });
 
 

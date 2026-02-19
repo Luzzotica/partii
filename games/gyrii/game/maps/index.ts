@@ -14,4 +14,4 @@ export const maps: Record<string, MapData> = {
 };
 
 export { arenaData, mazeData, warehouseData };
-export type { MapData } from "./MapLoader";
+export type { MapData, FlagLocationData, FloorGrid } from "./MapLoader";
