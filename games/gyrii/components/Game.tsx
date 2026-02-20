@@ -910,7 +910,17 @@ export default function GyriiGame() {
         let lastShotAtRef = 0;
         const lastShotAtPerPlayer = new Map<string, number>();
 
-        // Send input to server at ~20 Hz
+        // Send input to server: 20 Hz when moving, ~5 Hz when idle (reduces update_input calls drastically)
+        const INPUT_INTERVAL_MS = 50;
+        const IDLE_SEND_INTERVAL_MS = 200;
+        const AIM_CHANGE_THRESHOLD = 0.02;
+        let lastSent = {
+          inputX: 0,
+          inputZ: 0,
+          aimX: 0,
+          aimZ: 0,
+          time: 0,
+        };
         updateInputIntervalRef.current = setInterval(() => {
           if (useGyriiStore.getState().gameState === "paused") return;
           let inputX = 0,
@@ -920,10 +930,34 @@ export default function GyriiGame() {
           if (inputMap["a"] || inputMap["arrowleft"]) inputX = -1;
           if (inputMap["d"] || inputMap["arrowright"]) inputX = 1;
           const store = useGyriiStore.getState();
-          if (store.localPlayer) {
+          if (!store.localPlayer) return;
+
+          const isMoving = inputX !== 0 || inputZ !== 0;
+          const now = performance.now();
+          const aimChanged =
+            Math.abs(aimDirection.x - lastSent.aimX) > AIM_CHANGE_THRESHOLD ||
+            Math.abs(aimDirection.z - lastSent.aimZ) > AIM_CHANGE_THRESHOLD;
+          const inputChanged =
+            inputX !== lastSent.inputX || inputZ !== lastSent.inputZ;
+          const idleLongEnough = now - lastSent.time >= IDLE_SEND_INTERVAL_MS;
+
+          const shouldSend =
+            isMoving ||
+            inputChanged ||
+            (aimChanged && idleLongEnough) ||
+            (!isMoving && idleLongEnough); // periodic (0,0) for damping
+
+          if (shouldSend) {
+            lastSent = {
+              inputX,
+              inputZ,
+              aimX: aimDirection.x,
+              aimZ: aimDirection.z,
+              time: now,
+            };
             updateInput(inputX, inputZ, aimDirection.x, aimDirection.z);
           }
-        }, 50);
+        }, INPUT_INTERVAL_MS);
 
         // Game loop
         let lastFrameTime = performance.now();
