@@ -30,6 +30,7 @@ export default __t.row({
   team: __t.i32(),
   kills: __t.i32(),
   deaths: __t.i32(),
+  flagCaptures: __t.i32().name("flag_captures"),
   get weapon() {
     return WeaponType;
   },
@@ -55,6 +56,7 @@ export default __t.row({
   isShooting: __t.bool().name("is_shooting"),
   respawnAt: __t.i64().name("respawn_at"),
   lastShotAt: __t.i64().name("last_shot_at"),
+  lastGrenadeThrownAt: __t.i64().name("last_grenade_thrown_at"),
   joinedAt: __t.timestamp().name("joined_at"),
   lastImpulseX: __t.f32().name("last_impulse_x"),
   lastImpulseY: __t.f32().name("last_impulse_y"),

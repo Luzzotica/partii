@@ -11,6 +11,7 @@ import {
 export default function HUD() {
   const {
     localPlayer,
+    players,
     killFeed,
     currentLobby,
     mousePosition,
@@ -20,16 +21,34 @@ export default function HUD() {
 
   const [now, setNow] = useState(() => performance.now());
   const isPhotonRifle = localPlayer?.weapon === "photonRifle";
+  const grenadeCooldownMicros = 1_000_000; // 1 second
+  const nowMicros = Date.now() * 1000;
+  const lastGrenadeThrownAt = localPlayer?.lastGrenadeThrownAt ?? 0;
+  const elapsedMicros = nowMicros - lastGrenadeThrownAt;
+  const grenadeCooldownRemaining = Math.max(
+    0,
+    (grenadeCooldownMicros - elapsedMicros) / 1000,
+  );
+  const isGrenadeOnCooldown = grenadeCooldownRemaining > 0;
+  const grenadeCooldownProgress = Math.min(
+    1,
+    elapsedMicros / grenadeCooldownMicros,
+  );
   const isRecharging =
     isPhotonRifle &&
     photonRifleRechargeUntil > 0 &&
     performance.now() < photonRifleRechargeUntil;
 
   useEffect(() => {
-    if (!isRecharging) return;
+    if (!isRecharging && !isGrenadeOnCooldown) return;
     const id = setInterval(() => setNow(performance.now()), 50);
     return () => clearInterval(id);
-  }, [isRecharging, photonRifleRechargeUntil]);
+  }, [
+    isRecharging,
+    isGrenadeOnCooldown,
+    photonRifleRechargeUntil,
+    lastGrenadeThrownAt,
+  ]);
 
   if (!localPlayer) return null;
 
@@ -50,15 +69,15 @@ export default function HUD() {
 
   return (
     <div className="absolute inset-0 pointer-events-none">
-      {/* Health Bar */}
-      <div className="absolute bottom-8 left-8 pointer-events-auto">
-        <div className="bg-black/50 backdrop-blur-sm rounded-lg p-4 border border-cyan-500/30">
-          <div className="text-xs text-gray-400 mb-1">HEALTH</div>
-          <div className="w-48 h-4 bg-gray-800 rounded-full overflow-hidden">
+      {/* Health + Ammo - right side, stacked */}
+      <div className="absolute bottom-8 right-8 pointer-events-auto flex flex-col gap-3">
+        {/* Health Bar - vertical */}
+        <div className="bg-black/50 backdrop-blur-sm rounded-lg p-2 border border-cyan-500/30 self-end">
+          <div className="w-5 h-32 bg-gray-800 rounded-full overflow-hidden flex flex-col justify-end">
             <div
-              className="h-full transition-[width] duration-100 ease-out"
+              className="w-full transition-[height] duration-100 ease-out rounded-full"
               style={{
-                width: `${healthPercent}%`,
+                height: `${healthPercent}%`,
                 backgroundColor:
                   healthColor === "cyan"
                     ? "#00ffff"
@@ -69,18 +88,34 @@ export default function HUD() {
               }}
             />
           </div>
-          <div
-            className="text-2xl font-bold mt-1"
-            style={{
-              color:
-                healthColor === "cyan"
-                  ? "#00ffff"
-                  : healthColor === "yellow"
-                    ? "#ffff00"
-                    : "#ff4444",
-            }}
-          >
-            {(localPlayer.health / HEALTH_SCALE).toFixed(1)}
+        </div>
+        {/* Throwables (ammo) */}
+        <div className="bg-black/50 backdrop-blur-sm rounded-lg p-4 border border-pink-500/30 self-end">
+          <div className="flex gap-2 justify-end">
+            <div className="flex flex-col items-end gap-1">
+              <div className="flex items-center gap-1">
+                <div
+                  className={`w-4 h-4 rounded-full ${
+                    isGrenadeOnCooldown ? "bg-gray-600" : "bg-green-500"
+                  }`}
+                />
+                <span
+                  className={`text-sm ${
+                    isGrenadeOnCooldown ? "text-gray-500" : "text-green-400"
+                  }`}
+                >
+                  {localPlayer.grenadeCount}
+                </span>
+              </div>
+              {isGrenadeOnCooldown && (
+                <div className="w-full h-1 bg-gray-800 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-green-500/70 transition-all duration-75"
+                    style={{ width: `${grenadeCooldownProgress * 100}%` }}
+                  />
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -111,37 +146,43 @@ export default function HUD() {
         </div>
       )}
 
-      {/* Throwables */}
-      <div className="absolute bottom-8 right-8 pointer-events-auto">
-        <div className="bg-black/50 backdrop-blur-sm rounded-lg p-4 border border-pink-500/30">
-          <div className="flex gap-2">
-            <div className="flex items-center gap-1">
-              <div className="w-4 h-4 rounded-full bg-green-500" />
-              <span className="text-green-400 text-sm">
-                {localPlayer.grenadeCount}
-              </span>
-            </div>
-            <div className="flex items-center gap-1">
-              <div className="w-4 h-4 rounded-full bg-orange-500" />
-              <span className="text-orange-400 text-sm">
-                {localPlayer.molotovCount}
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Kill Feed */}
-      <div className="absolute top-8 right-8">
-        <div className="space-y-2">
-          {killFeed.map((event, index) => (
+      {/* Kill Feed - marble/neon/tron themed (newest at bottom) */}
+      <div className="absolute bottom-8 left-8">
+        <div className="space-y-1.5">
+          {[...killFeed].reverse().map((event, index) => (
             <div
               key={`${event.timestamp}-${index}`}
-              className="bg-black/50 backdrop-blur-sm rounded px-3 py-2 border border-white/10 animate-fade-in"
+              className="px-3 py-1.5 animate-fade-in text-xs
+                bg-black/80 border border-cyan-400/60
+                shadow-[0_0_12px_rgba(0,255,255,0.2),inset_0_0_0_1px_rgba(0,255,255,0.15)]"
+              style={{
+                clipPath:
+                  "polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px))",
+              }}
             >
-              <span className="text-cyan-400">{event.killerName}</span>
-              <span className="text-gray-400 mx-2">[{event.weapon}]</span>
-              <span className="text-pink-400">{event.victimName}</span>
+              {event.weapon && event.weapon !== "unknown" ? (
+                <>
+                  <span className="text-cyan-300 font-medium drop-shadow-[0_0_4px_rgba(0,255,255,0.5)]">
+                    {event.killerName}
+                  </span>
+                  <span className="text-cyan-500/80 mx-1.5">
+                    [{event.weapon}]
+                  </span>
+                  <span className="text-pink-400 font-medium drop-shadow-[0_0_4px_rgba(255,105,180,0.5)]">
+                    {event.victimName}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="text-cyan-300 font-medium drop-shadow-[0_0_4px_rgba(0,255,255,0.5)]">
+                    {event.killerName}
+                  </span>
+                  <span className="text-cyan-500/60 mx-1.5">smashed</span>
+                  <span className="text-pink-400 font-medium drop-shadow-[0_0_4px_rgba(255,105,180,0.5)]">
+                    {event.victimName}
+                  </span>
+                </>
+              )}
             </div>
           ))}
         </div>
@@ -149,22 +190,67 @@ export default function HUD() {
 
       {/* Scoreboard */}
       <div className="absolute top-8 left-8">
-        <div className="bg-black/50 backdrop-blur-sm rounded-lg p-3 border border-purple-500/30">
-          <div className="text-xs text-gray-400 mb-2">SCORE</div>
-          <div className="flex gap-6">
-            <div>
-              <div className="text-xs text-cyan-400">KILLS</div>
-              <div className="text-2xl font-bold text-cyan-300">
-                {localPlayer.kills}
+        <div className="bg-black/50 backdrop-blur-sm rounded-lg p-3 border border-purple-500/30 min-w-[180px]">
+          {currentLobby?.gameMode === "captureTheFlag" ? (
+            <>
+              <div className="text-xs text-gray-400 mb-2">
+                FLAGS · First to {currentLobby?.flagLimit ?? 3} to win
               </div>
-            </div>
-            <div>
-              <div className="text-xs text-pink-400">DEATHS</div>
-              <div className="text-2xl font-bold text-pink-300">
-                {localPlayer.deaths}
+              <div className="space-y-1">
+                {Array.from(players.values())
+                  .concat(localPlayer ? [localPlayer] : [])
+                  .filter((p) => p)
+                  .sort((a, b) => (b.flagCaptures ?? 0) - (a.flagCaptures ?? 0))
+                  .slice(0, 5)
+                  .map((p, i) => (
+                    <div key={p.id} className="flex justify-between text-sm">
+                      <span
+                        className={
+                          p.id === localPlayer?.id
+                            ? "text-cyan-400 font-bold"
+                            : "text-gray-300"
+                        }
+                      >
+                        {i + 1}. {p.name}
+                      </span>
+                      <span className="text-pink-400">
+                        {p.flagCaptures ?? 0} flags
+                      </span>
+                    </div>
+                  ))}
               </div>
-            </div>
-          </div>
+            </>
+          ) : (
+            <>
+              <div className="text-xs text-gray-400 mb-2">
+                First to {currentLobby?.scoreLimit ?? 25} to win
+              </div>
+              <div className="space-y-1">
+                {Array.from(players.values())
+                  .concat(localPlayer ? [localPlayer] : [])
+                  .filter((p) => p)
+                  .sort((a, b) => b.kills - a.kills)
+                  .slice(0, 3)
+                  .map((p, i) => (
+                    <div
+                      key={p.id}
+                      className="flex justify-between text-sm gap-4"
+                    >
+                      <span
+                        className={
+                          p.id === localPlayer?.id
+                            ? "text-cyan-400 font-bold"
+                            : "text-gray-300"
+                        }
+                      >
+                        {i + 1}. {p.name}
+                      </span>
+                      <span className="text-cyan-400">{p.kills}</span>
+                    </div>
+                  ))}
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -186,8 +272,8 @@ export default function HUD() {
       {false && (
         <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2">
           <div className="bg-black/30 backdrop-blur-sm rounded-lg px-4 py-2 text-xs text-gray-400">
-            WASD - Move | Mouse - Aim | LMB - Shoot | RMB - Grenade | MMB -
-            Molotov | Q - Secondary
+            WASD - Move | Mouse - Aim | LMB - Shoot | RMB - Grenade | Q -
+            Secondary
           </div>
         </div>
       )}

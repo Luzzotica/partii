@@ -1,6 +1,8 @@
 import "./players";
 import "./projectiles";
 import "./photonBeams";
+import "./grenades";
+import "./killEvents";
 
 export type { LobbyContext, LobbyEntityDescriptor } from "./types";
 export {

@@ -9,9 +9,9 @@ use spacetime_rapier::{
 };
 
 // Import table traits for database access
-use crate::collision_groups::{GROUP_BULLET, GROUP_FLOOR, GROUP_PLAYER, GROUP_WALL};
-use crate::constants::{HEALTH_SCALE, MAX_HEALTH};
-use crate::lobby::{lobby, FriendlyFire, GameMode};
+use crate::collision_groups::{GROUP_BULLET, GROUP_FLOOR, GROUP_GRENADE, GROUP_PLAYER, GROUP_WALL};
+use crate::constants::{GRENADE_KNOCKBACK_BASE, HEALTH_SCALE, MAX_HEALTH};
+use crate::lobby::{lobby, FriendlyFire, GameMode, Lobby};
 use crate::maps::{map_wall, MapWall};
 use crate::player::{player, Player};
 use crate::constants::BEAM_HALF_WIDTH;
@@ -68,10 +68,49 @@ pub struct KillEvent {
     #[primary_key]
     #[auto_inc]
     pub id: u64,
+    #[index(btree)]
+    pub lobby_id: u64,
     pub killer_id: Identity,
     pub victim_id: Identity,
     pub weapon_type: String,
     pub timestamp: Timestamp,
+}
+
+// ============================================================================
+// PENDING EXPLOSION (deferred damage, resolved next tick with raycasts)
+// ============================================================================
+
+#[table(name = pending_explosion)]
+pub struct PendingExplosion {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    #[index(btree)]
+    pub world_id: u64,
+    pub center_x: f32,
+    pub center_y: f32,
+    pub center_z: f32,
+    pub damage: f32,
+    pub radius: f32,
+    pub source_id: Identity,
+}
+
+#[table(name = pending_explosion_raycast)]
+pub struct PendingExplosionRaycast {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    /// RayCast.id from rapier_raycast. 0 = direct hit (player at center), no raycast.
+    pub raycast_id: u64,
+    pub target_identity: Identity,
+    pub target_rigid_body_id: u64,
+    pub center_x: f32,
+    pub center_y: f32,
+    pub center_z: f32,
+    pub damage: f32,
+    pub radius: f32,
+    pub source_id: Identity,
+    pub distance: f32,
 }
 
 // ============================================================================
@@ -101,8 +140,14 @@ pub fn physics_tick(ctx: &ReducerContext, timer: PhysicsTickTimer) -> Result<(),
     // No kinematic overrides: players are Dynamic; velocity is set in update_input, Rapier steps and resolves walls
     let kinematic_entities = std::iter::empty::<(u64, (Vec3, Quat))>();
 
+    // Process pending explosions from last tick: create RayCasts for LOS checks (BEFORE step so they get populated)
+    process_pending_explosions_create_raycasts(ctx, world.id);
+
     // Step the physics simulation (walls are static; players are dynamic and collide)
     step_world(ctx, &world, kinematic_entities);
+
+    // Resolve pending explosion raycasts (damage only when first hit is target player)
+    process_pending_explosion_raycasts(ctx);
 
     // Sync Player position and velocity from RigidBody (only for bodies in this world — we just stepped them)
     for player in ctx.db.player().iter() {
@@ -131,6 +176,9 @@ pub fn physics_tick(ctx: &ReducerContext, timer: PhysicsTickTimer) -> Result<(),
     process_photon_beams(ctx);
     process_respawns(ctx);
     update_player_collision_filters(ctx);
+
+    // Check win conditions
+    check_win_conditions(ctx, world.id);
 
     // Tick-driven shooting: for each player holding shoot, try to fire (weapon handler checks fire rate / charge)
     for player in ctx.db.player().iter() {
@@ -169,34 +217,234 @@ pub fn physics_tick(ctx: &ReducerContext, timer: PhysicsTickTimer) -> Result<(),
 }
 
 // ============================================================================
+// PENDING EXPLOSION PROCESSING
+// ============================================================================
+
+/// Run BEFORE step_world. For each PendingExplosion in this world, create RayCasts to each
+/// player in radius and insert PendingExplosionRaycast. Direct hits (distance < 0.01) get raycast_id = 0.
+fn process_pending_explosions_create_raycasts(ctx: &ReducerContext, world_id: u64) {
+    let pending: Vec<PendingExplosion> = ctx
+        .db
+        .pending_explosion()
+        .world_id()
+        .filter(world_id)
+        .collect();
+
+    for exp in pending {
+        let lobby = match ctx
+            .db
+            .lobby()
+            .iter()
+            .find(|l: &Lobby| l.physics_world_id == exp.world_id)
+        {
+            Some(l) => l,
+            None => {
+                ctx.db.pending_explosion().id().delete(exp.id);
+                continue;
+            }
+        };
+
+        let center = Vec3::new(exp.center_x, exp.center_y, exp.center_z);
+
+        for player in ctx.db.player().iter() {
+            if !player.is_alive || player.lobby_id != lobby.id {
+                continue;
+            }
+            let dx = player.position_x - center.x;
+            let dy = player.position_y - center.y;
+            let dz = player.position_z - center.z;
+            let distance = (dx * dx + dy * dy + dz * dz).sqrt();
+
+            if distance >= exp.radius {
+                continue;
+            }
+
+            if distance < 0.01 {
+                // Direct hit: player at center, no raycast
+                ctx.db.pending_explosion_raycast().insert(PendingExplosionRaycast {
+                    id: 0,
+                    raycast_id: 0,
+                    target_identity: player.identity,
+                    target_rigid_body_id: player.rigid_body_id,
+                    center_x: exp.center_x,
+                    center_y: exp.center_y,
+                    center_z: exp.center_z,
+                    damage: exp.damage,
+                    radius: exp.radius,
+                    source_id: exp.source_id,
+                    distance: 0.0,
+                });
+            } else {
+                let dir = Vec3::new(dx, dy, dz).normalize();
+                let max_distance = distance + 0.1;
+                let raycast = RayCast::new(exp.world_id, center, dir, max_distance, false).insert(ctx);
+                ctx.db.pending_explosion_raycast().insert(PendingExplosionRaycast {
+                    id: 0,
+                    raycast_id: raycast.id,
+                    target_identity: player.identity,
+                    target_rigid_body_id: player.rigid_body_id,
+                    center_x: exp.center_x,
+                    center_y: exp.center_y,
+                    center_z: exp.center_z,
+                    damage: exp.damage,
+                    radius: exp.radius,
+                    source_id: exp.source_id,
+                    distance,
+                });
+            }
+        }
+
+        ctx.db.pending_explosion().id().delete(exp.id);
+    }
+}
+
+/// Run AFTER step_world. For each PendingExplosionRaycast, check LOS and apply damage if clear.
+fn process_pending_explosion_raycasts(ctx: &ReducerContext) {
+    let pending: Vec<PendingExplosionRaycast> = ctx.db.pending_explosion_raycast().iter().collect();
+
+    for p in pending {
+        let center = Vec3::new(p.center_x, p.center_y, p.center_z);
+        let apply = if p.raycast_id == 0 {
+            // Direct hit
+            true
+        } else {
+            match RayCast::find(ctx, p.raycast_id) {
+                Some(raycast) => {
+                    let first_is_target = raycast
+                        .first_hit()
+                        .map(|h| h.rigid_body_id == p.target_rigid_body_id)
+                        .unwrap_or(false);
+                    raycast.delete(ctx);
+                    first_is_target
+                }
+                None => false,
+            }
+        };
+
+        if apply {
+            if let Some(player) = ctx.db.player().identity().find(p.target_identity) {
+                if player.is_alive {
+                    apply_explosion_damage_to_player(
+                        ctx,
+                        &player,
+                        center,
+                        p.distance,
+                        p.damage,
+                        p.radius,
+                        p.source_id,
+                    );
+                }
+            }
+        }
+
+        ctx.db.pending_explosion_raycast().id().delete(p.id);
+    }
+}
+
+// ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
+
+/// Check if a player or team has reached the win condition and end the game.
+fn check_win_conditions(ctx: &ReducerContext, world_id: u64) {
+    let lobby = match ctx
+        .db
+        .lobby()
+        .iter()
+        .find(|l: &Lobby| l.physics_world_id == world_id)
+    {
+        Some(l) => l,
+        None => return,
+    };
+
+    if lobby.game_state != GameState::InProgress {
+        return;
+    }
+
+    let lobby_id = lobby.id;
+
+    match lobby.game_mode {
+        GameMode::FreeForAll => {
+            for p in ctx.db.player().iter() {
+                if p.lobby_id == lobby_id && p.kills >= lobby.score_limit {
+                    let mut updated = lobby.clone();
+                    updated.game_state = GameState::Ended;
+                    ctx.db.lobby().id().update(updated);
+                    log::info!("Game ended: {} reached {} kills (FFA)", p.name, lobby.score_limit);
+                    return;
+                }
+            }
+        }
+        GameMode::TeamDeathmatch => {
+            let mut team_kills: std::collections::HashMap<i32, i32> = std::collections::HashMap::new();
+            for p in ctx.db.player().iter() {
+                if p.lobby_id == lobby_id {
+                    *team_kills.entry(p.team).or_insert(0) += p.kills;
+                }
+            }
+            for (_team, kills) in team_kills {
+                if kills >= lobby.score_limit {
+                    let mut updated = lobby.clone();
+                    updated.game_state = GameState::Ended;
+                    ctx.db.lobby().id().update(updated);
+                    log::info!("Game ended: team reached {} kills (TDM)", lobby.score_limit);
+                    return;
+                }
+            }
+        }
+        GameMode::CaptureTheFlag => {
+            let mut team_flags: std::collections::HashMap<i32, i32> = std::collections::HashMap::new();
+            for p in ctx.db.player().iter() {
+                if p.lobby_id == lobby_id {
+                    *team_flags.entry(p.team).or_insert(0) += p.flag_captures;
+                }
+            }
+            for (_team, flags) in team_flags {
+                if flags >= lobby.flag_limit {
+                    let mut updated = lobby.clone();
+                    updated.game_state = GameState::Ended;
+                    ctx.db.lobby().id().update(updated);
+                    log::info!("Game ended: team reached {} flag captures (CTF)", lobby.flag_limit);
+                    return;
+                }
+            }
+        }
+    }
+}
 
 /// Start the physics tick loop for a world. Inserts a single row with Interval(60 Hz);
 /// the scheduler will invoke physics_tick repeatedly without rescheduling each time.
 pub fn schedule_physics_tick(ctx: &ReducerContext, world_id: u64) {
-    const TICK_INTERVAL_MICROS: u64 = 1_000 / 60; // 60 Hz
+    // 60 Hz = ~16.67 ms per tick. Use microseconds so the value is unambiguous (not mistaken for seconds).
+    const TICK_INTERVAL_MICROS: u64 = 1_000_000 / 60;
     ctx.db.physics_tick_timer().insert(PhysicsTickTimer {
         scheduled_id: 0, // auto_inc
-        scheduled_at: ScheduleAt::Interval(Duration::from_millis(TICK_INTERVAL_MICROS).into()),
+        scheduled_at: ScheduleAt::Interval(Duration::from_micros(TICK_INTERVAL_MICROS).into()),
         world_id,
     });
 }
 
 fn process_grenades(ctx: &ReducerContext) {
+    let now_micros = ctx.timestamp.to_micros_since_unix_epoch() as u64;
     let grenades_to_explode: Vec<Grenade> = ctx
         .db
         .grenade()
         .iter()
-        .filter(|g| g.fuse_ticks <= 0)
+        .filter(|g| g.expires_at_micros > 0 && now_micros >= g.expires_at_micros)
         .collect();
 
     for grenade in grenades_to_explode {
         // Get grenade position from rigid body
         if let Some(rb) = RigidBody::find(ctx, grenade.rigid_body_id) {
             let position = rb.position();
-            // Apply explosion damage to nearby players
-            apply_explosion_damage(ctx, position, grenade.damage, grenade.radius, grenade.owner_id);
+            insert_pending_explosion(
+                ctx,
+                grenade.world_id,
+                position,
+                grenade.damage,
+                grenade.radius,
+                grenade.owner_id,
+            );
         }
 
         // Remove grenade and its physics body
@@ -206,13 +454,26 @@ fn process_grenades(ctx: &ReducerContext) {
         }
     }
 
-    // Decrement fuse on remaining grenades
+    // Sync position and velocity from RigidBody on remaining grenades
     for grenade in ctx.db.grenade().iter() {
-        if grenade.fuse_ticks > 0 {
-            let mut updated = grenade.clone();
-            updated.fuse_ticks -= 1;
-            ctx.db.grenade().rigid_body_id().update(updated);
+        let mut updated = grenade.clone();
+        if let Some(rb) = RigidBody::find(ctx, grenade.rigid_body_id) {
+            updated.position_x = rb.position_x;
+            updated.position_y = rb.position_y;
+            updated.position_z = rb.position_z;
+            updated.velocity_x = rb.linear_velocity_x;
+            updated.velocity_y = rb.linear_velocity_y;
+            updated.velocity_z = rb.linear_velocity_z;
+            if updated.position_y < -0.1 {
+                log::warn!(
+                    "[grenade] BELOW FLOOR! rb={} pos=({:.2},{:.2},{:.2}) vel=({:.2},{:.2},{:.2})",
+                    grenade.rigid_body_id,
+                    updated.position_x, updated.position_y, updated.position_z,
+                    updated.velocity_x, updated.velocity_y, updated.velocity_z,
+                );
+            }
         }
+        ctx.db.grenade().rigid_body_id().update(updated);
     }
 }
 
@@ -239,6 +500,15 @@ fn process_projectiles(ctx: &ReducerContext, world_id: u64) {
         .map(|p| (p.rigid_body_id, p.clone()))
         .collect();
 
+    // Build map: rigid_body_id -> Grenade (for grenades in this world)
+    let rb_to_grenade: std::collections::HashMap<u64, Grenade> = ctx
+        .db
+        .grenade()
+        .iter()
+        .filter(|g| g.world_id == world_id)
+        .map(|g| (g.rigid_body_id, g.clone()))
+        .collect();
+
     // Process physics-based sensor collisions (populated by step_world)
     let collisions: Vec<_> = ctx.db.rapier_sensor_collision().world_id().filter(world_id).collect();
     for collision in collisions {
@@ -253,6 +523,26 @@ fn process_projectiles(ctx: &ReducerContext, world_id: u64) {
             Some(p) => p,
             None => continue,
         };
+
+        // Bullet hit grenade -> explode grenade
+        if let Some(grenade) = rb_to_grenade.get(&other_rb_id) {
+            if let Some(rb) = RigidBody::find(ctx, grenade.rigid_body_id) {
+                insert_pending_explosion(
+                    ctx,
+                    grenade.world_id,
+                    rb.position(),
+                    grenade.damage,
+                    grenade.radius,
+                    grenade.owner_id,
+                );
+            }
+            ctx.db.grenade().rigid_body_id().delete(grenade.rigid_body_id);
+            if let Some(rb) = RigidBody::find(ctx, grenade.rigid_body_id) {
+                rb.delete(ctx);
+            }
+            to_remove.push(sensor_rb_id);
+            continue;
+        }
 
         if let Some(hit_player) = rb_to_player.get(&other_rb_id) {
             if !hit_player.is_alive || hit_player.identity == proj.owner_id {
@@ -469,7 +759,7 @@ fn process_photon_beams(ctx: &ReducerContext) {
         });
     }
 
-    let mut debug_in_beam: std::collections::HashSet<Identity> = std::collections::HashSet::new();
+    let debug_in_beam: std::collections::HashSet<Identity> = std::collections::HashSet::new();
     let beams_to_process: Vec<PhotonBeam> = ctx.db.photon_beam().iter().collect();
     for beam in beams_to_process {
         if beam.trigger_id != 0 {
@@ -502,6 +792,24 @@ fn process_photon_beams(ctx: &ReducerContext) {
 
             for entity_id in &trigger.entities_inside {
                 if *entity_id == 0 {
+                    continue;
+                }
+                // Beam hits grenade -> explode grenade
+                if let Some(grenade) = ctx.db.grenade().rigid_body_id().find(*entity_id) {
+                    if let Some(rb) = RigidBody::find(ctx, grenade.rigid_body_id) {
+                        insert_pending_explosion(
+                            ctx,
+                            grenade.world_id,
+                            rb.position(),
+                            grenade.damage,
+                            grenade.radius,
+                            grenade.owner_id,
+                        );
+                    }
+                    ctx.db.grenade().rigid_body_id().delete(grenade.rigid_body_id);
+                    if let Some(rb) = RigidBody::find(ctx, grenade.rigid_body_id) {
+                        rb.delete(ctx);
+                    }
                     continue;
                 }
                 let hit_player = match ctx.db.player().iter().find(|p| p.rigid_body_id == *entity_id) {
@@ -599,7 +907,7 @@ fn process_respawns(ctx: &ReducerContext) {
             rb.update(ctx);
             // Reset collider filter so player does not collide with others until moved 1 unit
             if let Some(mut col) = Collider::find(ctx, rb.collider_id) {
-                col.collision_filter = GROUP_BULLET | GROUP_WALL | GROUP_FLOOR;
+                col.collision_filter = GROUP_BULLET | GROUP_WALL | GROUP_FLOOR | GROUP_GRENADE;
                 col.update(ctx);
             }
         }
@@ -608,7 +916,7 @@ fn process_respawns(ctx: &ReducerContext) {
 
 /// Enable player-vs-player collision once a player has moved at least 1 unit from spawn.
 fn update_player_collision_filters(ctx: &ReducerContext) {
-    let filter_with_player = GROUP_BULLET | GROUP_WALL | GROUP_FLOOR | GROUP_PLAYER;
+    let filter_with_player = GROUP_BULLET | GROUP_WALL | GROUP_FLOOR | GROUP_PLAYER | GROUP_GRENADE;
     for player in ctx.db.player().iter() {
         if !player.is_alive || player.rigid_body_id == 0 {
             continue;
@@ -635,28 +943,71 @@ fn update_player_collision_filters(ctx: &ReducerContext) {
     }
 }
 
-pub fn apply_explosion_damage(
+/// Insert a pending explosion; damage is resolved next tick with raycast LOS checks.
+pub fn insert_pending_explosion(
     ctx: &ReducerContext,
+    world_id: u64,
     center: Vec3,
+    damage: f32,
+    radius: f32,
+    source_id: Identity,
+) {
+    ctx.db.pending_explosion().insert(PendingExplosion {
+        id: 0,
+        world_id,
+        center_x: center.x,
+        center_y: center.y,
+        center_z: center.z,
+        damage,
+        radius,
+        source_id,
+    });
+}
+
+/// Apply explosion damage and knockback to a single player (used by pending explosion resolver).
+fn apply_explosion_damage_to_player(
+    ctx: &ReducerContext,
+    player: &Player,
+    center: Vec3,
+    distance: f32,
     max_damage: f32,
     radius: f32,
     source_id: Identity,
 ) {
-    for player in ctx.db.player().iter() {
-        if !player.is_alive {
-            continue;
+    let dx = player.position_x - center.x;
+    let dy = player.position_y - center.y;
+    let dz = player.position_z - center.z;
+
+    let t = if radius > 1e-6 { distance / radius } else { 0.0 };
+    let damage_multiplier = photon_beam_falloff(t);
+    let damage_tenths = (max_damage * damage_multiplier * HEALTH_SCALE as f32).round() as i32;
+    apply_damage(ctx, player.identity, damage_tenths, source_id);
+
+    let impulse_mag = GRENADE_KNOCKBACK_BASE * damage_multiplier;
+    if impulse_mag > 1e-6 && distance > 1e-6 {
+        let inv_dist = 1.0 / distance;
+        let dir_x = dx * inv_dist;
+        let dir_y = dy * inv_dist;
+        let dir_z = dz * inv_dist;
+        let dv_x = dir_x * impulse_mag;
+        let dv_y = dir_y * impulse_mag;
+        let dv_z = dir_z * impulse_mag;
+
+        if player.rigid_body_id != 0 {
+            if let Some(mut rb) = RigidBody::find(ctx, player.rigid_body_id) {
+                rb.linear_velocity_x += dv_x;
+                rb.linear_velocity_y += dv_y;
+                rb.linear_velocity_z += dv_z;
+                rb.update(ctx);
+            }
         }
-
-        let dx = player.position_x - center.x;
-        let dy = player.position_y - center.y;
-        let dz = player.position_z - center.z;
-        let distance = (dx * dx + dy * dy + dz * dz).sqrt();
-
-        if distance < radius {
-            // Damage falls off with distance (stored in tenths for fractional)
-            let damage_multiplier = 1.0 - (distance / radius);
-            let damage_tenths = (max_damage * damage_multiplier * HEALTH_SCALE as f32).round() as i32;
-            apply_damage(ctx, player.identity, damage_tenths, source_id);
+        let now_micros = ctx.timestamp.to_micros_since_unix_epoch();
+        if let Some(mut hit) = ctx.db.player().identity().find(player.identity) {
+            hit.last_impulse_x = dv_x;
+            hit.last_impulse_y = dv_y;
+            hit.last_impulse_z = dv_z;
+            hit.last_impulse_time = now_micros;
+            ctx.db.player().identity().update(hit);
         }
     }
 }
@@ -702,6 +1053,7 @@ pub fn apply_damage(ctx: &ReducerContext, target_id: Identity, damage: i32, sour
 
                 ctx.db.kill_event().insert(KillEvent {
                     id: 0,
+                    lobby_id: player.lobby_id,
                     killer_id: source_id,
                     victim_id: target_id,
                     weapon_type: "unknown".to_string(),

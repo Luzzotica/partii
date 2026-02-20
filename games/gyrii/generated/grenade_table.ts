@@ -12,8 +12,15 @@ import {
 
 export default __t.row({
   rigidBodyId: __t.u64().primaryKey().name("rigid_body_id"),
+  worldId: __t.u64().name("world_id"),
   ownerId: __t.identity().name("owner_id"),
-  fuseTicks: __t.i32().name("fuse_ticks"),
+  expiresAtMicros: __t.u64().name("expires_at_micros"),
   damage: __t.f32(),
   radius: __t.f32(),
+  positionX: __t.f32().name("position_x"),
+  positionY: __t.f32().name("position_y"),
+  positionZ: __t.f32().name("position_z"),
+  velocityX: __t.f32().name("velocity_x"),
+  velocityY: __t.f32().name("velocity_y"),
+  velocityZ: __t.f32().name("velocity_z"),
 });

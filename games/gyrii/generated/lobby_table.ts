@@ -34,6 +34,7 @@ export default __t.row({
   },
   createdAt: __t.timestamp().name("created_at"),
   scoreLimit: __t.i32().name("score_limit"),
+  flagLimit: __t.i32().name("flag_limit"),
   timeLimitSeconds: __t.i32().name("time_limit_seconds"),
   hasPassword: __t.bool().name("has_password"),
   get friendlyFire() {

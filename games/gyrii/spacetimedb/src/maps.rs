@@ -3,7 +3,7 @@
 use spacetimedb::{table, ReducerContext, SpacetimeType, Table};
 use spacetime_rapier::{Collider, RigidBody, RigidBodyProperties, RigidBodyType, Vec3};
 
-use crate::collision_groups::{GROUP_BULLET, GROUP_FLOOR, GROUP_PLAYER, GROUP_WALL};
+use crate::collision_groups::{GROUP_BULLET, GROUP_FLOOR, GROUP_GRENADE, GROUP_PLAYER, GROUP_WALL};
 
 use crate::map_parser::{grid_to_world_x, grid_to_world_z, ParsedMap};
 
@@ -164,7 +164,7 @@ fn create_floor(ctx: &ReducerContext, world_id: u64, parsed: &ParsedMap) {
             // No grid: one half-space at y=0 (legacy behavior)
             let mut collider = Collider::halfspace(world_id, 0.0, 1.0, 0.0);
             collider.collision_memberships = GROUP_FLOOR;
-            collider.collision_filter = GROUP_PLAYER | GROUP_BULLET;
+            collider.collision_filter = GROUP_PLAYER | GROUP_BULLET | GROUP_GRENADE;
             let collider = collider.insert(ctx);
             let _rb = RigidBody::builder()
                 .world_id(world_id)
@@ -208,7 +208,7 @@ fn create_floor(ctx: &ReducerContext, world_id: u64, parsed: &ParsedMap) {
                     let half_extents = Vec3::new(half_x, FLOOR_HALF_Y, 0.5);
                     let mut collider = Collider::cuboid(world_id, half_extents);
                     collider.collision_memberships = GROUP_FLOOR;
-                    collider.collision_filter = GROUP_PLAYER | GROUP_BULLET;
+                    collider.collision_filter = GROUP_PLAYER | GROUP_BULLET | GROUP_GRENADE;
                     let collider = collider.insert(ctx);
                     let _rb = RigidBody::builder()
                         .world_id(world_id)
@@ -246,7 +246,7 @@ fn create_wall(
     let half_extents = Vec3::new(size.x / 2.0, size.y / 2.0, size.z / 2.0);
     let mut collider = Collider::cuboid(world_id, half_extents);
     collider.collision_memberships = GROUP_WALL;
-    collider.collision_filter = GROUP_PLAYER | GROUP_BULLET;
+    collider.collision_filter = GROUP_PLAYER | GROUP_BULLET | GROUP_GRENADE;
     let collider = collider.insert(ctx);
     
     // Create static rigid body

@@ -15,6 +15,7 @@ import GameMode from "./game_mode_type";
 
 export default {
   name: __t.string(),
+  hostPlayerName: __t.string(),
   get mapId() {
     return MapId;
   },
@@ -23,6 +24,7 @@ export default {
   },
   maxPlayers: __t.u8(),
   scoreLimit: __t.i32(),
+  flagLimit: __t.i32(),
   password: __t.string(),
   customMapJson: __t.string(),
 };

@@ -20,3 +20,16 @@ pub const PLAYER_DAMPING: f32 = 0.84;
 
 /// Approximate time delta between client input updates in seconds (~50ms).
 pub const PLAYER_INPUT_TICK_DT: f32 = 0.05;
+
+/// Grenade fuse duration in seconds before explosion.
+pub const GRENADE_FUSE_SEC: u64 = 5;
+/// Grenade throw speed (horizontal and vertical equal = 45° lob).
+pub const GRENADE_THROW_SPEED: f32 = 7.2;
+/// Impulse applied to thrower when throwing grenade.
+pub const GRENADE_THROWER_IMPULSE: f32 = 0.9;
+/// Grenade physics restitution (bounciness).
+pub const GRENADE_RESTITUTION: f32 = 0.75;
+/// Grenade explosion knockback magnitude at center (scales with S-curve at edge).
+pub const GRENADE_KNOCKBACK_BASE: f32 = 10.0;
+/// Grenade cooldown in microseconds (1 second between throws).
+pub const GRENADE_COOLDOWN_MICROS: i64 = 1_000_000;

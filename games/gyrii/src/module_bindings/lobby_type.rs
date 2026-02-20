@@ -24,6 +24,7 @@ pub struct Lobby {
     pub game_mode: GameMode,
     pub created_at: __sdk::Timestamp,
     pub score_limit: i32,
+    pub flag_limit: i32,
     pub time_limit_seconds: i32,
     pub has_password: bool,
     pub friendly_fire: FriendlyFire,

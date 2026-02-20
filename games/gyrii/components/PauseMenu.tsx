@@ -1,11 +1,9 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useGyriiStore } from "../store/gameStore";
 import { useSpacetimeDB } from "../hooks/useSpacetimeDB";
 
 export default function PauseMenu() {
-  const router = useRouter();
   const { setGameState, setCurrentLobby, setPendingLeaveLobby } =
     useGyriiStore();
   const { leaveLobby } = useSpacetimeDB();
@@ -19,13 +17,6 @@ export default function PauseMenu() {
     setCurrentLobby(null);
     setGameState("loading");
     await leaveLobby();
-  };
-
-  const handleBackToArcade = async () => {
-    setPendingLeaveLobby(true);
-    setCurrentLobby(null);
-    await leaveLobby();
-    router.push("/arcade");
   };
 
   return (
@@ -48,13 +39,6 @@ export default function PauseMenu() {
             className="w-full py-3 px-6 bg-gray-700 text-white font-bold rounded-lg hover:bg-gray-600 transition-all duration-200"
           >
             Quit to Menu
-          </button>
-
-          <button
-            onClick={handleBackToArcade}
-            className="w-full py-3 px-6 bg-gray-800 text-white font-bold rounded-lg hover:bg-gray-700 transition-all duration-200"
-          >
-            Back to Arcade
           </button>
         </div>
 

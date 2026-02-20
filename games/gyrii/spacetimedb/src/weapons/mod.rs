@@ -10,7 +10,11 @@ mod machine_gun;
 use spacetimedb::{reducer, Identity, ReducerContext, Table};
 use spacetime_rapier::{Collider, RigidBody, RigidBodyProperties, RigidBodyType, Trigger, Vec3};
 
-use crate::constants::HEALTH_SCALE;
+use crate::collision_groups::{GROUP_BULLET, GROUP_FLOOR, GROUP_GRENADE, GROUP_PLAYER, GROUP_WALL};
+use crate::constants::{
+    GRENADE_COOLDOWN_MICROS, GRENADE_FUSE_SEC, GRENADE_RESTITUTION, GRENADE_THROW_SPEED,
+    GRENADE_THROWER_IMPULSE, HEALTH_SCALE,
+};
 use crate::game::apply_damage;
 use crate::lobby::lobby;
 use crate::player::{player, Player, WeaponType};
@@ -92,7 +96,14 @@ pub fn detonate_rocket(ctx: &ReducerContext) -> Result<(), String> {
         .clone();
     let rb = spacetime_rapier::RigidBody::find(ctx, rocket.rigid_body_id)
         .ok_or("Rocket rigid body not found")?;
-    crate::game::apply_explosion_damage(ctx, rb.position(), rocket.damage, rocket.radius, identity);
+    crate::game::insert_pending_explosion(
+        ctx,
+        rocket.world_id,
+        rb.position(),
+        rocket.damage,
+        rocket.radius,
+        identity,
+    );
     ctx.db.projectile().rigid_body_id().delete(rocket.rigid_body_id);
     rb.delete(ctx);
     Ok(())
@@ -112,23 +123,34 @@ pub fn throw_grenade(ctx: &ReducerContext, aim_x: f32, aim_z: f32) -> Result<(),
     if player.grenades <= 0 {
         return Err("No grenades".to_string());
     }
+    let now_micros = ctx.timestamp.to_micros_since_unix_epoch();
+    if now_micros - player.last_grenade_thrown_at < GRENADE_COOLDOWN_MICROS {
+        return Err("Grenade on cooldown".to_string());
+    }
     let lobby = ctx.db.lobby().id().find(player.lobby_id).ok_or("Lobby not found")?;
 
     let aim_dir = Vec3::new(aim_x, 0.0, aim_z).normalize();
-    let velocity = Vec3::new(aim_dir.x * 12.0, 5.0, aim_dir.z * 12.0);
+    // 45-degree lob: horizontal and vertical speeds equal
+    let s = GRENADE_THROW_SPEED;
+    let velocity = Vec3::new(aim_dir.x * s, s, aim_dir.z * s);
+    // Spawn from behind the player
     let start_pos = Vec3::new(
-        player.position_x + aim_dir.x * 0.5,
+        player.position_x - aim_dir.x * 0.5,
         player.position_y + 0.5,
-        player.position_z + aim_dir.z * 0.5,
+        player.position_z - aim_dir.z * 0.5,
     );
 
     let rb_props = RigidBodyProperties::builder()
         .world_id(lobby.physics_world_id)
         .mass(0.3)
-        .restitution(0.5)
+        .restitution(GRENADE_RESTITUTION)
+        .ccd_enabled(true) // prevent tunneling through walls/floor
         .build()
         .insert(ctx);
-    let collider = Collider::ball(lobby.physics_world_id, 0.15).insert(ctx);
+    let mut collider = Collider::ball(lobby.physics_world_id, 0.15);
+    collider.collision_memberships = GROUP_GRENADE;
+    collider.collision_filter = GROUP_WALL | GROUP_FLOOR | GROUP_PLAYER | GROUP_BULLET;
+    let collider = collider.insert(ctx);
     let grenade_rb = RigidBody::builder()
         .world_id(lobby.physics_world_id)
         .position_x(start_pos.x)
@@ -146,16 +168,41 @@ pub fn throw_grenade(ctx: &ReducerContext, aim_x: f32, aim_z: f32) -> Result<(),
 
     ctx.db.grenade().insert(Grenade {
         rigid_body_id: grenade_rb.id,
+        world_id: lobby.physics_world_id,
         owner_id: identity,
-        fuse_ticks: 180,
-        damage: 70.0,
+        expires_at_micros: now_micros as u64 + GRENADE_FUSE_SEC * 1_000_000,
+        damage: 120.0,
         radius: 5.0,
+        position_x: start_pos.x,
+        position_y: start_pos.y,
+        position_z: start_pos.z,
+        velocity_x: velocity.x,
+        velocity_y: velocity.y,
+        velocity_z: velocity.z,
     });
+
+    // Apply small impulse to thrower in throw direction
+    if player.rigid_body_id != 0 {
+        if let Some(mut rb) = RigidBody::find(ctx, player.rigid_body_id) {
+            let imp = GRENADE_THROWER_IMPULSE;
+            rb.linear_velocity_x += aim_dir.x * imp;
+            rb.linear_velocity_y += aim_dir.y * imp;
+            rb.linear_velocity_z += aim_dir.z * imp;
+            rb.update(ctx);
+        }
+    }
 
     let mut updated_player = player.clone();
     updated_player.grenades -= 1;
+    updated_player.last_grenade_thrown_at = now_micros;
     ctx.db.player().identity().update(updated_player);
-    log::info!("Grenade thrown by {:?}", identity);
+    log::info!(
+        "[grenade] THROW rb={} world={} pos=({:.2},{:.2},{:.2}) vel=({:.2},{:.2},{:.2})",
+        grenade_rb.id,
+        lobby.physics_world_id,
+        start_pos.x, start_pos.y, start_pos.z,
+        velocity.x, velocity.y, velocity.z,
+    );
     Ok(())
 }
 
@@ -244,7 +291,21 @@ fn use_popup_knives(ctx: &ReducerContext, player: &Player) -> Result<(), String>
 fn use_self_destruct(ctx: &ReducerContext, player: &Player) -> Result<(), String> {
     let nuke_damage = 200.0;
     let nuke_radius = 10.0;
-    crate::game::apply_explosion_damage(ctx, player.position(), nuke_damage, nuke_radius, player.identity);
+    let world_id = ctx
+        .db
+        .lobby()
+        .id()
+        .find(player.lobby_id)
+        .map(|l| l.physics_world_id)
+        .unwrap_or(1);
+    crate::game::insert_pending_explosion(
+        ctx,
+        world_id,
+        player.position(),
+        nuke_damage,
+        nuke_radius,
+        player.identity,
+    );
     apply_damage(ctx, player.identity, crate::constants::MAX_HEALTH, player.identity);
     Ok(())
 }

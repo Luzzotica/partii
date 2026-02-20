@@ -12,10 +12,17 @@ import {
 
 export default __t.object("Grenade", {
   rigidBodyId: __t.u64(),
+  worldId: __t.u64(),
   ownerId: __t.identity(),
-  fuseTicks: __t.i32(),
+  expiresAtMicros: __t.u64(),
   damage: __t.f32(),
   radius: __t.f32(),
+  positionX: __t.f32(),
+  positionY: __t.f32(),
+  positionZ: __t.f32(),
+  velocityX: __t.f32(),
+  velocityY: __t.f32(),
+  velocityZ: __t.f32(),
 });
 
 

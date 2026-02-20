@@ -12,6 +12,7 @@ export {
   createThrowableBody,
   removeThrowableBody,
   getThrowablePosition,
+  setThrowableState,
   destroyWorld,
 } from "./ClientPhysics";
 export type { WorldHandle } from "./ClientPhysics";

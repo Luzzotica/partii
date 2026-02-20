@@ -131,6 +131,8 @@ function convertLobby(lobby: any, connection: DbConnection) {
     gameMode: gameModeStr as "freeForAll" | "teamDeathmatch" | "captureTheFlag",
     gameState: gameStateStr as "waiting" | "starting" | "inProgress" | "ended",
     hasPassword: lobby.hasPassword,
+    scoreLimit: lobby.scoreLimit ?? 25,
+    flagLimit: lobby.flagLimit ?? 3,
   };
 }
 
@@ -368,9 +370,12 @@ export function useSpacetimeDB() {
   const createLobby = useCallback(
     async (
       name: string,
+      hostPlayerName: string,
       mapId: "Arena" | "Maze" | "Warehouse",
       maxPlayers: number,
       gameMode: "FreeForAll" | "TeamDeathmatch" | "CaptureTheFlag",
+      scoreLimit: number,
+      flagLimit: number,
       password: string = "",
     ) => {
       if (!singletonConnection) {
@@ -382,14 +387,23 @@ export function useSpacetimeDB() {
         const gameModeEnum = { tag: gameMode } as any;
         await singletonConnection.reducers.createLobby({
           name,
+          hostPlayerName: hostPlayerName.trim() || "Player",
           mapId: mapIdEnum,
           gameMode: gameModeEnum,
           maxPlayers,
-          scoreLimit: 50,
+          scoreLimit,
+          flagLimit,
           password,
           customMapJson: "", // use built-in map for mapId; pass custom JSON for player-made maps
         });
-        console.log("Create lobby:", { name, mapId, maxPlayers, gameMode });
+        console.log("Create lobby:", {
+          name,
+          mapId,
+          maxPlayers,
+          gameMode,
+          scoreLimit,
+          flagLimit,
+        });
       } catch (error) {
         console.error("Failed to create lobby:", error);
         useGyriiStore
@@ -484,14 +498,22 @@ export function useSpacetimeDB() {
     console.log("Shoot");
   }, []);
 
-  const throwGrenade = useCallback(async (throwPower: number) => {
+  const throwGrenade = useCallback(async (aimX: number, aimZ: number) => {
     if (!singletonConnection) return;
-    console.log("Throw grenade:", { throwPower });
+    try {
+      singletonConnection.reducers.throwGrenade({ aimX, aimZ });
+    } catch {
+      // Swallow reducer errors (e.g. not in game, no grenades)
+    }
   }, []);
 
-  const throwMolotov = useCallback(async (throwPower: number) => {
+  const throwMolotov = useCallback(async (aimX: number, aimZ: number) => {
     if (!singletonConnection) return;
-    console.log("Throw molotov:", { throwPower });
+    try {
+      await singletonConnection.reducers.throwMolotov({ aimX, aimZ });
+    } catch {
+      // Swallow reducer errors (e.g. not in game, no molotovs)
+    }
   }, []);
 
   const useSecondary = useCallback(async () => {

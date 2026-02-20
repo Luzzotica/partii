@@ -3,7 +3,7 @@
 use spacetimedb::{reducer, table, Identity, ReducerContext, SpacetimeType, Table, Timestamp};
 use spacetime_rapier::{Collider, RigidBody, RigidBodyProperties, RigidBodyType, Vec3};
 
-use crate::collision_groups::{GROUP_BULLET, GROUP_FLOOR, GROUP_PLAYER, GROUP_WALL};
+use crate::collision_groups::{GROUP_BULLET, GROUP_FLOOR, GROUP_GRENADE, GROUP_PLAYER, GROUP_WALL};
 use crate::constants::{PLAYER_ACCEL, PLAYER_DAMPING, PLAYER_INPUT_TICK_DT};
 use crate::lobby::{lobby, lobby_player, lobby_secret, Lobby};
 use crate::ctf::get_flag_spawn_position;
@@ -40,6 +40,7 @@ pub struct Player {
     pub team: i32,
     pub kills: i32,
     pub deaths: i32,
+    pub flag_captures: i32,
     pub weapon: WeaponType,
     pub secondary: SecondaryType,
     pub grenades: i32,
@@ -61,6 +62,8 @@ pub struct Player {
     pub is_shooting: bool,
     pub respawn_at: i64,
     pub last_shot_at: i64,
+    /// Last time player threw a grenade (micros since epoch); used for cooldown.
+    pub last_grenade_thrown_at: i64,
     pub joined_at: Timestamp,
     /// Last impulse applied (e.g. from bullet hit); client adds to predicted velocity once. 0,0,0 and 0 = none.
     pub last_impulse_x: f32,
@@ -132,7 +135,7 @@ pub fn create_player_at(
 
     let mut collider = Collider::ball(lobby.physics_world_id, 0.5);
     collider.collision_memberships = GROUP_PLAYER;
-    collider.collision_filter = GROUP_BULLET | GROUP_WALL | GROUP_FLOOR;
+    collider.collision_filter = GROUP_BULLET | GROUP_WALL | GROUP_FLOOR | GROUP_GRENADE;
     let collider = collider.insert(ctx);
 
     // Create dynamic rigid body - Rapier handles collision with walls; we only set velocity from input
@@ -164,9 +167,10 @@ pub fn create_player_at(
         team,
         kills: 0,
         deaths: 0,
+        flag_captures: 0,
         weapon,
         secondary,
-        grenades: 2,
+        grenades: 100,
         molotovs: 1,
         color_r: 0.0,
         color_g: 1.0,
@@ -185,6 +189,7 @@ pub fn create_player_at(
         is_shooting: false,
         respawn_at: 0,
         last_shot_at: 0,
+        last_grenade_thrown_at: 0,
         joined_at: ctx.timestamp,
         last_impulse_x: 0.0,
         last_impulse_y: 0.0,
@@ -291,7 +296,7 @@ pub fn request_spawn(
                 rb.update(ctx);
                 // Reset collider filter so player does not collide with others until moved 1 unit
                 if let Some(mut col) = Collider::find(ctx, rb.collider_id) {
-                    col.collision_filter = GROUP_BULLET | GROUP_WALL | GROUP_FLOOR;
+                    col.collision_filter = GROUP_BULLET | GROUP_WALL | GROUP_FLOOR | GROUP_GRENADE;
                     col.update(ctx);
                 }
             }

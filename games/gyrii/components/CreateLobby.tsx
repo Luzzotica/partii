@@ -51,6 +51,8 @@ export default function CreateLobby({ onBack, isConnected }: CreateLobbyProps) {
   const [gameMode, setGameMode] = useState<GameModeId>("freeForAll");
   const [mapId, setMapId] = useState("arena");
   const [password, setPassword] = useState("");
+  const [scoreLimit, setScoreLimit] = useState(25);
+  const [flagLimit, setFlagLimit] = useState(3);
 
   const handleCreate = async () => {
     if (!lobbyName.trim() || isConnecting || !isConnected) return;
@@ -72,11 +74,16 @@ export default function CreateLobby({ onBack, isConnected }: CreateLobbyProps) {
       };
 
       const name = lobbyName.trim();
+      const isCtf = gameMode === "captureTheFlag";
+      const hostPlayerName = useGyriiStore.getState().playerName;
       await createLobby(
         name,
+        hostPlayerName,
         mapIdMap[mapId] || "Arena",
         maxPlayers,
         gameModeMap[gameMode] || "FreeForAll",
+        isCtf ? 25 : scoreLimit,
+        isCtf ? flagLimit : 3,
         password,
       );
 
@@ -183,6 +190,52 @@ export default function CreateLobby({ onBack, isConnected }: CreateLobbyProps) {
             </div>
           </div>
         </div>
+
+        {(gameMode === "freeForAll" || gameMode === "teamDeathmatch") && (
+          <div>
+            <label className="block text-xs text-gray-400 mb-2">
+              KILLS TO WIN
+            </label>
+            <div className="flex gap-2 flex-wrap">
+              {[10, 15, 25, 35, 50].map((num) => (
+                <button
+                  key={num}
+                  onClick={() => setScoreLimit(num)}
+                  className={`px-4 py-2 rounded ${
+                    scoreLimit === num
+                      ? "bg-pink-600 text-white"
+                      : "bg-gray-800 text-gray-400 hover:bg-gray-700"
+                  }`}
+                >
+                  {num}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {gameMode === "captureTheFlag" && (
+          <div>
+            <label className="block text-xs text-gray-400 mb-2">
+              FLAGS TO CAPTURE
+            </label>
+            <div className="flex gap-2 flex-wrap">
+              {[1, 2, 3, 5, 7].map((num) => (
+                <button
+                  key={num}
+                  onClick={() => setFlagLimit(num)}
+                  className={`px-4 py-2 rounded ${
+                    flagLimit === num
+                      ? "bg-pink-600 text-white"
+                      : "bg-gray-800 text-gray-400 hover:bg-gray-700"
+                  }`}
+                >
+                  {num}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div>
           <label className="block text-xs text-gray-400 mb-2">

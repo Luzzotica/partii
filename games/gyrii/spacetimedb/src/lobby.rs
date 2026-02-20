@@ -37,6 +37,7 @@ pub struct Lobby {
     pub game_mode: GameMode,
     pub created_at: Timestamp,
     pub score_limit: i32,
+    pub flag_limit: i32,
     pub time_limit_seconds: i32,
     pub has_password: bool,
     pub friendly_fire: FriendlyFire,
@@ -98,10 +99,12 @@ pub enum FriendlyFire {
 pub fn create_lobby(
     ctx: &ReducerContext,
     name: String,
+    host_player_name: String, // display name for the lobby creator (first player)
     map_id: MapId,
     game_mode: GameMode,
     max_players: u8,
     score_limit: i32,
+    flag_limit: i32,
     password: String, // empty string = no password
     custom_map_json: String, // non-empty = use this JSON instead of built-in for map_id
 ) -> Result<(), String> {
@@ -139,7 +142,8 @@ pub fn create_lobby(
         game_state: GameState::Waiting,
         game_mode,
         created_at: ctx.timestamp,
-        score_limit,
+        score_limit: score_limit.clamp(10, 50),
+        flag_limit: flag_limit.clamp(1, 7),
         time_limit_seconds: 600,
         has_password,
         friendly_fire: FriendlyFire::Off,
@@ -177,11 +181,17 @@ pub fn create_lobby(
 
     schedule_physics_tick(ctx, lobby.physics_world_id);
 
+    let display_name = host_player_name.trim();
+    let display_name = if display_name.is_empty() {
+        "Player"
+    } else {
+        display_name
+    };
     ctx.db.lobby_player().insert(LobbyPlayer {
         id: 0,
         lobby_id: lobby.id,
         player_identity: identity,
-        name: "Host".to_string(),
+        name: display_name.to_string(),
         team: 0,
         is_ready: false,
         joined_at: ctx.timestamp,

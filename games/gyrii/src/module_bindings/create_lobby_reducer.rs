@@ -11,10 +11,12 @@ use super::map_id_type::MapId;
 #[sats(crate = __lib)]
 pub(super) struct CreateLobbyArgs {
     pub name: String,
+    pub host_player_name: String,
     pub map_id: MapId,
     pub game_mode: GameMode,
     pub max_players: u8,
     pub score_limit: i32,
+    pub flag_limit: i32,
     pub password: String,
     pub custom_map_json: String,
 }
@@ -23,10 +25,12 @@ impl From<CreateLobbyArgs> for super::Reducer {
     fn from(args: CreateLobbyArgs) -> Self {
         Self::CreateLobby {
             name: args.name,
+            host_player_name: args.host_player_name,
             map_id: args.map_id,
             game_mode: args.game_mode,
             max_players: args.max_players,
             score_limit: args.score_limit,
+            flag_limit: args.flag_limit,
             password: args.password,
             custom_map_json: args.custom_map_json,
         }
@@ -52,10 +56,12 @@ pub trait create_lobby {
     fn create_lobby(
         &self,
         name: String,
+        host_player_name: String,
         map_id: MapId,
         game_mode: GameMode,
         max_players: u8,
         score_limit: i32,
+        flag_limit: i32,
         password: String,
         custom_map_json: String,
     ) -> __sdk::Result<()>;
@@ -71,9 +77,11 @@ pub trait create_lobby {
         callback: impl FnMut(
                 &super::ReducerEventContext,
                 &String,
+                &String,
                 &MapId,
                 &GameMode,
                 &u8,
+                &i32,
                 &i32,
                 &String,
                 &String,
@@ -89,10 +97,12 @@ impl create_lobby for super::RemoteReducers {
     fn create_lobby(
         &self,
         name: String,
+        host_player_name: String,
         map_id: MapId,
         game_mode: GameMode,
         max_players: u8,
         score_limit: i32,
+        flag_limit: i32,
         password: String,
         custom_map_json: String,
     ) -> __sdk::Result<()> {
@@ -100,10 +110,12 @@ impl create_lobby for super::RemoteReducers {
             "create_lobby",
             CreateLobbyArgs {
                 name,
+                host_player_name,
                 map_id,
                 game_mode,
                 max_players,
                 score_limit,
+                flag_limit,
                 password,
                 custom_map_json,
             },
@@ -114,9 +126,11 @@ impl create_lobby for super::RemoteReducers {
         mut callback: impl FnMut(
                 &super::ReducerEventContext,
                 &String,
+                &String,
                 &MapId,
                 &GameMode,
                 &u8,
+                &i32,
                 &i32,
                 &String,
                 &String,
@@ -133,10 +147,12 @@ impl create_lobby for super::RemoteReducers {
                             reducer:
                                 super::Reducer::CreateLobby {
                                     name,
+                                    host_player_name,
                                     map_id,
                                     game_mode,
                                     max_players,
                                     score_limit,
+                                    flag_limit,
                                     password,
                                     custom_map_json,
                                 },
@@ -150,10 +166,12 @@ impl create_lobby for super::RemoteReducers {
                 callback(
                     ctx,
                     name,
+                    host_player_name,
                     map_id,
                     game_mode,
                     max_players,
                     score_limit,
+                    flag_limit,
                     password,
                     custom_map_json,
                 )

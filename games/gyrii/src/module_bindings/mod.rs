@@ -44,6 +44,10 @@ pub mod map_spawn_point_table;
 pub mod map_spawn_point_type;
 pub mod map_wall_table;
 pub mod map_wall_type;
+pub mod pending_explosion_raycast_table;
+pub mod pending_explosion_raycast_type;
+pub mod pending_explosion_table;
+pub mod pending_explosion_type;
 pub mod pending_photon_beam_table;
 pub mod pending_photon_beam_type;
 pub mod photon_beam_table;
@@ -139,6 +143,10 @@ pub use map_spawn_point_table::*;
 pub use map_spawn_point_type::MapSpawnPoint;
 pub use map_wall_table::*;
 pub use map_wall_type::MapWall;
+pub use pending_explosion_raycast_table::*;
+pub use pending_explosion_raycast_type::PendingExplosionRaycast;
+pub use pending_explosion_table::*;
+pub use pending_explosion_type::PendingExplosion;
 pub use pending_photon_beam_table::*;
 pub use pending_photon_beam_type::PendingPhotonBeam;
 pub use photon_beam_table::*;
@@ -208,10 +216,12 @@ pub enum Reducer {
     ClientDisconnected,
     CreateLobby {
         name: String,
+        host_player_name: String,
         map_id: MapId,
         game_mode: GameMode,
         max_players: u8,
         score_limit: i32,
+        flag_limit: i32,
         password: String,
         custom_map_json: String,
     },
@@ -470,6 +480,8 @@ pub struct DbUpdate {
     map_flag_location: __sdk::TableUpdate<MapFlagLocation>,
     map_spawn_point: __sdk::TableUpdate<MapSpawnPoint>,
     map_wall: __sdk::TableUpdate<MapWall>,
+    pending_explosion: __sdk::TableUpdate<PendingExplosion>,
+    pending_explosion_raycast: __sdk::TableUpdate<PendingExplosionRaycast>,
     pending_photon_beam: __sdk::TableUpdate<PendingPhotonBeam>,
     photon_beam: __sdk::TableUpdate<PhotonBeam>,
     photon_rifle_charge: __sdk::TableUpdate<PhotonRifleCharge>,
@@ -525,6 +537,12 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
                 "map_wall" => db_update
                     .map_wall
                     .append(map_wall_table::parse_table_update(table_update)?),
+                "pending_explosion" => db_update
+                    .pending_explosion
+                    .append(pending_explosion_table::parse_table_update(table_update)?),
+                "pending_explosion_raycast" => db_update.pending_explosion_raycast.append(
+                    pending_explosion_raycast_table::parse_table_update(table_update)?,
+                ),
                 "pending_photon_beam" => db_update
                     .pending_photon_beam
                     .append(pending_photon_beam_table::parse_table_update(table_update)?),
@@ -629,6 +647,15 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.map_wall = cache
             .apply_diff_to_table::<MapWall>("map_wall", &self.map_wall)
             .with_updates_by_pk(|row| &row.id);
+        diff.pending_explosion = cache
+            .apply_diff_to_table::<PendingExplosion>("pending_explosion", &self.pending_explosion)
+            .with_updates_by_pk(|row| &row.id);
+        diff.pending_explosion_raycast = cache
+            .apply_diff_to_table::<PendingExplosionRaycast>(
+                "pending_explosion_raycast",
+                &self.pending_explosion_raycast,
+            )
+            .with_updates_by_pk(|row| &row.id);
         diff.pending_photon_beam = cache
             .apply_diff_to_table::<PendingPhotonBeam>(
                 "pending_photon_beam",
@@ -706,6 +733,8 @@ pub struct AppliedDiff<'r> {
     map_flag_location: __sdk::TableAppliedDiff<'r, MapFlagLocation>,
     map_spawn_point: __sdk::TableAppliedDiff<'r, MapSpawnPoint>,
     map_wall: __sdk::TableAppliedDiff<'r, MapWall>,
+    pending_explosion: __sdk::TableAppliedDiff<'r, PendingExplosion>,
+    pending_explosion_raycast: __sdk::TableAppliedDiff<'r, PendingExplosionRaycast>,
     pending_photon_beam: __sdk::TableAppliedDiff<'r, PendingPhotonBeam>,
     photon_beam: __sdk::TableAppliedDiff<'r, PhotonBeam>,
     photon_rifle_charge: __sdk::TableAppliedDiff<'r, PhotonRifleCharge>,
@@ -764,6 +793,16 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             event,
         );
         callbacks.invoke_table_row_callbacks::<MapWall>("map_wall", &self.map_wall, event);
+        callbacks.invoke_table_row_callbacks::<PendingExplosion>(
+            "pending_explosion",
+            &self.pending_explosion,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<PendingExplosionRaycast>(
+            "pending_explosion_raycast",
+            &self.pending_explosion_raycast,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<PendingPhotonBeam>(
             "pending_photon_beam",
             &self.pending_photon_beam,
@@ -1552,6 +1591,8 @@ impl __sdk::SpacetimeModule for RemoteModule {
         map_flag_location_table::register_table(client_cache);
         map_spawn_point_table::register_table(client_cache);
         map_wall_table::register_table(client_cache);
+        pending_explosion_table::register_table(client_cache);
+        pending_explosion_raycast_table::register_table(client_cache);
         pending_photon_beam_table::register_table(client_cache);
         photon_beam_table::register_table(client_cache);
         photon_rifle_charge_table::register_table(client_cache);

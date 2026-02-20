@@ -153,6 +153,7 @@ export class WeaponRenderer {
         this.scene,
       );
       mesh.isVisible = false;
+      mesh.isPickable = false; // beams are visual only, no collision
       const mat = new BABYLON.StandardMaterial(`beamMat_${i}`, this.scene);
       mat.emissiveColor = new BABYLON.Color3(0, 1, 1);
       mat.disableLighting = true;
@@ -247,7 +248,8 @@ export class WeaponRenderer {
           mesh.name !== "gridGround" &&
           !mesh.name.startsWith("weapon-") &&
           !mesh.name.startsWith("muzzle") &&
-          !mesh.name.startsWith("debugAim-"),
+          !mesh.name.startsWith("debugAim-") &&
+          !mesh.name.startsWith("beam_"),
       );
 
       const endPoint = hit?.pickedPoint || origin.add(direction.scale(100));
@@ -533,7 +535,8 @@ export class WeaponRenderer {
           !mesh.name.startsWith("projectile") &&
           !mesh.name.startsWith("weapon-") &&
           !mesh.name.startsWith("muzzle") &&
-          !mesh.name.startsWith("debugAim-"),
+          !mesh.name.startsWith("debugAim-") &&
+          !mesh.name.startsWith("beam_"),
       );
 
       if (hit?.pickedMesh) {

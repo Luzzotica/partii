@@ -14,6 +14,7 @@ import {
 import {
   GROUP_BULLET,
   GROUP_FLOOR,
+  GROUP_GRENADE,
   GROUP_PLAYER,
   GROUP_WALL,
   collisionGroups,
@@ -49,6 +50,8 @@ export type WorldHandle = {
   playerBodies: Map<string, InstanceType<RAPIER["RigidBody"]>>;
   throwableBodies: Map<string, InstanceType<RAPIER["RigidBody"]>>;
   lastInputTime: number;
+  /** Accumulated time for fixed-timestep physics (seconds). */
+  physicsAccumulator: number;
 };
 
 /**
@@ -62,11 +65,11 @@ export function createWorldFromMap(mapData: MapData): WorldHandle {
   const world = new R.World(gravity);
 
   const floorMembership = GROUP_FLOOR;
-  const floorFilter = GROUP_PLAYER | GROUP_BULLET;
+  const floorFilter = GROUP_PLAYER | GROUP_BULLET | GROUP_GRENADE;
   const wallMembership = GROUP_WALL;
-  const wallFilter = GROUP_PLAYER | GROUP_BULLET;
+  const wallFilter = GROUP_PLAYER | GROUP_BULLET | GROUP_GRENADE;
   const playerMembership = GROUP_PLAYER;
-  const playerFilter = GROUP_FLOOR | GROUP_WALL | GROUP_BULLET;
+  const playerFilter = GROUP_FLOOR | GROUP_WALL | GROUP_BULLET | GROUP_GRENADE;
 
   // Floor
   if (!mapData.floorGrid || mapData.floorGrid.length === 0) {
@@ -181,6 +184,7 @@ export function createWorldFromMap(mapData: MapData): WorldHandle {
     playerBodies: new Map(),
     throwableBodies: new Map(),
     lastInputTime: 0,
+    physicsAccumulator: 0,
   };
 }
 
@@ -292,8 +296,32 @@ export function applyInput(
   body.setLinvel({ x: vx, y: v.y, z: vz }, true);
 }
 
+/** Server physics timestep (1/60 s); must match server ticks_per_second for sync. */
+const PHYSICS_DT = 1 / 60;
+
+/** Max steps per frame to avoid spiral of death on lag spikes. */
+const MAX_STEPS_PER_FRAME = 4;
+
+/**
+ * Step physics by actual elapsed time so client and server simulate at the same rate.
+ * Rapier defaults to dt=1/60 per step; at 120fps we'd simulate 2x real time without this.
+ * We use fixed timestep accumulation: add dt, step once per PHYSICS_DT, carry remainder.
+ */
 export function step(handle: WorldHandle, dt: number): void {
-  handle.world.step();
+  handle.physicsAccumulator += dt;
+  handle.world.timestep = PHYSICS_DT;
+  let steps = 0;
+  while (
+    handle.physicsAccumulator >= PHYSICS_DT &&
+    steps < MAX_STEPS_PER_FRAME
+  ) {
+    handle.world.step();
+    handle.physicsAccumulator -= PHYSICS_DT;
+    steps++;
+  }
+  if (handle.physicsAccumulator > PHYSICS_DT * 2) {
+    handle.physicsAccumulator = PHYSICS_DT;
+  }
 }
 
 // --- Throwables ---
@@ -309,17 +337,24 @@ export function createThrowableBody(
   vz: number,
   radius = 0.2,
   gravityScale = 1,
+  restitution = 0,
 ): void {
   if (handle.throwableBodies.has(id)) return;
   const R = getRAPIER();
+  const isGrenade = id.startsWith("grenade_");
   const bodyDesc = R.RigidBodyDesc.dynamic()
     .setTranslation(x, y, z)
     .setLinvel(vx, vy, vz)
-    .setGravityScale(gravityScale);
+    .setGravityScale(gravityScale)
+    .setCcdEnabled(isGrenade); // prevent grenade tunneling through walls/floor
   const body = handle.world.createRigidBody(bodyDesc);
-  const collider = R.ColliderDesc.ball(radius).setCollisionGroups(
-    collisionGroups(GROUP_BULLET, GROUP_FLOOR | GROUP_WALL),
-  );
+  // Grenades bounce off walls, floor, and players
+  const membership = id.startsWith("grenade_") ? GROUP_GRENADE : GROUP_BULLET; // molotov uses BULLET for legacy compat
+  const filter =
+    GROUP_FLOOR | GROUP_WALL | (id.startsWith("grenade_") ? GROUP_PLAYER : 0);
+  const collider = R.ColliderDesc.ball(radius)
+    .setRestitution(restitution)
+    .setCollisionGroups(collisionGroups(membership, filter));
   handle.world.createCollider(collider, body);
   handle.throwableBodies.set(id, body);
 }
@@ -340,6 +375,23 @@ export function getThrowablePosition(
   if (!body) return null;
   const t = body.translation();
   return { x: t.x, y: t.y, z: t.z };
+}
+
+/** Set position and velocity of a throwable body (for server reconciliation). */
+export function setThrowableState(
+  handle: WorldHandle,
+  id: string,
+  x: number,
+  y: number,
+  z: number,
+  vx: number,
+  vy: number,
+  vz: number,
+): void {
+  const body = handle.throwableBodies.get(id);
+  if (!body) return;
+  body.setTranslation({ x, y, z }, true);
+  body.setLinvel({ x: vx, y: vy, z: vz }, true);
 }
 
 export function destroyWorld(handle: WorldHandle): void {

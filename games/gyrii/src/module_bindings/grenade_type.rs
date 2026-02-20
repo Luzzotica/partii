@@ -8,10 +8,17 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[sats(crate = __lib)]
 pub struct Grenade {
     pub rigid_body_id: u64,
+    pub world_id: u64,
     pub owner_id: __sdk::Identity,
-    pub fuse_ticks: i32,
+    pub expires_at_micros: u64,
     pub damage: f32,
     pub radius: f32,
+    pub position_x: f32,
+    pub position_y: f32,
+    pub position_z: f32,
+    pub velocity_x: f32,
+    pub velocity_y: f32,
+    pub velocity_z: f32,
 }
 
 impl __sdk::InModule for Grenade {

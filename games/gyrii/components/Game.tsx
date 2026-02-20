@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { Vector3 } from "@babylonjs/core";
+import { Vector3 } from "@babylonjs/core";
 import { canonicalPlayerId, useGyriiStore } from "../store/gameStore";
 import { useSpacetimeDB } from "../hooks/useSpacetimeDB";
 import { maps } from "../game/maps";
@@ -13,6 +13,7 @@ import {
 import {
   createDeathDecal,
   createDeathExplosion,
+  createExplosion,
 } from "../game/effects/ParticleEffects";
 import { getWeaponDisplayConfig } from "../game/weapons/weaponDisplayConstants";
 import HUD from "./HUD";
@@ -49,12 +50,23 @@ export default function GyriiGame() {
         lastServerTime?: number;
         /** Last applied impulse time (for local player hit prediction). */
         lastAppliedImpulseTime?: number;
+        /** Track designId so we can recreate material when it changes. */
+        lastDesignId?: number;
+        namePlane?: any;
+        nameTexture?: any;
+        lastDisplayName?: string;
       }
     >
   >(new Map());
   const { gameState, setGameState, selectedWeapon, localPlayer } =
     useGyriiStore();
-  const { updateInput, setShooting, setMarbleConfig } = useSpacetimeDB();
+  const {
+    updateInput,
+    setShooting,
+    setMarbleConfig,
+    throwGrenade,
+    throwMolotov,
+  } = useSpacetimeDB();
   const updateInputIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
     null,
   );
@@ -64,6 +76,8 @@ export default function GyriiGame() {
   // Shoot input: ref updated in game loop; listener attached to canvas immediately so nothing blocks it
   const shootHandlerRef = useRef<{
     setShooting: (shooting: boolean, aimX: number, aimZ: number) => void;
+    throwGrenade: (aimX: number, aimZ: number) => void;
+    throwMolotov: (aimX: number, aimZ: number) => void;
     aimX: number;
     aimZ: number;
     isShooting: boolean;
@@ -94,6 +108,8 @@ export default function GyriiGame() {
     // Window-level listeners (same pattern as rocket-to-heaven Joystick) so nothing in arcade/game DOM can consume the click before we see it
     shootHandlerRef.current = {
       setShooting,
+      throwGrenade,
+      throwMolotov,
       aimX: 0,
       aimZ: -1,
       isShooting: false,
@@ -103,8 +119,38 @@ export default function GyriiGame() {
     };
 
     const handlePointerDown = (e: MouseEvent | PointerEvent) => {
-      if (e.button !== 0) return;
       const r = shootHandlerRef.current;
+
+      // Right-click (2) or middle-click (1): throwables — same pointer event as shooting
+      if (e.button === 2 || e.button === 1) {
+        const store = useGyriiStore.getState();
+        const me = store.localPlayer;
+        if (!me || !r) return;
+        if (e.button === 2) {
+          if (me.grenadeCount <= 0) return;
+          const nowMicros = Date.now() * 1000;
+          const lastThrown = me.lastGrenadeThrownAt ?? 0;
+          if (nowMicros - lastThrown < 1_000_000) return;
+          r.throwGrenade(r.aimX, r.aimZ);
+        } else if (e.button === 1) {
+          if (me.molotovCount <= 0) return;
+          r.throwMolotov(r.aimX, r.aimZ);
+          if (r.throwableRenderer) {
+            const pos = new Vector3(
+              me.position.x,
+              me.position.y ?? 0.5,
+              me.position.z,
+            );
+            const aim = new Vector3(r.aimX, 0, r.aimZ);
+            r.throwableRenderer.throw(pos, aim, 12, "molotov", "local");
+          }
+        }
+        e.preventDefault();
+        return;
+      }
+
+      // Left-click (0): shooting
+      if (e.button !== 0) return;
       if (!r?.canvasRef?.current) return;
       const isCanvas = e.target === r.canvasRef.current;
       const container = r.canvasRef.current.parentElement;
@@ -113,7 +159,6 @@ export default function GyriiGame() {
       const isInteractive =
         e.target instanceof Element &&
         !!e.target.closest("button, a, input, select, textarea");
-      // Game area: canvas, container (non-interactive), or any non-interactive left-click when game is ready (so we don't miss clicks that hit DIV/BODY)
       const isGameArea =
         isCanvas ||
         (insideContainer && !isInteractive) ||
@@ -304,6 +349,10 @@ export default function GyriiGame() {
             lastServerVel?: { x: number; y: number; z: number };
             lastServerTime?: number;
             lastAppliedImpulseTime?: number;
+            lastDesignId?: number;
+            namePlane?: any;
+            nameTexture?: any;
+            lastDisplayName?: string;
           }
         >();
         playerMeshesRef.current = playerMeshes;
@@ -324,6 +373,11 @@ export default function GyriiGame() {
               const entry = playerMeshes.get(id)!;
               if (entry.weaponMesh) entry.weaponMesh.dispose(); // muzzleNode is child, disposed with weapon
               entry.debugAimLine?.dispose();
+              if (entry.namePlane) {
+                entry.namePlane.material?.dispose();
+                entry.namePlane.dispose();
+              }
+              entry.nameTexture?.dispose();
               entry.mesh.dispose();
               entry.material.dispose();
               glowLayer.removeIncludedOnlyMesh(entry.mesh);
@@ -358,6 +412,46 @@ export default function GyriiGame() {
             );
             mesh.material = material;
             glowLayer.addIncludedOnlyMesh(mesh);
+            // Billboard name label above player
+            const namePlane = BABYLON.MeshBuilder.CreatePlane(
+              `namePlane-${id.slice(-12)}`,
+              { width: 2, height: 0.5 },
+              scene,
+            );
+            namePlane.parent = rootNode;
+            namePlane.position.y = 1.2;
+            namePlane.billboardMode = BABYLON.Mesh.BILLBOARDMODE_ALL;
+            const nameTexture = new BABYLON.DynamicTexture(
+              `nameTex-${id.slice(-12)}`,
+              { width: 256, height: 64 },
+              scene,
+              false,
+            );
+            nameTexture.hasAlpha = true;
+            const nameMat = new BABYLON.StandardMaterial(
+              `nameMat-${id.slice(-12)}`,
+              scene,
+            );
+            nameMat.diffuseTexture = nameTexture;
+            nameMat.emissiveTexture = nameTexture;
+            nameMat.backFaceCulling = false;
+            nameMat.hasAlpha = true;
+            nameMat.alpha = 1;
+            namePlane.material = nameMat;
+            const displayName = player.name || "Player";
+            const ctx = nameTexture.getContext();
+            ctx.clearRect(0, 0, 256, 64);
+            ctx.textAlign = "center";
+            nameTexture.drawText(
+              displayName,
+              128,
+              44,
+              "bold 36px sans-serif",
+              "#ffffff",
+              null,
+              true,
+            );
+            nameTexture.update();
             // const debugAimLine = BABYLON.MeshBuilder.CreateLines(
             //   `debugAim-${id.slice(-12)}`,
             //   {
@@ -381,6 +475,10 @@ export default function GyriiGame() {
               mesh,
               material,
               lastWeapon: player.weapon,
+              lastDesignId: config.designId,
+              namePlane,
+              nameTexture,
+              lastDisplayName: displayName,
             });
             createPlayerBody(
               physicsHandle,
@@ -653,6 +751,41 @@ export default function GyriiGame() {
               mainColor: player.color,
               secondaryColor: player.secondaryColor ?? player.color,
             };
+            // Recreate material when designId changes (shader is baked at creation)
+            if (config.designId !== (entry.lastDesignId ?? -1)) {
+              const oldMat = entry.material;
+              const newMat = createMarbleMaterial(
+                BABYLON,
+                scene,
+                config,
+                `playerMat-${id}`,
+              );
+              entry.mesh.material = newMat;
+              oldMat.dispose();
+              entry.material = newMat;
+              entry.lastDesignId = config.designId;
+            }
+            // Update name label when player name changes
+            const displayName = player.name || "Player";
+            if (
+              entry.nameTexture &&
+              displayName !== (entry.lastDisplayName ?? "")
+            ) {
+              entry.lastDisplayName = displayName;
+              const ctx = entry.nameTexture.getContext();
+              ctx.clearRect(0, 0, 256, 64);
+              ctx.textAlign = "center";
+              entry.nameTexture.drawText(
+                displayName,
+                128,
+                44,
+                "bold 36px sans-serif",
+                "#ffffff",
+                null,
+                true,
+              );
+              entry.nameTexture.update();
+            }
             const inBeam = useGyriiStore
               .getState()
               .playersInBeamHighlight.has(id);
@@ -705,31 +838,14 @@ export default function GyriiGame() {
 
         // Initialize weapon renderers
         const weaponRenderer = new WeaponRenderer(scene);
-        const throwableRenderer = new ThrowableRenderer(scene, physicsHandle);
+        const throwableRenderer = new ThrowableRenderer(
+          scene,
+          physicsHandle,
+          glowLayer,
+        );
         shootRef.throwableRenderer = throwableRenderer;
         weaponRendererRef.current = weaponRenderer;
         throwableRendererRef.current = throwableRenderer;
-
-        // Throwables: right-click / middle-click on document (BABYLON + throwableRenderer required)
-        const handleThrowablesDown = (e: MouseEvent) => {
-          console.log("handleThrowablesDown", e.button);
-          if (e.button !== 1 && e.button !== 2) return;
-          if (!shootRef.throwableRenderer) return;
-          const store = useGyriiStore.getState();
-          const me = store.localPlayer;
-          if (!me) return;
-          const pos = new BABYLON.Vector3(
-            me.position.x,
-            me.position.y ?? 0.5,
-            me.position.z,
-          );
-          const aim = new BABYLON.Vector3(shootRef.aimX, 0, shootRef.aimZ);
-          if (e.button === 2)
-            shootRef.throwableRenderer.throw(pos, aim, 15, "grenade", "local");
-          else if (e.button === 1)
-            shootRef.throwableRenderer.throw(pos, aim, 12, "molotov", "local");
-        };
-        document.addEventListener("mousedown", handleThrowablesDown, true);
 
         // Store reference
         gameSceneRef.current = { engine, scene, camera, glowLayer };
@@ -767,8 +883,15 @@ export default function GyriiGame() {
         let mouseScreenPos = { x: 0, y: 0 };
 
         const handlePointerMove = (e: MouseEvent | PointerEvent) => {
-          mouseScreenPos.x = e.clientX;
-          mouseScreenPos.y = e.clientY;
+          const canvas = canvasRef.current;
+          if (canvas) {
+            const rect = canvas.getBoundingClientRect();
+            mouseScreenPos.x = e.clientX - rect.left;
+            mouseScreenPos.y = e.clientY - rect.top;
+          } else {
+            mouseScreenPos.x = e.clientX;
+            mouseScreenPos.y = e.clientY;
+          }
           useGyriiStore.getState().setMousePosition(e.clientX, e.clientY);
         };
         // Capture phase on document so we get move events during click-drag (before Babylon or others capture)
@@ -895,6 +1018,39 @@ export default function GyriiGame() {
               ev.velocity,
               ev.projectileType,
             );
+          }
+
+          // 1b) Drain pending grenade events from server — spawn/remove/update visuals
+          const {
+            inserts: grenadeInserts,
+            deletes: grenadeDeletes,
+            updates: grenadeUpdates,
+          } = useGyriiStore.getState().takePendingGrenadeEvents();
+          for (const ev of grenadeInserts) {
+            throwableRenderer.throwFromServer(
+              ev.position,
+              ev.velocity,
+              ev.rigidBodyId,
+              ev.ownerId,
+              ev.ownerColor,
+            );
+          }
+          for (const ev of grenadeUpdates) {
+            throwableRenderer.updateServerGrenadePosition(
+              ev.rigidBodyId,
+              ev.position,
+              ev.velocity,
+            );
+          }
+          for (const ev of grenadeDeletes) {
+            const pos = throwableRenderer.removeServerGrenade(ev.rigidBodyId);
+            if (pos) {
+              createExplosion(
+                scene,
+                new BABYLON.Vector3(pos.x, pos.y, pos.z),
+                2.5,
+              );
+            }
           }
 
           // 2) lastShotAt feedback only for hitscan (photon rifle); projectiles use pending events
@@ -1062,7 +1218,6 @@ export default function GyriiGame() {
             handlePointerMove as (e: PointerEvent) => void,
             true,
           );
-          document.removeEventListener("mousedown", handleThrowablesDown, true);
           window.removeEventListener("pointerdown", handlePointerDown, true);
           window.removeEventListener("pointerup", handlePointerUp, true);
           unsubStore();

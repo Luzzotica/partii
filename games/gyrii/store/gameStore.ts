@@ -33,6 +33,7 @@ export interface Player {
   health: number;
   kills: number;
   deaths: number;
+  flagCaptures?: number;
   team: number;
   color: { r: number; g: number; b: number };
   /** Server-synced secondary color (e.g. for marble design). */
@@ -53,6 +54,8 @@ export interface Player {
   lastImpulseTime?: number;
   /** Server timestamp when this player last fired (for shot feedback). */
   lastShotAt?: number;
+  /** Server timestamp (micros) when this player last threw a grenade; used for cooldown. */
+  lastGrenadeThrownAt?: number;
   /** Server-synced alive state; when false, show respawn loadout screen. */
   isAlive?: boolean;
 }
@@ -70,6 +73,28 @@ export interface PendingShotEvent {
   velocity: { x: number; y: number; z: number };
 }
 
+/** Event pushed when server creates a grenade; game loop spawns client physics body. */
+export interface PendingGrenadeInsertEvent {
+  rigidBodyId: number;
+  position: { x: number; y: number; z: number };
+  velocity: { x: number; y: number; z: number };
+  ownerId: string;
+  /** Thrower's primary color (r,g,b 0-1) for trail particles. */
+  ownerColor?: { r: number; g: number; b: number };
+}
+
+/** Event pushed when server deletes a grenade (exploded); game loop removes and plays FX. */
+export interface PendingGrenadeDeleteEvent {
+  rigidBodyId: number;
+}
+
+/** Event pushed when server updates grenade position; game loop syncs physics body. */
+export interface PendingGrenadeUpdateEvent {
+  rigidBodyId: number;
+  position: { x: number; y: number; z: number };
+  velocity: { x: number; y: number; z: number };
+}
+
 export interface Lobby {
   id: string;
   name: string;
@@ -81,6 +106,8 @@ export interface Lobby {
   gameMode: "freeForAll" | "teamDeathmatch" | "captureTheFlag";
   gameState: "waiting" | "starting" | "inProgress" | "ended";
   hasPassword: boolean;
+  scoreLimit: number;
+  flagLimit: number;
 }
 
 export interface KillEvent {
@@ -176,6 +203,10 @@ interface GyriiStore {
 
   // Internal: queue of shot events from server (Projectile inserts); drained by game loop
   pendingShotEvents: PendingShotEvent[];
+  // Internal: queue of grenade events from server; drained by game loop
+  pendingGrenadeInserts: PendingGrenadeInsertEvent[];
+  pendingGrenadeDeletes: PendingGrenadeDeleteEvent[];
+  pendingGrenadeUpdates: PendingGrenadeUpdateEvent[];
 
   // Input state
   inputDirection: { x: number; z: number };
@@ -210,6 +241,15 @@ interface GyriiStore {
   // Pending shot events from server (Projectile table inserts); game loop drains and spawns visuals
   addPendingShotEvent: (event: PendingShotEvent) => void;
   takePendingShotEvents: () => PendingShotEvent[];
+  // Pending grenade events from server; game loop drains and spawns/removes visuals
+  addPendingGrenadeInsert: (event: PendingGrenadeInsertEvent) => void;
+  addPendingGrenadeDelete: (event: PendingGrenadeDeleteEvent) => void;
+  addPendingGrenadeUpdate: (event: PendingGrenadeUpdateEvent) => void;
+  takePendingGrenadeEvents: () => {
+    inserts: PendingGrenadeInsertEvent[];
+    deletes: PendingGrenadeDeleteEvent[];
+    updates: PendingGrenadeUpdateEvent[];
+  };
 
   // Reset
   reset: () => void;
@@ -229,6 +269,9 @@ const initialState = {
   photonBeams: new Map<string, PhotonBeamEntry>(),
   playersInBeamHighlight: new Set<string>(),
   pendingShotEvents: [] as PendingShotEvent[],
+  pendingGrenadeInserts: [] as PendingGrenadeInsertEvent[],
+  pendingGrenadeDeletes: [] as PendingGrenadeDeleteEvent[],
+  pendingGrenadeUpdates: [] as PendingGrenadeUpdateEvent[],
   inputDirection: { x: 0, z: 0 },
   aimDirection: { x: 0, z: 1 },
   mousePosition: { x: 0, y: 0 },
@@ -356,6 +399,35 @@ export const useGyriiStore = create<GyriiStore>((set, get) => ({
       return { pendingShotEvents: [] };
     });
     return events;
+  },
+
+  addPendingGrenadeInsert: (event) =>
+    set((s) => ({
+      pendingGrenadeInserts: [...s.pendingGrenadeInserts, event],
+    })),
+  addPendingGrenadeDelete: (event) =>
+    set((s) => ({
+      pendingGrenadeDeletes: [...s.pendingGrenadeDeletes, event],
+    })),
+  addPendingGrenadeUpdate: (event) =>
+    set((s) => ({
+      pendingGrenadeUpdates: [...s.pendingGrenadeUpdates, event],
+    })),
+  takePendingGrenadeEvents: () => {
+    const inserts: PendingGrenadeInsertEvent[] = [];
+    const deletes: PendingGrenadeDeleteEvent[] = [];
+    const updates: PendingGrenadeUpdateEvent[] = [];
+    useGyriiStore.setState((s) => {
+      inserts.push(...s.pendingGrenadeInserts);
+      deletes.push(...s.pendingGrenadeDeletes);
+      updates.push(...s.pendingGrenadeUpdates);
+      return {
+        pendingGrenadeInserts: [],
+        pendingGrenadeDeletes: [],
+        pendingGrenadeUpdates: [],
+      };
+    });
+    return { inserts, deletes, updates };
   },
 
   reset: () => set(initialState),

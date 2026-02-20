@@ -34,6 +34,7 @@ export default __t.object("Lobby", {
   },
   createdAt: __t.timestamp(),
   scoreLimit: __t.i32(),
+  flagLimit: __t.i32(),
   timeLimitSeconds: __t.i32(),
   hasPassword: __t.bool(),
   get friendlyFire() {

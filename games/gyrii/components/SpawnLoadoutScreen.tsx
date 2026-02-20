@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useGyriiStore } from "../store/gameStore";
 import { useSpacetimeDB } from "../hooks/useSpacetimeDB";
 import type { WeaponType, SecondaryType } from "../store/gameStore";
@@ -10,20 +10,30 @@ const PRIMARY_OPTIONS: { value: WeaponType; label: string }[] = [
   { value: "photonRifle", label: "Ray Gun" },
 ];
 
-const SECONDARY_OPTIONS: { value: SecondaryType; label: string }[] = [
-  { value: "popupKnives", label: "Popup Knives" },
-  { value: "bubbleShield", label: "Bubble Shield" },
-  { value: "selfDestructNuke", label: "Self Destruct Nuke" },
-];
-
 export default function SpawnLoadoutScreen() {
+  const localPlayer = useGyriiStore((s) => s.localPlayer);
+
   const [primary, setPrimary] = useState<WeaponType>("dualMachineGun");
   const [secondary, setSecondary] = useState<SecondaryType>("popupKnives");
   const [isSpawning, setIsSpawning] = useState(false);
-  const { leaveLobby } = useSpacetimeDB();
+  const { leaveLobby, requestSpawn } = useSpacetimeDB();
   const { setCurrentLobby, setPendingLeaveLobby } = useGyriiStore();
 
-  const { requestSpawn } = useSpacetimeDB();
+  // When respawning, pre-fill with the loadout the player had when they died
+  useEffect(() => {
+    if (localPlayer) {
+      setPrimary(localPlayer.weapon);
+      setSecondary(localPlayer.secondary);
+    } else {
+      setPrimary("dualMachineGun");
+      setSecondary("popupKnives");
+    }
+  }, [
+    localPlayer?.id,
+    localPlayer?.isAlive,
+    localPlayer?.weapon,
+    localPlayer?.secondary,
+  ]);
 
   const onSpawn = async () => {
     setIsSpawning(true);
@@ -73,23 +83,6 @@ export default function SpawnLoadoutScreen() {
                 </button>
               ))}
             </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-cyan-400 mb-2">
-              Secondary
-            </label>
-            <select
-              value={secondary}
-              onChange={(e) => setSecondary(e.target.value as SecondaryType)}
-              className="w-full px-4 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
-            >
-              {SECONDARY_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
           </div>
 
           <button

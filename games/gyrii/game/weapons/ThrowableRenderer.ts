@@ -1,9 +1,14 @@
 import * as BABYLON from "@babylonjs/core";
-import { createExplosion, createFireEffect } from "../effects/ParticleEffects";
+import {
+  createExplosion,
+  createFireEffect,
+  createGrenadeTrail,
+} from "../effects/ParticleEffects";
 import {
   createThrowableBody,
   getThrowablePosition,
   removeThrowableBody,
+  setThrowableState,
   type WorldHandle,
 } from "../physics";
 
@@ -20,10 +25,10 @@ export interface ThrowableConfig {
 export const THROWABLE_CONFIGS: Record<ThrowableType, ThrowableConfig> = {
   grenade: {
     type: "grenade",
-    damage: 70,
+    damage: 1200,
     radius: 5,
-    fuseTime: 2.5,
-    bounceRestitution: 0.5,
+    fuseTime: 6, // Server controls fuse; client removes on delete event
+    bounceRestitution: 0.75,
   },
   molotov: {
     type: "molotov",
@@ -41,6 +46,10 @@ interface ActiveThrowable {
   ownerId: string;
   /** Molotov: true once we've triggered fire on impact. */
   impactTriggered?: boolean;
+  /** Server grenades: trailing particle system, emitter updated each position sync. */
+  trailParticles?: BABYLON.ParticleSystem;
+  /** Grenades: small ground shadow disc for visibility. */
+  shadowMesh?: BABYLON.Mesh;
 }
 
 interface ActiveFireZone {
@@ -57,12 +66,18 @@ interface ActiveFireZone {
 export class ThrowableRenderer {
   private scene: BABYLON.Scene;
   private physicsHandle: WorldHandle;
+  private glowLayer?: BABYLON.GlowLayer;
   private throwables: Map<string, ActiveThrowable> = new Map();
   private fireZones: Map<string, ActiveFireZone> = new Map();
 
-  constructor(scene: BABYLON.Scene, physicsHandle: WorldHandle) {
+  constructor(
+    scene: BABYLON.Scene,
+    physicsHandle: WorldHandle,
+    glowLayer?: BABYLON.GlowLayer,
+  ) {
     this.scene = scene;
     this.physicsHandle = physicsHandle;
+    this.glowLayer = glowLayer;
   }
 
   /**
@@ -117,6 +132,130 @@ export class ThrowableRenderer {
   }
 
   /**
+   * Spawn a grenade from server state. Creates a client-side physics body for
+   * prediction (bouncing); server updates reconcile position/velocity.
+   */
+  throwFromServer(
+    position: { x: number; y: number; z: number },
+    velocity: { x: number; y: number; z: number },
+    rigidBodyId: number,
+    ownerId: string,
+    ownerColor?: { r: number; g: number; b: number },
+  ): void {
+    const id = `grenade_${rigidBodyId}`;
+    if (this.throwables.has(id)) return;
+    const config = THROWABLE_CONFIGS.grenade;
+    const radius = 0.15;
+    createThrowableBody(
+      this.physicsHandle,
+      id,
+      position.x,
+      position.y,
+      position.z,
+      velocity.x,
+      velocity.y,
+      velocity.z,
+      radius,
+      1, // gravityScale
+      0.75, // restitution (bounce)
+    );
+    const mesh = BABYLON.MeshBuilder.CreateSphere(
+      id,
+      { diameter: radius * 2 },
+      this.scene,
+    );
+    mesh.position.set(position.x, position.y, position.z);
+    const material = new BABYLON.StandardMaterial(`${id}_mat`, this.scene);
+    // Glowing orb: use owner color or neutral white; emissive creates glow
+    const r = ownerColor?.r ?? 0.9;
+    const g = ownerColor?.g ?? 0.9;
+    const b = ownerColor?.b ?? 0.95;
+    material.diffuseColor = new BABYLON.Color3(r, g, b);
+    material.emissiveColor = new BABYLON.Color3(r, g, b);
+    mesh.material = material;
+    this.glowLayer?.addIncludedOnlyMesh(mesh);
+
+    const trailParticles = createGrenadeTrail(
+      this.scene,
+      new BABYLON.Vector3(position.x, position.y, position.z),
+      ownerColor,
+    );
+
+    // Small ground shadow for visibility
+    const shadowMesh = BABYLON.MeshBuilder.CreateDisc(
+      `${id}_shadow`,
+      { radius: 0.25, tessellation: 16 },
+      this.scene,
+    );
+    shadowMesh.rotation.x = Math.PI / 2; // lay flat on XZ plane
+    shadowMesh.position.set(position.x, 0.05, position.z);
+    const shadowMat = new BABYLON.StandardMaterial(
+      `${id}_shadow_mat`,
+      this.scene,
+    );
+    shadowMat.diffuseColor = new BABYLON.Color3(0, 0, 0);
+    shadowMat.alpha = 0.5;
+    shadowMat.disableLighting = true;
+    shadowMesh.material = shadowMat;
+
+    this.throwables.set(id, {
+      mesh,
+      config,
+      spawnTime: Date.now(),
+      ownerId,
+      trailParticles,
+      shadowMesh,
+    });
+  }
+
+  /**
+   * Reconcile grenade physics body from server (position + velocity).
+   */
+  updateServerGrenadePosition(
+    rigidBodyId: number,
+    position: { x: number; y: number; z: number },
+    velocity: { x: number; y: number; z: number },
+  ): void {
+    const id = `grenade_${rigidBodyId}`;
+    setThrowableState(
+      this.physicsHandle,
+      id,
+      position.x,
+      position.y,
+      position.z,
+      velocity.x,
+      velocity.y,
+      velocity.z,
+    );
+  }
+
+  /**
+   * Remove a server grenade (exploded). Returns last known position for explosion FX.
+   */
+  removeServerGrenade(
+    rigidBodyId: number,
+  ): { x: number; y: number; z: number } | null {
+    const id = `grenade_${rigidBodyId}`;
+    const throwable = this.throwables.get(id);
+    if (!throwable) return null;
+    const pos = getThrowablePosition(this.physicsHandle, id) ?? {
+      x: throwable.mesh.position.x,
+      y: throwable.mesh.position.y,
+      z: throwable.mesh.position.z,
+    };
+    removeThrowableBody(this.physicsHandle, id);
+    if (throwable.trailParticles) {
+      throwable.trailParticles.stop();
+      throwable.trailParticles.dispose();
+    }
+    throwable.shadowMesh?.dispose();
+    this.glowLayer?.removeIncludedOnlyMesh(throwable.mesh);
+    throwable.mesh.dispose();
+    this.throwables.delete(id);
+    return pos;
+  }
+
+  /**
    * Update all throwables: read position from Rapier, set mesh; handle fuse/impact removal.
    */
   update(_deltaTime: number) {
@@ -124,12 +263,23 @@ export class ThrowableRenderer {
     const toRemove: string[] = [];
 
     this.throwables.forEach((throwable, id) => {
+      // All throwables (incl. server grenades) use client physics; server reconciles via updates
       const pos = getThrowablePosition(this.physicsHandle, id);
       if (!pos) {
         toRemove.push(id);
         return;
       }
       throwable.mesh.position.set(pos.x, pos.y, pos.z);
+      if (throwable.trailParticles) {
+        throwable.trailParticles.emitter = new BABYLON.Vector3(
+          pos.x,
+          pos.y,
+          pos.z,
+        );
+      }
+      if (throwable.shadowMesh) {
+        throwable.shadowMesh.position.set(pos.x, 0.05, pos.z);
+      }
 
       // Molotov: trigger fire on first impact (near floor)
       if (throwable.config.type === "molotov") {
@@ -144,14 +294,14 @@ export class ThrowableRenderer {
         }
       }
 
-      // Grenade: fuse timer
-      if (throwable.config.type === "grenade") {
+      // Grenade: local fuse only for client-spawned (molotov uses impact); server grenades removed via removeServerGrenade
+      if (throwable.config.type === "grenade" && !id.startsWith("grenade_")) {
         const elapsed = (currentTime - throwable.spawnTime) / 1000;
         if (elapsed >= throwable.config.fuseTime) {
           createExplosion(
             this.scene,
             throwable.mesh.position.clone(),
-            throwable.config.radius,
+            throwable.config.radius * 0.8,
           );
           toRemove.push(id);
         }
@@ -162,6 +312,7 @@ export class ThrowableRenderer {
       removeThrowableBody(this.physicsHandle, id);
       const throwable = this.throwables.get(id);
       if (throwable) {
+        throwable.shadowMesh?.dispose();
         throwable.mesh.dispose();
         this.throwables.delete(id);
       }

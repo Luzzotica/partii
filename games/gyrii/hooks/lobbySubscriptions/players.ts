@@ -70,6 +70,7 @@ function convertServerPlayer(row: any): {
       health: row.health ?? 1000,
       kills: row.kills ?? 0,
       deaths: row.deaths ?? 0,
+      flagCaptures: row.flagCaptures ?? row.flag_captures ?? 0,
       team: row.team ?? 0,
       color: mainColor,
       secondaryColor,
@@ -96,6 +97,10 @@ function convertServerPlayer(row: any): {
       lastImpulseTime:
         (row as any).lastImpulseTime ?? (row as any).last_impulse_time ?? 0,
       lastShotAt: row.lastShotAt != null ? Number(row.lastShotAt) : undefined,
+      lastGrenadeThrownAt:
+        (row as any).lastGrenadeThrownAt != null
+          ? Number((row as any).lastGrenadeThrownAt)
+          : undefined,
       isAlive: row.isAlive ?? true,
     },
   };

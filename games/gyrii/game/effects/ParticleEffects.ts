@@ -247,6 +247,50 @@ export function createMuzzleFlash(
 }
 
 /**
+ * Creates a trailing particle effect for grenades in the owner's color.
+ * Update emitter position each frame.
+ */
+export function createGrenadeTrail(
+  scene: BABYLON.Scene,
+  position: BABYLON.Vector3,
+  ownerColor?: { r: number; g: number; b: number },
+): BABYLON.ParticleSystem {
+  const system = new BABYLON.ParticleSystem("grenadeTrail", 80, scene);
+  system.particleTexture = createParticleTexture(scene, "grenadeTrail");
+
+  system.emitter = position.clone();
+  system.minEmitBox = new BABYLON.Vector3(-0.02, -0.02, -0.02);
+  system.maxEmitBox = new BABYLON.Vector3(0.02, 0.02, 0.02);
+
+  const r = ownerColor?.r ?? 0.5;
+  const g = ownerColor?.g ?? 0.5;
+  const b = ownerColor?.b ?? 0.5;
+  system.color1 = new BABYLON.Color4(r, g, b, 0.6);
+  system.color2 = new BABYLON.Color4(r * 0.7, g * 0.7, b * 0.7, 0.4);
+  system.colorDead = new BABYLON.Color4(r * 0.3, g * 0.3, b * 0.3, 0);
+
+  system.minSize = 0.05;
+  system.maxSize = 0.15;
+
+  system.minLifeTime = 0.15;
+  system.maxLifeTime = 0.35;
+
+  system.emitRate = 120;
+  system.minEmitPower = 0.2;
+  system.maxEmitPower = 0.6;
+
+  system.direction1 = new BABYLON.Vector3(-0.5, -0.5, -0.5);
+  system.direction2 = new BABYLON.Vector3(0.5, 0.5, 0.5);
+
+  system.gravity = new BABYLON.Vector3(0, -0.5, 0);
+
+  system.blendMode = BABYLON.ParticleSystem.BLENDMODE_STANDARD;
+
+  system.start();
+  return system;
+}
+
+/**
  * Creates an explosion effect (for grenades/rockets)
  */
 export function createExplosion(
@@ -288,8 +332,9 @@ export function createExplosion(
   fireSystem.minEmitPower = radius * 2;
   fireSystem.maxEmitPower = radius * 5;
 
-  fireSystem.direction1 = new BABYLON.Vector3(-1, 1, -1);
-  fireSystem.direction2 = new BABYLON.Vector3(1, 3, 1);
+  // Radial outward explosion (more horizontal spread, not just up)
+  fireSystem.direction1 = new BABYLON.Vector3(-1.5, 0.3, -1.5);
+  fireSystem.direction2 = new BABYLON.Vector3(1.5, 0.8, 1.5);
 
   fireSystem.gravity = new BABYLON.Vector3(0, -2, 0);
 

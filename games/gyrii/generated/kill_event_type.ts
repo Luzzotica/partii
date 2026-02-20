@@ -12,6 +12,7 @@ import {
 
 export default __t.object("KillEvent", {
   id: __t.u64(),
+  lobbyId: __t.u64(),
   killerId: __t.identity(),
   victimId: __t.identity(),
   weaponType: __t.string(),

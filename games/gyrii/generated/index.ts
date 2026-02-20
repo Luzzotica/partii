@@ -104,6 +104,10 @@ import MapSpawnPointRow from "./map_spawn_point_table";
 export { MapSpawnPointRow };
 import MapWallRow from "./map_wall_table";
 export { MapWallRow };
+import PendingExplosionRow from "./pending_explosion_table";
+export { PendingExplosionRow };
+import PendingExplosionRaycastRow from "./pending_explosion_raycast_table";
+export { PendingExplosionRaycastRow };
 import PendingPhotonBeamRow from "./pending_photon_beam_table";
 export { PendingPhotonBeamRow };
 import PhotonBeamRow from "./photon_beam_table";
@@ -168,6 +172,10 @@ import MapSpawnPoint from "./map_spawn_point_type";
 export { MapSpawnPoint };
 import MapWall from "./map_wall_type";
 export { MapWall };
+import PendingExplosion from "./pending_explosion_type";
+export { PendingExplosion };
+import PendingExplosionRaycast from "./pending_explosion_raycast_type";
+export { PendingExplosionRaycast };
 import PendingPhotonBeam from "./pending_photon_beam_type";
 export { PendingPhotonBeam };
 import PhotonBeam from "./photon_beam_type";
@@ -244,6 +252,9 @@ const tablesSchema = __schema(
       { name: 'rigid_body_id', algorithm: 'btree', columns: [
         'rigidBodyId',
       ] },
+      { name: 'world_id', algorithm: 'btree', columns: [
+        'worldId',
+      ] },
     ],
     constraints: [
       { name: 'grenade_rigid_body_id_key', constraint: 'unique', columns: ['rigidBodyId'] },
@@ -254,6 +265,9 @@ const tablesSchema = __schema(
     indexes: [
       { name: 'id', algorithm: 'btree', columns: [
         'id',
+      ] },
+      { name: 'lobby_id', algorithm: 'btree', columns: [
+        'lobbyId',
       ] },
     ],
     constraints: [
@@ -326,6 +340,31 @@ const tablesSchema = __schema(
       { name: 'map_wall_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, MapWallRow),
+  __table({
+    name: 'pending_explosion',
+    indexes: [
+      { name: 'id', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { name: 'world_id', algorithm: 'btree', columns: [
+        'worldId',
+      ] },
+    ],
+    constraints: [
+      { name: 'pending_explosion_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, PendingExplosionRow),
+  __table({
+    name: 'pending_explosion_raycast',
+    indexes: [
+      { name: 'id', algorithm: 'btree', columns: [
+        'id',
+      ] },
+    ],
+    constraints: [
+      { name: 'pending_explosion_raycast_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, PendingExplosionRaycastRow),
   __table({
     name: 'pending_photon_beam',
     indexes: [

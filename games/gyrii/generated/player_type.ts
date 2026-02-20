@@ -30,6 +30,7 @@ export default __t.object("Player", {
   team: __t.i32(),
   kills: __t.i32(),
   deaths: __t.i32(),
+  flagCaptures: __t.i32(),
   get weapon() {
     return WeaponType;
   },
@@ -55,6 +56,7 @@ export default __t.object("Player", {
   isShooting: __t.bool(),
   respawnAt: __t.i64(),
   lastShotAt: __t.i64(),
+  lastGrenadeThrownAt: __t.i64(),
   joinedAt: __t.timestamp(),
   lastImpulseX: __t.f32(),
   lastImpulseY: __t.f32(),

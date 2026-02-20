@@ -4,14 +4,17 @@
 // -Z = barrel forward, Y = up, X = right. We compute world muzzle from position + aim + offset.
 
 use spacetimedb::{table, Identity, ReducerContext, Table};
-use spacetime_rapier::{Collider, RigidBodyProperties, RigidBodyType, RayCast, Vec3};
+use spacetime_rapier::{Collider, RigidBody, RigidBodyProperties, RigidBodyType, RayCast, Vec3};
 
-use crate::collision_groups::{GROUP_BULLET, GROUP_FLOOR, GROUP_PLAYER, GROUP_WALL};
+use crate::collision_groups::{GROUP_BULLET, GROUP_FLOOR, GROUP_GRENADE, GROUP_PLAYER, GROUP_WALL};
 use crate::constants::{
     BEAM_DURATION_TICKS, HEALTH_SCALE, PHOTON_RAY_MAX_DISTANCE,
 };
 use crate::game::apply_damage;
 use crate::player::{player, get_weapon_damage, Player, WeaponType};
+
+/// Player mass for recoil impulse (dv = impulse_mag / PLAYER_MASS).
+const PLAYER_MASS: f32 = 1.0;
 
 // Re-export table traits for other modules (used by game.rs, etc.)
 pub use damage_zone::damage_zone;
@@ -66,10 +69,21 @@ pub struct Projectile {
 pub struct Grenade {
     #[primary_key]
     pub rigid_body_id: u64,
+    #[index(btree)]
+    pub world_id: u64,
     pub owner_id: Identity,
-    pub fuse_ticks: i32,
+    /// When to explode (micros since unix epoch). 0 = legacy, no TTL.
+    pub expires_at_micros: u64,
     pub damage: f32,
     pub radius: f32,
+    /// Initial position (for client spawn)
+    pub position_x: f32,
+    pub position_y: f32,
+    pub position_z: f32,
+    /// Initial velocity (for client spawn)
+    pub velocity_x: f32,
+    pub velocity_y: f32,
+    pub velocity_z: f32,
 }
 
 // ============================================================================
@@ -132,7 +146,7 @@ fn muzzle_offset_local(weapon: WeaponType) -> (f32, f32, f32) {
         WeaponType::DualMachineGun => (-0.38, 0.125, -0.7),
         WeaponType::Smg => (1.0, 0.0, 0.0),
         WeaponType::ChainGun => (1.0, 0.0, 0.0),
-        WeaponType::PhotonRifle => (0.5, 0.0, 0.0),
+        WeaponType::PhotonRifle => (0.0, 0.0, -0.5),
         WeaponType::Bazooka => (1.0, 0.0, 0.0),
         WeaponType::Flamethrower => (1.0, 0.0, 0.0),
     }
@@ -157,6 +171,38 @@ fn muzzle_world_position(player: &Player) -> Vec3 {
     let y = 0.5 + ly;
     let z = player.position_z + ax * lx - az * lz;
     Vec3::new(x, y, z)
+}
+
+// ============================================================================
+// RECOIL IMPULSE HELPER
+// ============================================================================
+
+/// Applies a recoil impulse to the shooter: adds velocity change (opposite aim direction)
+/// to both RigidBody and Player.velocity. Velocity is synced directly so no last_impulse needed.
+fn apply_shooter_recoil_impulse(
+    ctx: &ReducerContext,
+    player: &Player,
+    aim_dir: Vec3,
+    impulse_mag: f32,
+) {
+    let dv = impulse_mag / PLAYER_MASS;
+    let ix = -aim_dir.x;
+    let iy = -aim_dir.y;
+    let iz = -aim_dir.z;
+    if player.rigid_body_id != 0 {
+        if let Some(mut rb) = RigidBody::find(ctx, player.rigid_body_id) {
+            rb.linear_velocity_x += ix * dv;
+            rb.linear_velocity_y += iy * dv;
+            rb.linear_velocity_z += iz * dv;
+            rb.update(ctx);
+        }
+    }
+    if let Some(mut shooter) = ctx.db.player().identity().find(player.identity) {
+        shooter.velocity_x += ix * dv;
+        shooter.velocity_y += iy * dv;
+        shooter.velocity_z += iz * dv;
+        ctx.db.player().identity().update(shooter);
+    }
 }
 
 // ============================================================================
@@ -197,12 +243,9 @@ pub fn shoot_hitscan_impl(
 
     raycast.delete(ctx);
 
-    let recoil = knockback * 0.1;
-    if let Some(mut shooter) = ctx.db.player().identity().find(player.identity) {
-        shooter.position_x -= aim_dir.x * recoil;
-        shooter.position_z -= aim_dir.z * recoil;
-        ctx.db.player().identity().update(shooter);
-    }
+    // Apply recoil impulse to shooter (impulse magnitude based on knockback)
+    let impulse_mag = knockback * 0.5;
+    apply_shooter_recoil_impulse(ctx, player, aim_dir, impulse_mag);
 
     Ok(())
 }
@@ -231,6 +274,11 @@ pub fn create_photon_beam(
         remaining_ticks: BEAM_DURATION_TICKS,
         world_id,
     });
+
+    // Photon rifle recoil: 8x SMG bullet impulse (0.01 * 35 * 8 = 2.8)
+    const PHOTON_RECOIL_IMPULSE: f32 = 0.01 * 35.0 * 8.0;
+    apply_shooter_recoil_impulse(ctx, player, aim_dir, PHOTON_RECOIL_IMPULSE);
+
     Ok(())
 }
 
@@ -293,12 +341,8 @@ pub fn shoot_bazooka_impl(
         gravity_scale: 1.0,
     });
 
-    let recoil = knockback * 0.2;
-    if let Some(mut shooter) = ctx.db.player().identity().find(player.identity) {
-        shooter.position_x -= aim_dir.x * recoil;
-        shooter.position_z -= aim_dir.z * recoil;
-        ctx.db.player().identity().update(shooter);
-    }
+    // Bazooka recoil: use knockback as impulse magnitude (rocket mass*speed would be 10, too large)
+    apply_shooter_recoil_impulse(ctx, player, aim_dir, knockback);
 
     Ok(())
 }
@@ -356,7 +400,7 @@ pub fn shoot_bullet_impl(
     let mut collider = Collider::ball(world_id, 0.16);
     collider.is_sensor = true;
     collider.collision_memberships = GROUP_BULLET;
-    collider.collision_filter = GROUP_PLAYER | GROUP_WALL | GROUP_FLOOR;
+    collider.collision_filter = GROUP_PLAYER | GROUP_WALL | GROUP_FLOOR | GROUP_GRENADE;
     let collider = collider.insert(ctx);
 
     let bullet_rb = RigidBody::builder()
@@ -394,6 +438,12 @@ pub fn shoot_bullet_impl(
         projectile_type: PROJECTILE_TYPE_BULLET,
         gravity_scale: 0.0,
     });
+
+    // Recoil: impulse = bullet_mass * speed (user spec: SMG uses speed + mass of bullets)
+    const BULLET_MASS: f32 = 0.01;
+    let impulse_mag = BULLET_MASS * speed;
+    let aim_dir = Vec3::new(aim_x, 0.0, aim_z).normalize();
+    apply_shooter_recoil_impulse(ctx, player, aim_dir, impulse_mag);
 
     Ok(())
 }
