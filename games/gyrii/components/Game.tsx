@@ -435,11 +435,11 @@ export default function GyriiGame() {
             nameMat.diffuseTexture = nameTexture;
             nameMat.emissiveTexture = nameTexture;
             nameMat.backFaceCulling = false;
-            nameMat.hasAlpha = true;
+            nameMat.transparencyMode = BABYLON.Material.MATERIAL_ALPHABLEND;
             nameMat.alpha = 1;
             namePlane.material = nameMat;
             const displayName = player.name || "Player";
-            const ctx = nameTexture.getContext();
+            const ctx = nameTexture.getContext() as CanvasRenderingContext2D;
             ctx.clearRect(0, 0, 256, 64);
             ctx.textAlign = "center";
             nameTexture.drawText(

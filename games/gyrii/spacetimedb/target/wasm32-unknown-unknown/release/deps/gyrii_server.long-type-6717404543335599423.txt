@@ -1,1 +1,0 @@
-Cloned<std::iter::Filter<impl Iterator<Item = <maps::map_wall__TableHandle as Table>::Row>, {closure@src/game.rs:93:25: 93:28}>>
