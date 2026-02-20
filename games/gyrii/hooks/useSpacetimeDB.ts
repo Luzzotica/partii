@@ -13,9 +13,10 @@ import {
 } from "./lobbySubscriptions";
 
 // SpacetimeDB connection configuration
+// Default: maincloud (production). Override with NEXT_PUBLIC_GYRII_SPACETIMEDB_URL=http://127.0.0.1:3001 for local dev.
 const SPACETIMEDB_URL =
-  process.env.NEXT_PUBLIC_SPACETIMEDB_URL || "http://127.0.0.1:3001";
-const MODULE_NAME = process.env.NEXT_PUBLIC_SPACETIMEDB_MODULE || "gyrii";
+  process.env.NEXT_PUBLIC_GYRII_SPACETIMEDB_URL || "http://127.0.0.1:3001";
+const MODULE_NAME = process.env.NEXT_PUBLIC_GYRII_SPACETIMEDB_MODULE || "gyrii";
 
 // ── Module-level singleton ──────────────────────────────────────────────────
 // Lives outside React so StrictMode / mount-unmount cycles don't destroy it.

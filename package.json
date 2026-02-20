@@ -17,7 +17,11 @@
     "gyrii:spacetime:start": "cd games/gyrii/spacetimedb && spacetime start -l 0.0.0.0:3001",
     "gyrii:spacetime:dev": "cd games/gyrii && spacetime dev --server http://127.0.0.1:3001 gyrii --yes --module-project-path spacetimedb",
     "gyrii:spacetime:run": "(npm run gyrii:spacetime:start &) && sleep 5 && npm run gyrii:spacetime:dev",
-    "gyrii:spacetime:logs": "spacetime logs gyrii --server http://127.0.0.1:3001"
+    "gyrii:spacetime:logs": "spacetime logs gyrii --server http://127.0.0.1:3001",
+    "gyrii:spacetime:publish": "cd games/gyrii && spacetime publish gyrii --project-path spacetimedb -s maincloud",
+    "gyrii:spacetime:publish:break": "cd games/gyrii && spacetime publish --break-clients gyrii --project-path spacetimedb -s maincloud",
+    "gyrii:spacetime:publish:reset": "cd games/gyrii && spacetime publish --delete-data gyrii --project-path spacetimedb -s maincloud",
+    "gyrii:spacetime:publish:local": "cd games/gyrii && spacetime publish gyrii --project-path spacetimedb -s http://127.0.0.1:3001"
   },
   "dependencies": {
     "@babylonjs/core": "^7.x",
