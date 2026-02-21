@@ -157,7 +157,7 @@ export class ThrowableRenderer {
       velocity.z,
       radius,
       1, // gravityScale
-      0.75, // restitution (bounce)
+      1.9, // restitution (bounce)
     );
     const mesh = BABYLON.MeshBuilder.CreateSphere(
       id,
@@ -217,12 +217,23 @@ export class ThrowableRenderer {
     velocity: { x: number; y: number; z: number },
   ): void {
     const id = `grenade_${rigidBodyId}`;
+    const localPos = getThrowablePosition(this.physicsHandle, id);
+    if (!localPos) return;
+
+    // Keep client Rapier simulation authoritative between updates.
+    // Reconcile gently: if we're close, only backfill velocity; if far, snap.
+    const dx = position.x - localPos.x;
+    const dy = position.y - localPos.y;
+    const dz = position.z - localPos.z;
+    const err = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    const HARD_SNAP_DIST = 0.25;
+
     setThrowableState(
       this.physicsHandle,
       id,
-      position.x,
-      position.y,
-      position.z,
+      err > HARD_SNAP_DIST ? position.x : localPos.x,
+      err > HARD_SNAP_DIST ? position.y : localPos.y,
+      err > HARD_SNAP_DIST ? position.z : localPos.z,
       velocity.x,
       velocity.y,
       velocity.z,

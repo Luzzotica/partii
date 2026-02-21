@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useGyriiStore } from "../store/gameStore";
-import { useSpacetimeDB } from "../hooks/useSpacetimeDB";
+import { useGyriiConnection } from "../hooks/useGyriiConnection";
 import { maps } from "../game/maps";
 import MinimapPreview from "./MinimapPreview";
 
@@ -25,6 +25,7 @@ const GAME_MODES: { id: GameModeId; name: string; description: string }[] = [
     description: "Capture the enemy flag",
   },
 ];
+const ENABLED_GAME_MODES: GameModeId[] = ["freeForAll"];
 
 const MAPS: { id: string; name: string; description: string }[] = [
   { id: "arena", name: "Arena", description: "Open arena with corner pillars" },
@@ -43,13 +44,17 @@ interface CreateLobbyProps {
 
 export default function CreateLobby({ onBack, isConnected }: CreateLobbyProps) {
   const { setGameState } = useGyriiStore();
-  const { createLobby } = useSpacetimeDB();
+  const { createLobby } = useGyriiConnection();
   const isConnecting = useGyriiStore((s) => s.isConnecting);
 
   const [lobbyName, setLobbyName] = useState("");
   const [maxPlayers, setMaxPlayers] = useState(8);
   const [gameMode, setGameMode] = useState<GameModeId>("freeForAll");
-  const [mapId, setMapId] = useState("arena");
+  const [mapPool, setMapPool] = useState<string[]>([
+    "arena",
+    "maze",
+    "warehouse",
+  ]);
   const [password, setPassword] = useState("");
   const [scoreLimit, setScoreLimit] = useState(25);
   const [flagLimit, setFlagLimit] = useState(3);
@@ -63,6 +68,11 @@ export default function CreateLobby({ onBack, isConnected }: CreateLobbyProps) {
         maze: "Maze",
         warehouse: "Warehouse",
       };
+      const selectedPool = mapPool.length > 0 ? mapPool : ["arena"];
+      const mapPoolTags = selectedPool
+        .map((m) => mapIdMap[m])
+        .filter(Boolean) as ("Arena" | "Maze" | "Warehouse")[];
+      const primaryMap = selectedPool[0] ?? "arena";
 
       const gameModeMap: Record<
         string,
@@ -79,7 +89,8 @@ export default function CreateLobby({ onBack, isConnected }: CreateLobbyProps) {
       await createLobby(
         name,
         hostPlayerName,
-        mapIdMap[mapId] || "Arena",
+        mapIdMap[primaryMap] || "Arena",
+        mapPoolTags,
         maxPlayers,
         gameModeMap[gameMode] || "FreeForAll",
         isCtf ? 25 : scoreLimit,
@@ -97,7 +108,7 @@ export default function CreateLobby({ onBack, isConnected }: CreateLobbyProps) {
           setLobbyName("");
           setMaxPlayers(8);
           setGameMode("freeForAll");
-          setMapId("arena");
+          setMapPool(["arena", "maze", "warehouse"]);
           setPassword("");
           onBack();
         } else if (attempts < maxAttempts) {
@@ -143,52 +154,88 @@ export default function CreateLobby({ onBack, isConnected }: CreateLobbyProps) {
         <div>
           <label className="block text-xs text-gray-400 mb-2">GAME MODE</label>
           <div className="grid grid-cols-3 gap-2">
-            {GAME_MODES.map((mode) => (
-              <button
-                key={mode.id}
-                onClick={() => setGameMode(mode.id)}
-                className={`px-3 py-2 rounded text-left transition-all ${
-                  gameMode === mode.id
-                    ? "bg-pink-600 text-white"
-                    : "bg-gray-800 text-gray-400 hover:bg-gray-700"
-                }`}
-              >
-                <div className="text-sm font-semibold">{mode.name}</div>
-                <div className="text-[10px] opacity-70">{mode.description}</div>
-              </button>
-            ))}
+            {GAME_MODES.map((mode) => {
+              const isEnabled = ENABLED_GAME_MODES.includes(mode.id);
+              const isSelected = gameMode === mode.id;
+              return (
+                <button
+                  key={mode.id}
+                  onClick={() => {
+                    if (!isEnabled) return;
+                    setGameMode(mode.id);
+                  }}
+                  disabled={!isEnabled}
+                  className={`px-3 py-2 rounded text-left transition-all ${
+                    isSelected
+                      ? "bg-pink-600 text-white"
+                      : isEnabled
+                        ? "bg-gray-800 text-gray-400 hover:bg-gray-700"
+                        : "bg-gray-900 text-gray-600 opacity-70 cursor-not-allowed"
+                  }`}
+                  title={isEnabled ? mode.description : "Temporarily disabled"}
+                >
+                  <div className="text-sm font-semibold">{mode.name}</div>
+                  <div className="text-[10px] opacity-70">
+                    {mode.description}
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </div>
 
         <div>
-          <label className="block text-xs text-gray-400 mb-2">MAP</label>
-          <div className="flex gap-3 items-start">
-            <div className="rounded border border-pink-500/40 bg-gray-900/80 p-1 shrink-0">
-              <MinimapPreview
-                mapData={maps[mapId] ?? maps.arena}
-                size={100}
-                className="rounded"
-              />
-            </div>
-            <div className="grid grid-cols-3 gap-2 flex-1">
-              {MAPS.map((map) => (
-                <button
-                  key={map.id}
-                  onClick={() => setMapId(map.id)}
-                  className={`px-3 py-2 rounded text-left transition-all ${
-                    mapId === map.id
-                      ? "bg-pink-600 text-white"
-                      : "bg-gray-800 text-gray-400 hover:bg-gray-700"
-                  }`}
-                >
-                  <div className="text-sm font-semibold">{map.name}</div>
-                  <div className="text-[10px] opacity-70">
-                    {map.description}
-                  </div>
-                </button>
-              ))}
+          <label className="block text-xs text-gray-400 mb-2">
+            MAP POOL (for next rounds)
+          </label>
+          <div className="overflow-x-auto pb-1">
+            <div className="flex gap-3 min-w-max">
+              {MAPS.map((map) => {
+                const selected = mapPool.includes(map.id);
+                return (
+                  <button
+                    key={`pool-${map.id}`}
+                    onClick={() => {
+                      setMapPool((prev) => {
+                        const has = prev.includes(map.id);
+                        if (has) {
+                          if (prev.length === 1) return prev;
+                          return prev.filter((m) => m !== map.id);
+                        }
+                        return [...prev, map.id];
+                      });
+                    }}
+                    className={`rounded text-left transition-all border ${
+                      selected
+                        ? "bg-cyan-600/90 text-white border-cyan-300/80"
+                        : "bg-gray-800 text-gray-300 border-gray-600 hover:bg-gray-700"
+                    }`}
+                    style={{ minWidth: 220, maxWidth: 220 }}
+                  >
+                    <div className="p-2">
+                      <div className="text-sm font-semibold">{map.name}</div>
+                      <div className="text-[10px] opacity-70">
+                        {map.description}
+                      </div>
+                      <div className="mt-2 rounded border border-white/20 bg-black/30 p-1">
+                        <MinimapPreview
+                          mapData={maps[map.id] ?? maps.arena}
+                          size={160}
+                          className="rounded"
+                        />
+                      </div>
+                      <div className="text-[10px] mt-2 opacity-80">
+                        {selected ? "Included" : "Excluded"}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </div>
+          <p className="text-[11px] text-gray-500 mt-2">
+            At least one map must stay selected.
+          </p>
         </div>
 
         {(gameMode === "freeForAll" || gameMode === "teamDeathmatch") && (
@@ -197,7 +244,7 @@ export default function CreateLobby({ onBack, isConnected }: CreateLobbyProps) {
               KILLS TO WIN
             </label>
             <div className="flex gap-2 flex-wrap">
-              {[10, 15, 25, 35, 50].map((num) => (
+              {[3, 5, 10, 15, 25, 35, 50].map((num) => (
                 <button
                   key={num}
                   onClick={() => setScoreLimit(num)}

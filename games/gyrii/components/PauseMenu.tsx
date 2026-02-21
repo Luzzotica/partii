@@ -1,12 +1,12 @@
 "use client";
 
 import { useGyriiStore } from "../store/gameStore";
-import { useSpacetimeDB } from "../hooks/useSpacetimeDB";
+import { useGyriiConnection } from "../hooks/useGyriiConnection";
 
 export default function PauseMenu() {
   const { setGameState, setCurrentLobby, setPendingLeaveLobby } =
     useGyriiStore();
-  const { leaveLobby } = useSpacetimeDB();
+  const { leaveLobby } = useGyriiConnection();
 
   const handleResume = () => {
     setGameState("playing");

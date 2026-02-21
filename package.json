@@ -21,7 +21,10 @@
     "gyrii:spacetime:publish": "cd games/gyrii && spacetime publish gyrii --project-path spacetimedb -s maincloud",
     "gyrii:spacetime:publish:break": "cd games/gyrii && spacetime publish --break-clients gyrii --project-path spacetimedb -s maincloud",
     "gyrii:spacetime:publish:reset": "cd games/gyrii && spacetime publish --delete-data gyrii --project-path spacetimedb -s maincloud",
-    "gyrii:spacetime:publish:local": "cd games/gyrii && spacetime publish gyrii --project-path spacetimedb -s http://127.0.0.1:3001"
+    "gyrii:spacetime:publish:local": "cd games/gyrii && spacetime publish gyrii --project-path spacetimedb -s http://127.0.0.1:3001",
+    "gyrii:server:build": "cargo build --manifest-path games/gyrii/server/Cargo.toml",
+    "gyrii:server:run": "GYRII_ENV_FILE=.env.local cargo run --manifest-path games/gyrii/server/Cargo.toml",
+    "gyrii:server:run:prod": "GYRII_ENV_FILE=.env cargo run --manifest-path games/gyrii/server/Cargo.toml"
   },
   "dependencies": {
     "@babylonjs/core": "^7.x",

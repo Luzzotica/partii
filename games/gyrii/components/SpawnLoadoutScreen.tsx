@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useGyriiStore } from "../store/gameStore";
-import { useSpacetimeDB } from "../hooks/useSpacetimeDB";
+import { useGyriiConnection } from "../hooks/useGyriiConnection";
 import type { WeaponType, SecondaryType } from "../store/gameStore";
 
 const PRIMARY_OPTIONS: { value: WeaponType; label: string }[] = [
@@ -16,7 +16,7 @@ export default function SpawnLoadoutScreen() {
   const [primary, setPrimary] = useState<WeaponType>("dualMachineGun");
   const [secondary, setSecondary] = useState<SecondaryType>("popupKnives");
   const [isSpawning, setIsSpawning] = useState(false);
-  const { leaveLobby, requestSpawn } = useSpacetimeDB();
+  const { leaveLobby, requestSpawn } = useGyriiConnection();
   const { setCurrentLobby, setPendingLeaveLobby } = useGyriiStore();
 
   // When respawning, pre-fill with the loadout the player had when they died

@@ -15,6 +15,12 @@ import {
   PROJECTILE_TYPE_ROCKET,
   type PhotonBeamEntry,
 } from "../../store/gameStore";
+import {
+  type WorldHandle,
+  createProjectileBody,
+  getProjectilePosition,
+  removeProjectileBody,
+} from "../physics/ClientPhysics";
 import { PHOTON_BEAM_DURATION_TICKS, PHOTON_BEAM_RADIUS } from "../constants";
 
 export type WeaponType =
@@ -122,6 +128,7 @@ const PHOTON_BEAM_DIAMETER = 2 * PHOTON_BEAM_RADIUS;
 
 export class WeaponRenderer {
   private scene: BABYLON.Scene;
+  private physicsHandle: WorldHandle | null = null;
   private tracerPool: BABYLON.Mesh[] = [];
   private bulletPool: BABYLON.Mesh[] = [];
   private rocketPool: BABYLON.Mesh[] = [];
@@ -137,8 +144,9 @@ export class WeaponRenderer {
   > = new Map();
   private flameEffects: Map<string, BABYLON.ParticleSystem> = new Map();
 
-  constructor(scene: BABYLON.Scene) {
+  constructor(scene: BABYLON.Scene, physicsHandle?: WorldHandle | null) {
     this.scene = scene;
+    this.physicsHandle = physicsHandle ?? null;
     this.initTracerPool();
     this.initBulletPool();
     this.initRocketPool();
@@ -292,8 +300,7 @@ export class WeaponRenderer {
 
   /**
    * Fire a projectile (single entry point for server events). Uses pool by projectileType.
-   * For bullets we use server direction but apply BULLET_SPEED on the client so visuals
-   * are not dependent on velocity being deserialized from the row.
+   * Creates Rapier body for collision; mesh position is lerped from physics each frame.
    */
   fireProjectile(
     position: { x: number; y: number; z: number },
@@ -314,6 +321,20 @@ export class WeaponRenderer {
       spawnTime: performance.now() / 1000,
       isRocket,
     });
+
+    if (this.physicsHandle) {
+      createProjectileBody(
+        this.physicsHandle,
+        projectileId,
+        position.x,
+        position.y,
+        position.z,
+        velocity.x,
+        velocity.y,
+        velocity.z,
+        isRocket,
+      );
+    }
 
     if (vel.lengthSquared() > 0.0001) {
       createMuzzleFlash(
@@ -500,14 +521,16 @@ export class WeaponRenderer {
   }
 
   /**
-   * Update all projectiles (call in render loop). TTL-based cleanup, return to pool.
+   * Update all projectiles. Uses Rapier physics for position/collision when available;
+   * lerps mesh toward physics position. Removes on TTL or collision.
    */
-  update(deltaTime: number) {
-    const projectilesToRemove: string[] = [];
+  update(deltaTime: number, collidedIds: string[] = []) {
+    const projectilesToRemove: string[] = [...collidedIds];
     const now = performance.now() / 1000;
+    const usePhysics = !!this.physicsHandle;
 
     this.projectiles.forEach((entry, id) => {
-      entry.mesh.position.addInPlace(entry.velocity.scale(deltaTime));
+      if (projectilesToRemove.includes(id)) return;
 
       // TTL check (matches server)
       const ttl = entry.isRocket
@@ -518,44 +541,32 @@ export class WeaponRenderer {
         return;
       }
 
-      // Collision check (clone before normalize - normalize mutates in place)
-      const velLen = entry.velocity.length();
-      const ray = new BABYLON.Ray(
-        entry.mesh.position,
-        entry.velocity.clone().normalize(),
-        velLen * deltaTime * 2,
-      );
-      const hit = this.scene.pickWithRay(
-        ray,
-        (mesh) =>
-          mesh.isPickable &&
-          mesh.name !== "player" &&
-          mesh.name !== "gridGround" &&
-          !mesh.name.startsWith("pool_") &&
-          !mesh.name.startsWith("projectile") &&
-          !mesh.name.startsWith("weapon-") &&
-          !mesh.name.startsWith("muzzle") &&
-          !mesh.name.startsWith("debugAim-") &&
-          !mesh.name.startsWith("beam_"),
-      );
-
-      if (hit?.pickedMesh) {
-        if (entry.isRocket) {
-          createExplosion(this.scene, entry.mesh.position, 4);
-        } else {
-          createMuzzleFlash(
-            this.scene,
-            entry.mesh.position,
-            entry.velocity.clone().normalize(),
-          );
+      if (usePhysics && this.physicsHandle) {
+        const physPos = getProjectilePosition(this.physicsHandle, id);
+        if (physPos) {
+          entry.mesh.position.set(physPos.x, physPos.y, physPos.z);
         }
-        projectilesToRemove.push(id);
+      } else {
+        entry.mesh.position.addInPlace(entry.velocity.scale(deltaTime));
       }
     });
 
     projectilesToRemove.forEach((id) => {
       const entry = this.projectiles.get(id);
       if (entry) {
+        const hitSomething = collidedIds.includes(id);
+        if (hitSomething) {
+          if (entry.isRocket) {
+            createExplosion(this.scene, entry.mesh.position.clone(), 4);
+          } else {
+            createMuzzleFlash(
+              this.scene,
+              entry.mesh.position.clone(),
+              entry.velocity.clone().normalize(),
+            );
+          }
+        }
+        if (this.physicsHandle) removeProjectileBody(this.physicsHandle, id);
         entry.mesh.isVisible = false;
         this.projectiles.delete(id);
       }

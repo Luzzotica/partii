@@ -13,10 +13,10 @@ pub const BEAM_HALF_WIDTH: f32 = 0.3;
 pub const PHOTON_RAY_MAX_DISTANCE: f32 = 2000.0;
 
 /// Player acceleration in world units per second squared.
-pub const PLAYER_ACCEL: f32 = 28.8;
+pub const PLAYER_ACCEL: f32 = 12.0;
 
 /// Velocity damping per input tick when no input (velocity *= PLAYER_DAMPING).
-pub const PLAYER_DAMPING: f32 = 0.84;
+pub const PLAYER_DAMPING: f32 = 0.92;
 
 /// Approximate time delta between client input updates in seconds (~50ms).
 pub const PLAYER_INPUT_TICK_DT: f32 = 0.05;

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Vector3 } from "@babylonjs/core";
 import { canonicalPlayerId, useGyriiStore } from "../store/gameStore";
-import { useSpacetimeDB } from "../hooks/useSpacetimeDB";
+import { useGyriiConnection } from "../hooks/useGyriiConnection";
 import { maps } from "../game/maps";
 import {
   GUN_MUZZLE_OFFSET_FORWARD,
@@ -60,18 +60,28 @@ export default function GyriiGame() {
   >(new Map());
   const { gameState, setGameState, selectedWeapon, localPlayer } =
     useGyriiStore();
+  const roundEndedBanner = useGyriiStore((s) => s.roundEndedBanner);
+  const currentLobby = useGyriiStore((s) => s.currentLobby);
   const {
     updateInput,
     setShooting,
     setMarbleConfig,
     throwGrenade,
     throwMolotov,
-  } = useSpacetimeDB();
+  } = useGyriiConnection();
   const updateInputIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
     null,
   );
   const [isLoading, setIsLoading] = useState(true);
   const [loadingProgress, setLoadingProgress] = useState(0);
+  const [bannerNowMs, setBannerNowMs] = useState(Date.now());
+
+  useEffect(() => {
+    if (!roundEndedBanner) return;
+    setBannerNowMs(Date.now());
+    const id = setInterval(() => setBannerNowMs(Date.now()), 100);
+    return () => clearInterval(id);
+  }, [roundEndedBanner]);
 
   // Shoot input: ref updated in game loop; listener attached to canvas immediately so nothing blocks it
   const shootHandlerRef = useRef<{
@@ -350,6 +360,7 @@ export default function GyriiGame() {
             lastServerTime?: number;
             lastAppliedImpulseTime?: number;
             lastDesignId?: number;
+            lastAimDir?: InstanceType<typeof BABYLON.Vector3>;
             namePlane?: any;
             nameTexture?: any;
             lastDisplayName?: string;
@@ -433,7 +444,10 @@ export default function GyriiGame() {
               scene,
             );
             nameMat.diffuseTexture = nameTexture;
+            nameMat.diffuseTexture.hasAlpha = true;
             nameMat.emissiveTexture = nameTexture;
+            nameMat.emissiveTexture.hasAlpha = true;
+            nameMat.useAlphaFromDiffuseTexture = true;
             nameMat.backFaceCulling = false;
             nameMat.transparencyMode = BABYLON.Material.MATERIAL_ALPHABLEND;
             nameMat.alpha = 1;
@@ -448,7 +462,7 @@ export default function GyriiGame() {
               44,
               "bold 36px sans-serif",
               "#ffffff",
-              null,
+              "transparent",
               true,
             );
             nameTexture.update();
@@ -607,7 +621,7 @@ export default function GyriiGame() {
         lastPlayerIds = new Set(initialAll.keys());
         ensureWeaponMeshes(initialAll);
 
-        // Sync loop: only positions, interpolation, ball rotation, weapon pose from aim, material (no create/delete)
+        // Sync loop: positions (velocity extrapolation), ball rotation, weapon pose from aim, material (no create/delete)
         const syncPlayerMeshes = (
           localPlayer: Player | null,
           players: Map<string, Player>,
@@ -712,17 +726,40 @@ export default function GyriiGame() {
 
             const mesh = entry.mesh;
             const rootNode = entry.rootNode;
-            const pos = getPlayerPosition(physicsHandle, id) ?? {
+            let pos = getPlayerPosition(physicsHandle, id) ?? {
               x: px,
               y: py,
               z: pz,
             };
-            // Lerp displayed position toward physics (reduces jitter when server reconciles)
-            const smoothSpeed = 12; // higher = snappier; ~12 catches up in ~200ms
-            const blend = 1 - Math.exp(-deltaTime * smoothSpeed);
-            mesh.position.x += (pos.x - mesh.position.x) * blend;
-            mesh.position.y += (pos.y - mesh.position.y) * blend;
-            mesh.position.z += (pos.z - mesh.position.z) * blend;
+
+            // For remote players, predict display position from last authoritative server
+            // position + velocity. Fresh server updates in setPlayerState() backfill drift.
+            if (
+              !isLocal &&
+              entry.lastServerPos &&
+              entry.lastServerVel &&
+              entry.lastServerTime != null
+            ) {
+              const predictAheadSec = Math.min(
+                0.25,
+                Math.max(0, now - entry.lastServerTime),
+              );
+              pos = {
+                x:
+                  entry.lastServerPos.x +
+                  entry.lastServerVel.x * predictAheadSec,
+                y:
+                  entry.lastServerPos.y +
+                  entry.lastServerVel.y * predictAheadSec,
+                z:
+                  entry.lastServerPos.z +
+                  entry.lastServerVel.z * predictAheadSec,
+              };
+            }
+
+            mesh.position.x = pos.x;
+            mesh.position.y = pos.y;
+            mesh.position.z = pos.z;
             rootNode.position.x = mesh.position.x;
             rootNode.position.y = mesh.position.y;
             rootNode.position.z = mesh.position.z;
@@ -736,8 +773,17 @@ export default function GyriiGame() {
             const ax = aim.x || 0;
             const az = aim.z || -1;
             const len = Math.sqrt(ax * ax + az * az) || 1;
-            const aimDir = new BABYLON.Vector3(-az / len, 0, ax / len);
-            rootNode.setDirection(aimDir);
+            const targetAimDir = new BABYLON.Vector3(-az / len, 0, ax / len);
+            // Lerp rotation toward target (2-3 steps to converge, ~0.45 blend)
+            const ROTATION_LERP = 0.45;
+            const prevAim = entry.lastAimDir ?? targetAimDir.clone();
+            const lerpedAim = BABYLON.Vector3.Lerp(
+              prevAim,
+              targetAimDir,
+              ROTATION_LERP,
+            ).normalize();
+            entry.lastAimDir = lerpedAim.clone();
+            rootNode.setDirection(lerpedAim);
 
             const speed = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
             if (speed > 0.01 && deltaTime > 0) {
@@ -781,7 +827,7 @@ export default function GyriiGame() {
                 44,
                 "bold 36px sans-serif",
                 "#ffffff",
-                null,
+                "transparent",
                 true,
               );
               entry.nameTexture.update();
@@ -837,7 +883,7 @@ export default function GyriiGame() {
         setLoadingProgress(100);
 
         // Initialize weapon renderers
-        const weaponRenderer = new WeaponRenderer(scene);
+        const weaponRenderer = new WeaponRenderer(scene, physicsHandle);
         const throwableRenderer = new ThrowableRenderer(
           scene,
           physicsHandle,
@@ -881,6 +927,7 @@ export default function GyriiGame() {
         // Mouse position tracking for aiming
         let aimDirection = new BABYLON.Vector3(0, 0, -1);
         let mouseScreenPos = { x: 0, y: 0 };
+        const MIN_AIM_LENGTH_SQ = 0.0001;
 
         const handlePointerMove = (e: MouseEvent | PointerEvent) => {
           const canvas = canvasRef.current;
@@ -910,17 +957,8 @@ export default function GyriiGame() {
         let lastShotAtRef = 0;
         const lastShotAtPerPlayer = new Map<string, number>();
 
-        // Send input to server: 20 Hz when moving, ~5 Hz when idle (reduces update_input calls drastically)
-        const INPUT_INTERVAL_MS = 50;
-        const IDLE_SEND_INTERVAL_MS = 200;
-        const AIM_CHANGE_THRESHOLD = 0.02;
-        let lastSent = {
-          inputX: 0,
-          inputZ: 0,
-          aimX: 0,
-          aimZ: 0,
-          time: 0,
-        };
+        // Send input to server every frame (~60 Hz)
+        const INPUT_INTERVAL_MS = 16;
         updateInputIntervalRef.current = setInterval(() => {
           if (useGyriiStore.getState().gameState === "paused") return;
           let inputX = 0,
@@ -932,30 +970,10 @@ export default function GyriiGame() {
           const store = useGyriiStore.getState();
           if (!store.localPlayer) return;
 
-          const isMoving = inputX !== 0 || inputZ !== 0;
-          const now = performance.now();
-          const aimChanged =
-            Math.abs(aimDirection.x - lastSent.aimX) > AIM_CHANGE_THRESHOLD ||
-            Math.abs(aimDirection.z - lastSent.aimZ) > AIM_CHANGE_THRESHOLD;
-          const inputChanged =
-            inputX !== lastSent.inputX || inputZ !== lastSent.inputZ;
-          const idleLongEnough = now - lastSent.time >= IDLE_SEND_INTERVAL_MS;
-
-          const shouldSend =
-            isMoving ||
-            inputChanged ||
-            (aimChanged && idleLongEnough) ||
-            (!isMoving && idleLongEnough); // periodic (0,0) for damping
-
-          if (shouldSend) {
-            lastSent = {
-              inputX,
-              inputZ,
-              aimX: aimDirection.x,
-              aimZ: aimDirection.z,
-              time: now,
-            };
-            updateInput(inputX, inputZ, aimDirection.x, aimDirection.z);
+          updateInput(inputX, inputZ, aimDirection.x, aimDirection.z);
+          // Keep server in sync with shooting state + aim while holding fire
+          if (shootRef.isShooting) {
+            setShooting(true, aimDirection.x, aimDirection.z);
           }
         }, INPUT_INTERVAL_MS);
 
@@ -991,15 +1009,24 @@ export default function GyriiGame() {
                   )
                 : mapCenter;
 
-          // Calculate aim direction from mouse (before sync so we can pass it for weapon rotation)
+          // Calculate stable horizontal aim from mouse (before sync so we can pass it for weapon rotation)
           let mouseWorldPos: Vector3 | null = null;
+          const updateAimFromTarget = (target: Vector3) => {
+            const dx = target.x - myPos.x;
+            const dz = target.z - myPos.z;
+            const lenSq = dx * dx + dz * dz;
+            if (lenSq > MIN_AIM_LENGTH_SQ) {
+              const invLen = 1 / Math.sqrt(lenSq);
+              aimDirection.x = dx * invLen;
+              aimDirection.y = 0;
+              aimDirection.z = dz * invLen;
+            }
+          };
           const pickInfo = scene.pick(mouseScreenPos.x, mouseScreenPos.y);
           if (pickInfo?.pickedPoint) {
             mouseWorldPos = pickInfo.pickedPoint.clone();
             mouseWorldPos.y = 0;
-            aimDirection = mouseWorldPos.subtract(myPos).normalize();
-            aimDirection.y = 0;
-            if (aimDirection.lengthSquared() > 0.01) aimDirection.normalize();
+            updateAimFromTarget(mouseWorldPos);
           } else {
             const ray = scene.createPickingRay(
               mouseScreenPos.x,
@@ -1012,10 +1039,7 @@ export default function GyriiGame() {
               if (t > 0) {
                 mouseWorldPos = ray.origin.add(ray.direction.scale(t));
                 mouseWorldPos.y = 0;
-                aimDirection = mouseWorldPos.subtract(myPos).normalize();
-                aimDirection.y = 0;
-                if (aimDirection.lengthSquared() > 0.01)
-                  aimDirection.normalize();
+                updateAimFromTarget(mouseWorldPos);
               }
             }
           }
@@ -1039,7 +1063,7 @@ export default function GyriiGame() {
             const localId = idForKey(localPlayer.id);
             applyInput(physicsHandle, localId, inputX, inputZ, nowSec);
           }
-          step(physicsHandle, deltaTime);
+          const projectileCollisions = step(physicsHandle, deltaTime);
 
           // Sync player meshes from physics (positions/velocities from Rapier)
           syncPlayerMeshes(localPlayer, players, deltaTime, localAim);
@@ -1175,7 +1199,7 @@ export default function GyriiGame() {
             useGyriiStore.getState().setWeaponChargeProgress(0);
           }
 
-          weaponRenderer.update(deltaTime);
+          weaponRenderer.update(deltaTime, projectileCollisions);
           weaponRenderer.updateBeams(
             Array.from(useGyriiStore.getState().photonBeams.values()),
           );
@@ -1316,6 +1340,43 @@ export default function GyriiGame() {
       {/* UI Overlays - Game only mounts when user has joined a lobby */}
       {!isLoading && gameState === "playing" && <HUD />}
       {!isLoading && gameState === "paused" && <PauseMenu />}
+      {!isLoading && roundEndedBanner && (
+        <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center bg-black/45">
+          <div className="rounded-xl border border-yellow-400/60 bg-black/75 px-8 py-6 text-center shadow-2xl">
+            <div className="text-xs tracking-widest text-yellow-300 mb-2">
+              ROUND ENDED
+            </div>
+            <div className="text-4xl font-extrabold text-white mb-3">
+              {roundEndedBanner.winnerPlayerName
+                ? `${roundEndedBanner.winnerPlayerName} wins!`
+                : roundEndedBanner.winnerTeam != null
+                  ? `Team ${roundEndedBanner.winnerTeam + 1} wins!`
+                  : "Winner decided"}
+            </div>
+            <div className="text-sm text-cyan-300 mb-1">
+              Next map: {roundEndedBanner.nextMapId}
+            </div>
+            <div className="text-sm text-gray-300">
+              New round starts in{" "}
+              {Math.max(
+                0,
+                Math.ceil(
+                  (roundEndedBanner.shownAtMs +
+                    roundEndedBanner.countdownMs -
+                    bannerNowMs) /
+                    1000,
+                ),
+              )}
+              s
+            </div>
+            {currentLobby?.gameState === "ended" && (
+              <div className="mt-2 text-xs text-gray-400">
+                Select your loadout when respawn screen appears.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

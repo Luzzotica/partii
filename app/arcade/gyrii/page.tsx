@@ -5,9 +5,9 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useGyriiStore } from "@/games/gyrii/store/gameStore";
 import {
-  activateSpacetimeDB,
-  deactivateSpacetimeDB,
-} from "@/games/gyrii/hooks/useSpacetimeDB";
+  activateGyriiConnection,
+  deactivateGyriiConnection,
+} from "@/games/gyrii/hooks/useGyriiConnection";
 import { UserMenu } from "@/components/auth/UserMenu";
 import { usePresence } from "@/lib/supabase/hooks";
 import LobbyUI from "@/games/gyrii/components/LobbyUI";
@@ -44,16 +44,17 @@ export default function GyriiPage() {
   const [mounted, setMounted] = useState(false);
   const currentLobby = useGyriiStore((state) => state.currentLobby);
   const localPlayer = useGyriiStore((state) => state.localPlayer);
+  const roundEndedBanner = useGyriiStore((state) => state.roundEndedBanner);
   const { currentGamePlayers } = usePresence("gyrii");
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  // Only connect to SpacetimeDB while on the Gyrii page; disconnect when leaving
+  // Only connect while on the Gyrii page; disconnect when leaving
   useEffect(() => {
-    activateSpacetimeDB();
-    return () => deactivateSpacetimeDB();
+    activateGyriiConnection();
+    return () => deactivateGyriiConnection();
   }, []);
 
   if (!mounted) {
@@ -97,11 +98,13 @@ export default function GyriiPage() {
   return (
     <main className="relative w-full h-screen overflow-hidden bg-black">
       <Suspense fallback={<LoadingSpinner />}>
-        <GyriiGame />
+        <GyriiGame key={`${currentLobby.id}:${currentLobby.mapId}`} />
       </Suspense>
-      {(!localPlayer || localPlayer.isAlive === false) && (
-        <SpawnLoadoutScreen />
-      )}
+      {!roundEndedBanner &&
+        currentLobby.gameState !== "ended" &&
+        (!localPlayer || localPlayer.isAlive === false) && (
+          <SpawnLoadoutScreen />
+        )}
     </main>
   );
 }

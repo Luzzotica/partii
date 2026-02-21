@@ -75,7 +75,7 @@ export default function HUD() {
         <div className="bg-black/50 backdrop-blur-sm rounded-lg p-2 border border-cyan-500/30 self-end">
           <div className="w-5 h-32 bg-gray-800 rounded-full overflow-hidden flex flex-col justify-end">
             <div
-              className="w-full transition-[height] duration-100 ease-out rounded-full"
+              className="w-full rounded-full"
               style={{
                 height: `${healthPercent}%`,
                 backgroundColor:

@@ -100,6 +100,7 @@ export interface Lobby {
   name: string;
   hostId: string;
   mapId: string;
+  mapPool: string[];
   physicsWorldId?: number; // for physics debug (heartbeat, debug_physics_world)
   maxPlayers: number;
   playerCount: number;
@@ -108,6 +109,17 @@ export interface Lobby {
   hasPassword: boolean;
   scoreLimit: number;
   flagLimit: number;
+  nextRoundStartsAtMs?: number;
+}
+
+export interface RoundEndedBanner {
+  lobbyId: string;
+  winnerTeam?: number;
+  winnerPlayerIdentity?: string;
+  winnerPlayerName?: string;
+  nextMapId: string;
+  countdownMs: number;
+  shownAtMs: number;
 }
 
 export interface KillEvent {
@@ -185,6 +197,8 @@ interface GyriiStore {
   setCurrentLobby: (lobby: Lobby | null) => void;
   setAvailableLobbies: (lobbies: Lobby[]) => void;
   setPendingLeaveLobby: (pending: boolean) => void;
+  roundEndedBanner: RoundEndedBanner | null;
+  setRoundEndedBanner: (banner: RoundEndedBanner | null) => void;
 
   // Kill feed
   killFeed: KillEvent[];
@@ -265,6 +279,7 @@ const initialState = {
   currentLobby: null,
   availableLobbies: [],
   pendingLeaveLobby: false,
+  roundEndedBanner: null,
   killFeed: [],
   photonBeams: new Map<string, PhotonBeamEntry>(),
   playersInBeamHighlight: new Set<string>(),
@@ -350,6 +365,7 @@ export const useGyriiStore = create<GyriiStore>((set, get) => ({
     })),
   setAvailableLobbies: (lobbies) => set({ availableLobbies: lobbies }),
   setPendingLeaveLobby: (pending) => set({ pendingLeaveLobby: pending }),
+  setRoundEndedBanner: (banner) => set({ roundEndedBanner: banner }),
 
   addKillEvent: (event) => {
     const killFeed = [event, ...get().killFeed].slice(0, 5);

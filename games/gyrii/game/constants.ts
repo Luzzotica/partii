@@ -5,8 +5,8 @@ export const PLAYER_BALL_RADIUS = 0.5;
 export const GRAVITY = -9.81;
 
 /** Player movement; must match server constants.rs. */
-export const PLAYER_ACCEL = 28.8;
-export const PLAYER_DAMPING = 0.84;
+export const PLAYER_ACCEL = 12.0;
+export const PLAYER_DAMPING = 0.96;
 export const PLAYER_INPUT_TICK_DT = 0.05;
 
 /**

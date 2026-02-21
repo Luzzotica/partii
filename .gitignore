@@ -29,6 +29,8 @@ out
 *.sw?
 
 .env
+games/gyrii/server/.env
 
 # SpacetimeDB build artifacts (Rust/Cargo target, WASM output)
 games/gyrii/spacetimedb/target/
+games/gyrii/server/target/

@@ -6,7 +6,28 @@ import { createClient } from "@/lib/supabase/client";
 import { useGyriiStore } from "../store/gameStore";
 import MarbleDesigner from "./MarbleDesigner";
 import CreateLobby from "./CreateLobby";
-import { useSpacetimeDB } from "../hooks/useSpacetimeDB";
+import { useGyriiConnection } from "../hooks/useGyriiConnection";
+
+type GyriiLeaderboardEntry = {
+  rank: number;
+  display_name: string;
+  matches_played: number;
+  kills: number;
+  deaths: number;
+  kdr: number;
+};
+
+type GyriiPersonalStats = {
+  totals: {
+    matches_played: number;
+    kills: number;
+    deaths: number;
+    assists: number;
+    damage_dealt: number;
+    damage_taken: number;
+    kdr: number;
+  };
+};
 
 const GAME_MODE_LABELS: Record<string, string> = {
   freeForAll: "Free For All",
@@ -38,13 +59,23 @@ export default function LobbyUI() {
     setCurrentLobby,
   } = useGyriiStore();
 
-  const { joinLobby } = useSpacetimeDB();
+  const { joinLobby, refreshLobbies } = useGyriiConnection();
   const isConnected = useGyriiStore((s) => s.isConnected);
   const [isGuest, setIsGuest] = useState(true);
   const [displayNameLoading, setDisplayNameLoading] = useState(true);
   const [selectedLobbyId, setSelectedLobbyId] = useState<string | null>(null);
   const [joiningLobbyId, setJoiningLobbyId] = useState<string | null>(null);
   const [joinPassword, setJoinPassword] = useState("");
+  const [statsLoading, setStatsLoading] = useState(false);
+  const [leaderboard, setLeaderboard] = useState<GyriiLeaderboardEntry[]>([]);
+  const [personalStats, setPersonalStats] = useState<GyriiPersonalStats | null>(
+    null,
+  );
+
+  // Refresh lobby list when mounting on lobby screen
+  useEffect(() => {
+    if (isConnected) refreshLobbies();
+  }, [isConnected, refreshLobbies]);
 
   // Fetch user's display name and marble config if logged in; randomize marble for guests
   useEffect(() => {
@@ -114,6 +145,49 @@ export default function LobbyUI() {
     setMarbleConfig,
     setPlayerColor,
   ]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadStats = async () => {
+      setStatsLoading(true);
+      try {
+        const [leaderboardRes, personalRes] = await Promise.all([
+          fetch("/api/gyrii/stats?limit=5"),
+          user ? fetch("/api/gyrii/stats/personal") : Promise.resolve(null),
+        ]);
+
+        if (leaderboardRes?.ok) {
+          const data = (await leaderboardRes.json()) as {
+            players?: GyriiLeaderboardEntry[];
+          };
+          if (isMounted) {
+            setLeaderboard(data.players ?? []);
+          }
+        }
+
+        if (personalRes?.ok) {
+          const data = (await personalRes.json()) as GyriiPersonalStats;
+          if (isMounted) {
+            setPersonalStats(data);
+          }
+        } else if (isMounted) {
+          setPersonalStats(null);
+        }
+      } catch (error) {
+        console.error("Failed to load gyrii stats:", error);
+      } finally {
+        if (isMounted) {
+          setStatsLoading(false);
+        }
+      }
+    };
+
+    loadStats();
+    return () => {
+      isMounted = false;
+    };
+  }, [user]);
 
   const handleSelectLobby = (lobbyId: string, hasPassword: boolean) => {
     if (hasPassword) {
@@ -244,6 +318,73 @@ export default function LobbyUI() {
               )}
             </div>
             <MarbleDesigner />
+            <div className="bg-black/50 backdrop-blur-sm rounded-lg p-4 border border-cyan-500/30">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-cyan-300">
+                  Gyrii Stats
+                </h3>
+                {statsLoading && (
+                  <span className="text-xs text-gray-400 animate-pulse">
+                    Loading...
+                  </span>
+                )}
+              </div>
+              {user && personalStats ? (
+                <div className="grid grid-cols-2 gap-2 text-xs mb-3">
+                  <div className="bg-gray-900/70 rounded px-2 py-1">
+                    <div className="text-gray-400">Matches</div>
+                    <div className="text-white">
+                      {personalStats.totals.matches_played}
+                    </div>
+                  </div>
+                  <div className="bg-gray-900/70 rounded px-2 py-1">
+                    <div className="text-gray-400">K/D</div>
+                    <div className="text-white">
+                      {personalStats.totals.kdr.toFixed(2)}
+                    </div>
+                  </div>
+                  <div className="bg-gray-900/70 rounded px-2 py-1">
+                    <div className="text-gray-400">Kills</div>
+                    <div className="text-white">
+                      {personalStats.totals.kills}
+                    </div>
+                  </div>
+                  <div className="bg-gray-900/70 rounded px-2 py-1">
+                    <div className="text-gray-400">Deaths</div>
+                    <div className="text-white">
+                      {personalStats.totals.deaths}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs text-gray-400 mb-3">
+                  Sign in to save and view your personal Gyrii history.
+                </p>
+              )}
+
+              <div className="text-xs text-gray-400 mb-1">Top Players</div>
+              <div className="space-y-1">
+                {leaderboard.length === 0 ? (
+                  <p className="text-xs text-gray-500">
+                    No tracked matches yet.
+                  </p>
+                ) : (
+                  leaderboard.map((entry) => (
+                    <div
+                      key={`${entry.rank}-${entry.display_name}`}
+                      className="flex items-center justify-between bg-gray-900/60 rounded px-2 py-1 text-xs"
+                    >
+                      <div className="text-cyan-300 truncate pr-2">
+                        #{entry.rank} {entry.display_name}
+                      </div>
+                      <div className="text-gray-300">
+                        {entry.kills}/{entry.deaths} ({entry.kdr.toFixed(2)})
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
           </div>
 
           {/* Right 2/3: Lobby list or Create Lobby */}

@@ -3,6 +3,11 @@ const nextConfig = {
   reactStrictMode: true,
   // Phaser needs to be handled as a client-side only library; Rapier3d uses WebAssembly
   webpack: (config, { isServer }) => {
+    // Ignore .cursor (debug logs, etc.) to prevent infinite rebuilds when logs are written
+    config.watchOptions = {
+      ...config.watchOptions,
+      ignored: ["**/.cursor/**", "**/node_modules/**"],
+    };
     config.resolve.fallback = {
       ...config.resolve.fallback,
       fs: false,

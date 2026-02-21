@@ -129,7 +129,15 @@ pub fn throw_grenade(ctx: &ReducerContext, aim_x: f32, aim_z: f32) -> Result<(),
     }
     let lobby = ctx.db.lobby().id().find(player.lobby_id).ok_or("Lobby not found")?;
 
-    let aim_dir = Vec3::new(aim_x, 0.0, aim_z).normalize();
+    // Guard against near-zero throw vectors so grenades never "snap" unpredictably.
+    let mut aim_dir = Vec3::new(aim_x, 0.0, aim_z);
+    if aim_dir.length_squared() < 1e-4 {
+        aim_dir = Vec3::new(player.aim_x, 0.0, player.aim_z);
+    }
+    if aim_dir.length_squared() < 1e-4 {
+        aim_dir = Vec3::new(0.0, 0.0, -1.0);
+    }
+    let aim_dir = aim_dir.normalize();
     // 45-degree lob: horizontal and vertical speeds equal
     let s = GRENADE_THROW_SPEED;
     let velocity = Vec3::new(aim_dir.x * s, s, aim_dir.z * s);
@@ -171,7 +179,7 @@ pub fn throw_grenade(ctx: &ReducerContext, aim_x: f32, aim_z: f32) -> Result<(),
         world_id: lobby.physics_world_id,
         owner_id: identity,
         expires_at_micros: now_micros as u64 + GRENADE_FUSE_SEC * 1_000_000,
-        damage: 120.0,
+        damage: 110.0,
         radius: 5.0,
         position_x: start_pos.x,
         position_y: start_pos.y,
@@ -218,7 +226,14 @@ pub fn throw_molotov(ctx: &ReducerContext, aim_x: f32, aim_z: f32) -> Result<(),
     }
     let lobby = ctx.db.lobby().id().find(player.lobby_id).ok_or("Lobby not found")?;
 
-    let aim_dir = Vec3::new(aim_x, 0.0, aim_z).normalize();
+    let mut aim_dir = Vec3::new(aim_x, 0.0, aim_z);
+    if aim_dir.length_squared() < 1e-4 {
+        aim_dir = Vec3::new(player.aim_x, 0.0, player.aim_z);
+    }
+    if aim_dir.length_squared() < 1e-4 {
+        aim_dir = Vec3::new(0.0, 0.0, -1.0);
+    }
+    let aim_dir = aim_dir.normalize();
     let target_pos = Vec3::new(
         player.position_x + aim_dir.x * 10.0,
         0.1,

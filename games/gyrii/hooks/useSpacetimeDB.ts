@@ -123,6 +123,7 @@ function convertLobby(lobby: any, connection: DbConnection) {
     name: lobby.name,
     hostId: lobby.hostId.toString(),
     mapId: mapIdStr,
+    mapPool: [mapIdStr],
     physicsWorldId:
       (lobby.physicsWorldId ?? lobby.physics_world_id) != null
         ? Number(lobby.physicsWorldId ?? lobby.physics_world_id)
@@ -134,6 +135,7 @@ function convertLobby(lobby: any, connection: DbConnection) {
     hasPassword: lobby.hasPassword,
     scoreLimit: lobby.scoreLimit ?? 25,
     flagLimit: lobby.flagLimit ?? 3,
+    nextRoundStartsAtMs: undefined,
   };
 }
 
@@ -312,6 +314,10 @@ function ensureConnected() {
         useGyriiStore.getState().setConnected(false);
         useGyriiStore.getState().setConnecting(false);
         useGyriiStore.getState().setConnectionError("Disconnected");
+        // Return to gyrii page (lobby list) when disconnected, same as leaving the game
+        useGyriiStore.getState().setCurrentLobby(null);
+        useGyriiStore.getState().setPendingLeaveLobby(false);
+        useGyriiStore.getState().clearPlayers();
         if (lobbyPollInterval) {
           clearInterval(lobbyPollInterval);
           lobbyPollInterval = null;
@@ -373,6 +379,7 @@ export function useSpacetimeDB() {
       name: string,
       hostPlayerName: string,
       mapId: "Arena" | "Maze" | "Warehouse",
+      _mapPool: ("Arena" | "Maze" | "Warehouse")[],
       maxPlayers: number,
       gameMode: "FreeForAll" | "TeamDeathmatch" | "CaptureTheFlag",
       scoreLimit: number,

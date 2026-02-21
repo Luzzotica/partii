@@ -47,10 +47,19 @@ function getRAPIER(): RAPIER {
 
 export type WorldHandle = {
   world: InstanceType<RAPIER["World"]>;
+  eventQueue: InstanceType<RAPIER["EventQueue"]>;
   playerBodies: Map<string, InstanceType<RAPIER["RigidBody"]>>;
   throwableBodies: Map<string, InstanceType<RAPIER["RigidBody"]>>;
+  projectileBodies: Map<
+    string,
+    {
+      body: InstanceType<RAPIER["RigidBody"]>;
+      collider: InstanceType<RAPIER["Collider"]>;
+    }
+  >;
+  /** Collider handle -> projectile id (for collision event lookup). */
+  colliderToProjectileId: Map<number, string>;
   lastInputTime: number;
-  /** Accumulated time for fixed-timestep physics (seconds). */
   physicsAccumulator: number;
 };
 
@@ -179,10 +188,14 @@ export function createWorldFromMap(mapData: MapData): WorldHandle {
     world.createCollider(collider, body);
   }
 
+  const eventQueue = new R.EventQueue(true);
   return {
     world,
+    eventQueue,
     playerBodies: new Map(),
     throwableBodies: new Map(),
+    projectileBodies: new Map(),
+    colliderToProjectileId: new Map(),
     lastInputTime: 0,
     physicsAccumulator: 0,
   };
@@ -307,7 +320,11 @@ const MAX_STEPS_PER_FRAME = 4;
  * Rapier defaults to dt=1/60 per step; at 120fps we'd simulate 2x real time without this.
  * We use fixed timestep accumulation: add dt, step once per PHYSICS_DT, carry remainder.
  */
-export function step(handle: WorldHandle, dt: number): void {
+/** Projectile ids that collided this step (to remove from WeaponRenderer). */
+const projectileCollisionsThisStep = new Set<string>();
+
+export function step(handle: WorldHandle, dt: number): string[] {
+  projectileCollisionsThisStep.clear();
   handle.physicsAccumulator += dt;
   handle.world.timestep = PHYSICS_DT;
   let steps = 0;
@@ -315,13 +332,21 @@ export function step(handle: WorldHandle, dt: number): void {
     handle.physicsAccumulator >= PHYSICS_DT &&
     steps < MAX_STEPS_PER_FRAME
   ) {
-    handle.world.step();
+    handle.world.step(handle.eventQueue);
+    handle.eventQueue.drainCollisionEvents((h1, h2, started) => {
+      if (!started) return;
+      const id1 = handle.colliderToProjectileId.get(h1);
+      const id2 = handle.colliderToProjectileId.get(h2);
+      if (id1) projectileCollisionsThisStep.add(id1);
+      if (id2) projectileCollisionsThisStep.add(id2);
+    });
     handle.physicsAccumulator -= PHYSICS_DT;
     steps++;
   }
   if (handle.physicsAccumulator > PHYSICS_DT * 2) {
     handle.physicsAccumulator = PHYSICS_DT;
   }
+  return Array.from(projectileCollisionsThisStep);
 }
 
 // --- Throwables ---
@@ -357,6 +382,61 @@ export function createThrowableBody(
     .setCollisionGroups(collisionGroups(membership, filter));
   handle.world.createCollider(collider, body);
   handle.throwableBodies.set(id, body);
+}
+
+// --- Projectiles (bullets, rockets) - use Rapier for collision, lerp mesh on client ---
+
+const BULLET_RADIUS = 0.08;
+const ROCKET_RADIUS = 0.2;
+
+export function createProjectileBody(
+  handle: WorldHandle,
+  id: string,
+  x: number,
+  y: number,
+  z: number,
+  vx: number,
+  vy: number,
+  vz: number,
+  isRocket: boolean,
+): void {
+  if (handle.projectileBodies.has(id)) return;
+  const R = getRAPIER();
+  const radius = isRocket ? ROCKET_RADIUS : BULLET_RADIUS;
+  const bodyDesc = R.RigidBodyDesc.dynamic()
+    .setTranslation(x, y, z)
+    .setLinvel(vx, vy, vz)
+    .setGravityScale(0)
+    .setCcdEnabled(true);
+  const body = handle.world.createRigidBody(bodyDesc);
+  const colliderDesc = R.ColliderDesc.ball(radius)
+    .setSensor(true) // no physical collision, only detection
+    .setActiveEvents(R.ActiveEvents.COLLISION_EVENTS)
+    .setCollisionGroups(
+      collisionGroups(GROUP_BULLET, GROUP_FLOOR | GROUP_WALL | GROUP_PLAYER),
+    );
+  const collider = handle.world.createCollider(colliderDesc, body);
+  handle.projectileBodies.set(id, { body, collider });
+  handle.colliderToProjectileId.set(collider.handle, id);
+}
+
+export function removeProjectileBody(handle: WorldHandle, id: string): void {
+  const entry = handle.projectileBodies.get(id);
+  if (entry) {
+    handle.colliderToProjectileId.delete(entry.collider.handle);
+    handle.world.removeRigidBody(entry.body);
+    handle.projectileBodies.delete(id);
+  }
+}
+
+export function getProjectilePosition(
+  handle: WorldHandle,
+  id: string,
+): { x: number; y: number; z: number } | null {
+  const entry = handle.projectileBodies.get(id);
+  if (!entry) return null;
+  const t = entry.body.translation();
+  return { x: t.x, y: t.y, z: t.z };
 }
 
 export function removeThrowableBody(handle: WorldHandle, id: string): void {
@@ -395,6 +475,12 @@ export function setThrowableState(
 }
 
 export function destroyWorld(handle: WorldHandle): void {
+  handle.projectileBodies.forEach(({ body }) =>
+    handle.world.removeRigidBody(body),
+  );
+  handle.projectileBodies.clear();
+  handle.colliderToProjectileId.clear();
+  handle.eventQueue.free();
   handle.world.free();
   handle.playerBodies.clear();
   handle.throwableBodies.clear();
