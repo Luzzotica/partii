@@ -1,0 +1,3 @@
+gyrii.sterlinglong.me {
+  reverse_proxy gyrii-server:4000
+}

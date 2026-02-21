@@ -54,6 +54,8 @@ export interface Player {
   lastImpulseTime?: number;
   /** Server timestamp when this player last fired (for shot feedback). */
   lastShotAt?: number;
+  /** Monotonic server-authored snapshot id for reconciliation ordering. */
+  serverSnapshotId?: number;
   /** Server timestamp (micros) when this player last threw a grenade; used for cooldown. */
   lastGrenadeThrownAt?: number;
   /** Server-synced alive state; when false, show respawn loadout screen. */

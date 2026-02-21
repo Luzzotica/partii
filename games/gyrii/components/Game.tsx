@@ -44,10 +44,11 @@ export default function GyriiGame() {
         /** Child of weapon at muzzleOffset; use getAbsolutePosition() for shot origin. */
         muzzleNode?: any;
         lastWeapon?: string;
-        /** Snapshot when server state last changed; used for reconciliation. */
+        /** Latest snapshot id applied from server for this player. */
+        lastAppliedSnapshotId?: number;
+        /** Last authoritative server snapshot we reconciled this body to. */
         lastServerPos?: { x: number; y: number; z: number };
         lastServerVel?: { x: number; y: number; z: number };
-        lastServerTime?: number;
         /** Last applied impulse time (for local player hit prediction). */
         lastAppliedImpulseTime?: number;
         /** Track designId so we can recreate material when it changes. */
@@ -355,9 +356,9 @@ export default function GyriiGame() {
             muzzleNode?: any;
             debugAimLine?: any;
             lastWeapon?: string;
+            lastAppliedSnapshotId?: number;
             lastServerPos?: { x: number; y: number; z: number };
             lastServerVel?: { x: number; y: number; z: number };
-            lastServerTime?: number;
             lastAppliedImpulseTime?: number;
             lastDesignId?: number;
             lastAimDir?: InstanceType<typeof BABYLON.Vector3>;
@@ -621,12 +622,13 @@ export default function GyriiGame() {
         lastPlayerIds = new Set(initialAll.keys());
         ensureWeaponMeshes(initialAll);
 
-        // Sync loop: positions (velocity extrapolation), ball rotation, weapon pose from aim, material (no create/delete)
+        // Sync loop: positions from Rapier body, ball rotation, weapon pose from aim, material (no create/delete)
         const syncPlayerMeshes = (
           localPlayer: Player | null,
           players: Map<string, Player>,
           deltaTime: number,
           localAim?: { x: number; z: number },
+          localRenderPos?: { x: number; y: number; z: number },
         ) => {
           const allPlayers = new Map<string, Player>();
           if (localPlayer)
@@ -690,25 +692,67 @@ export default function GyriiGame() {
             const vx = player.velocity?.x ?? 0;
             const vy = player.velocity?.y ?? 0;
             const vz = player.velocity?.z ?? 0;
+            const snapshotId = player.serverSnapshotId ?? 0;
+            const isNewSnapshot =
+              snapshotId > (entry.lastAppliedSnapshotId ?? -1);
 
-            const now = performance.now() / 1000;
             const prevPos = entry.lastServerPos;
             const prevVel = entry.lastServerVel;
-            const posChanged =
+            const serverStateChanged =
               prevPos == null ||
+              prevVel == null ||
               prevPos.x !== px ||
               prevPos.y !== py ||
-              prevPos.z !== pz;
-            const velChanged =
-              prevVel == null ||
+              prevPos.z !== pz ||
               prevVel.x !== vx ||
               prevVel.y !== vy ||
               prevVel.z !== vz;
-            if (posChanged || velChanged) {
+
+            // Reconcile to server only when we receive a fresh authoritative snapshot.
+            // Between snapshots, local body velocity stays client-predicted from input.
+            if (isNewSnapshot && serverStateChanged) {
+              entry.lastAppliedSnapshotId = snapshotId;
               entry.lastServerPos = { x: px, y: py, z: pz };
               entry.lastServerVel = { x: vx, y: vy, z: vz };
-              entry.lastServerTime = now;
-              setPlayerState(physicsHandle, id, px, py, pz, vx, vy, vz);
+              if (isLocal) {
+                const currentPos = getPlayerPosition(physicsHandle, id);
+                const currentVel = getPlayerLinvel(physicsHandle, id);
+                if (!currentPos || !currentVel) {
+                  setPlayerState(physicsHandle, id, px, py, pz, vx, vy, vz);
+                } else {
+                  const dx = px - currentPos.x;
+                  const dy = py - currentPos.y;
+                  const dz = pz - currentPos.z;
+                  const posError = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                  const dvx = vx - currentVel.x;
+                  const dvy = vy - currentVel.y;
+                  const dvz = vz - currentVel.z;
+                  const velError = Math.sqrt(dvx * dvx + dvy * dvy + dvz * dvz);
+                  const HARD_SNAP_POS_ERROR = 0.75;
+                  const SOFT_CORRECT_POS_ERROR = 0.01;
+                  const SOFT_CORRECT_VEL_ERROR = 0.1;
+                  if (posError > HARD_SNAP_POS_ERROR) {
+                    setPlayerState(physicsHandle, id, px, py, pz, vx, vy, vz);
+                  } else if (
+                    posError > SOFT_CORRECT_POS_ERROR ||
+                    velError > SOFT_CORRECT_VEL_ERROR
+                  ) {
+                    const alpha = Math.min(1, deltaTime * 10);
+                    setPlayerState(
+                      physicsHandle,
+                      id,
+                      currentPos.x + (px - currentPos.x) * alpha,
+                      currentPos.y + (py - currentPos.y) * alpha,
+                      currentPos.z + (pz - currentPos.z) * alpha,
+                      currentVel.x + (vx - currentVel.x) * alpha,
+                      currentVel.y + (vy - currentVel.y) * alpha,
+                      currentVel.z + (vz - currentVel.z) * alpha,
+                    );
+                  }
+                }
+              } else {
+                setPlayerState(physicsHandle, id, px, py, pz, vx, vy, vz);
+              }
             }
 
             // Apply server-sent impulse immediately for local player (hit prediction)
@@ -726,36 +770,14 @@ export default function GyriiGame() {
 
             const mesh = entry.mesh;
             const rootNode = entry.rootNode;
-            let pos = getPlayerPosition(physicsHandle, id) ?? {
-              x: px,
-              y: py,
-              z: pz,
-            };
-
-            // For remote players, predict display position from last authoritative server
-            // position + velocity. Fresh server updates in setPlayerState() backfill drift.
-            if (
-              !isLocal &&
-              entry.lastServerPos &&
-              entry.lastServerVel &&
-              entry.lastServerTime != null
-            ) {
-              const predictAheadSec = Math.min(
-                0.25,
-                Math.max(0, now - entry.lastServerTime),
-              );
-              pos = {
-                x:
-                  entry.lastServerPos.x +
-                  entry.lastServerVel.x * predictAheadSec,
-                y:
-                  entry.lastServerPos.y +
-                  entry.lastServerVel.y * predictAheadSec,
-                z:
-                  entry.lastServerPos.z +
-                  entry.lastServerVel.z * predictAheadSec,
-              };
-            }
+            const pos =
+              isLocal && localRenderPos
+                ? localRenderPos
+                : (getPlayerPosition(physicsHandle, id) ?? {
+                    x: px,
+                    y: py,
+                    z: pz,
+                  });
 
             mesh.position.x = pos.x;
             mesh.position.y = pos.y;
@@ -992,41 +1014,16 @@ export default function GyriiGame() {
           const localPlayer = store.localPlayer;
           const players = store.players;
 
-          // Use local player position for aim/camera (from client physics when available)
+          // Use local player position for aim/camera/render from one post-step sample per frame.
           const mapCenter = new BABYLON.Vector3(0, 0.5, 0);
           const localId = localPlayer ? idForKey(localPlayer.id) : null;
-          const physicsPos = localId
-            ? getPlayerPosition(physicsHandle, localId)
-            : null;
-          const myPos =
-            localPlayer && physicsPos
-              ? new BABYLON.Vector3(physicsPos.x, physicsPos.y, physicsPos.z)
-              : localPlayer
-                ? new BABYLON.Vector3(
-                    localPlayer.position.x,
-                    localPlayer.position.y ?? 0.5,
-                    localPlayer.position.z,
-                  )
-                : mapCenter;
 
-          // Calculate stable horizontal aim from mouse (before sync so we can pass it for weapon rotation)
+          // Resolve mouse world target first; aim direction is finalized after physics step.
           let mouseWorldPos: Vector3 | null = null;
-          const updateAimFromTarget = (target: Vector3) => {
-            const dx = target.x - myPos.x;
-            const dz = target.z - myPos.z;
-            const lenSq = dx * dx + dz * dz;
-            if (lenSq > MIN_AIM_LENGTH_SQ) {
-              const invLen = 1 / Math.sqrt(lenSq);
-              aimDirection.x = dx * invLen;
-              aimDirection.y = 0;
-              aimDirection.z = dz * invLen;
-            }
-          };
           const pickInfo = scene.pick(mouseScreenPos.x, mouseScreenPos.y);
           if (pickInfo?.pickedPoint) {
             mouseWorldPos = pickInfo.pickedPoint.clone();
             mouseWorldPos.y = 0;
-            updateAimFromTarget(mouseWorldPos);
           } else {
             const ray = scene.createPickingRay(
               mouseScreenPos.x,
@@ -1039,17 +1036,9 @@ export default function GyriiGame() {
               if (t > 0) {
                 mouseWorldPos = ray.origin.add(ray.direction.scale(t));
                 mouseWorldPos.y = 0;
-                updateAimFromTarget(mouseWorldPos);
               }
             }
           }
-
-          const localAim =
-            localPlayer && aimDirection
-              ? { x: aimDirection.x, z: aimDirection.z }
-              : undefined;
-          shootRef.aimX = aimDirection.x;
-          shootRef.aimZ = aimDirection.z;
 
           // Client physics: apply local input, step world, then sync meshes from physics
           let inputX = 0,
@@ -1065,8 +1054,58 @@ export default function GyriiGame() {
           }
           const projectileCollisions = step(physicsHandle, deltaTime);
 
+          const localPhysicsPos = localId
+            ? getPlayerPosition(physicsHandle, localId)
+            : null;
+          const myPos =
+            localPlayer && localPhysicsPos
+              ? new BABYLON.Vector3(
+                  localPhysicsPos.x,
+                  localPhysicsPos.y,
+                  localPhysicsPos.z,
+                )
+              : localPlayer
+                ? new BABYLON.Vector3(
+                    localPlayer.position.x,
+                    localPlayer.position.y ?? 0.5,
+                    localPlayer.position.z,
+                  )
+                : mapCenter;
+          const localRenderPos = localPhysicsPos
+            ? {
+                x: localPhysicsPos.x,
+                y: localPhysicsPos.y,
+                z: localPhysicsPos.z,
+              }
+            : undefined;
+
+          if (mouseWorldPos && localPlayer) {
+            const dx = mouseWorldPos.x - myPos.x;
+            const dz = mouseWorldPos.z - myPos.z;
+            const lenSq = dx * dx + dz * dz;
+            if (lenSq > MIN_AIM_LENGTH_SQ) {
+              const invLen = 1 / Math.sqrt(lenSq);
+              aimDirection.x = dx * invLen;
+              aimDirection.y = 0;
+              aimDirection.z = dz * invLen;
+            }
+          }
+
+          const localAim =
+            localPlayer && aimDirection
+              ? { x: aimDirection.x, z: aimDirection.z }
+              : undefined;
+          shootRef.aimX = aimDirection.x;
+          shootRef.aimZ = aimDirection.z;
+
           // Sync player meshes from physics (positions/velocities from Rapier)
-          syncPlayerMeshes(localPlayer, players, deltaTime, localAim);
+          syncPlayerMeshes(
+            localPlayer,
+            players,
+            deltaTime,
+            localAim,
+            localRenderPos,
+          );
 
           // 1) Drain pending shot events from server (Projectile table inserts) — bullets/rockets
           const pendingShots = useGyriiStore.getState().takePendingShotEvents();

@@ -165,6 +165,7 @@ pub fn physics_tick(ctx: &ReducerContext, timer: PhysicsTickTimer) -> Result<(),
             updated.velocity_x = rb.linear_velocity_x;
             updated.velocity_y = rb.linear_velocity_y;
             updated.velocity_z = rb.linear_velocity_z;
+            updated.server_snapshot_id = ctx.timestamp.to_micros_since_unix_epoch() as u64;
             ctx.db.player().identity().update(updated);
         }
     }
@@ -886,6 +887,7 @@ fn process_respawns(ctx: &ReducerContext) {
         updated.velocity_x = 0.0;
         updated.velocity_y = 0.0;
         updated.velocity_z = 0.0;
+        updated.server_snapshot_id = ctx.timestamp.to_micros_since_unix_epoch() as u64;
         // Reset position to spawn point for this lobby's map (from parsed map data)
         let spawn_pos = crate::maps::get_spawn_position(ctx, updated.lobby_id, updated.team as usize);
         updated.position_x = spawn_pos.x;

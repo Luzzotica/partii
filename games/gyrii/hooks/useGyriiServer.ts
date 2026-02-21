@@ -30,6 +30,7 @@ function playerFromPayload(p: {
   weapon: string;
   secondary: string;
   velocity: number[];
+  server_snapshot_id?: number;
   is_alive: boolean;
   grenade_count: number;
   molotov_count: number;
@@ -89,6 +90,7 @@ function playerFromPayload(p: {
       y: p.velocity?.[1] ?? 0,
       z: p.velocity?.[2] ?? 0,
     },
+    serverSnapshotId: p.server_snapshot_id ?? 0,
     isAlive: p.is_alive ?? true,
   };
 }
@@ -267,24 +269,29 @@ function applyPlayerLeft(msg: any) {
   store.removePlayer(id);
 }
 
-function realtimeFromPayload(p: {
-  id: string;
-  team?: number;
-  weapon?: string;
-  secondary?: string;
-  position?: number[];
-  health?: number;
-  kills?: number;
-  deaths?: number;
-  velocity?: number[];
-  is_alive?: boolean;
-  grenade_count?: number;
-  molotov_count?: number;
-  last_shot_at?: number;
-  last_grenade_thrown_at?: number;
-  aim_x?: number;
-  aim_z?: number;
-}): Partial<import("../store/gameStore").Player> {
+function realtimeFromPayload(
+  p: {
+    id: string;
+    team?: number;
+    weapon?: string;
+    secondary?: string;
+    position?: number[];
+    health?: number;
+    kills?: number;
+    deaths?: number;
+    velocity?: number[];
+    server_snapshot_id?: number;
+    is_alive?: boolean;
+    grenade_count?: number;
+    molotov_count?: number;
+    last_shot_at?: number;
+    last_grenade_thrown_at?: number;
+    aim_x?: number;
+    aim_z?: number;
+  },
+  fallbackSnapshotId = 0,
+): Partial<import("../store/gameStore").Player> {
+  const snapshotId = Number(p.server_snapshot_id ?? fallbackSnapshotId) || 0;
   return {
     id: canonicalPlayerId(p.id),
     team: p.team ?? 0,
@@ -306,6 +313,7 @@ function realtimeFromPayload(p: {
       y: p.velocity?.[1] ?? 0,
       z: p.velocity?.[2] ?? 0,
     },
+    serverSnapshotId: snapshotId,
     isAlive: p.is_alive ?? true,
     grenadeCount: p.grenade_count ?? 2,
     molotovCount: p.molotov_count ?? 1,
@@ -334,10 +342,17 @@ const DEFAULT_PROFILE: Partial<import("../store/gameStore").Player> = {
 function applyDelta(msg: any) {
   const store = useGyriiStore.getState();
   const ourId = canonicalPlayerId(identity ?? "");
+  const deltaTick = Number(msg.tick ?? 0) || 0;
   for (const p of msg.players ?? []) {
-    const realtime = realtimeFromPayload(p);
-    const id = realtime.id!;
+    const incomingSnapshotId = Number(p.server_snapshot_id ?? deltaTick) || 0;
+    const id = canonicalPlayerId(p.id ?? "");
+    if (!id) continue;
     const existing = id === ourId ? store.localPlayer : store.players.get(id);
+    const existingSnapshotId = existing?.serverSnapshotId ?? -1;
+    // Ignore stale or duplicate realtime payloads for this player.
+    if (incomingSnapshotId <= existingSnapshotId) continue;
+
+    const realtime = realtimeFromPayload(p, deltaTick);
     const base =
       existing ??
       ({

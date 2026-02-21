@@ -62,9 +62,9 @@ function convertServerPlayer(row: any): {
       id,
       name: row.name ?? "Unknown",
       position: {
-        x: row.positionX ?? 0,
-        y: row.positionY ?? 0.5,
-        z: row.positionZ ?? 0,
+        x: row.positionX ?? row.position_x ?? 0,
+        y: row.positionY ?? row.position_y ?? 0.5,
+        z: row.positionZ ?? row.position_z ?? 0,
       },
       rotation: 0,
       health: row.health ?? 1000,
@@ -80,13 +80,13 @@ function convertServerPlayer(row: any): {
       grenadeCount: row.grenades ?? 2,
       molotovCount: row.molotovs ?? 1,
       aimDirection:
-        row.aimX != null && row.aimZ != null
-          ? { x: row.aimX, z: row.aimZ }
+        (row.aimX ?? row.aim_x) != null && (row.aimZ ?? row.aim_z) != null
+          ? { x: row.aimX ?? row.aim_x, z: row.aimZ ?? row.aim_z }
           : undefined,
       velocity: {
-        x: row.velocityX ?? 0,
-        y: row.velocityY ?? 0,
-        z: row.velocityZ ?? 0,
+        x: row.velocityX ?? row.velocity_x ?? 0,
+        y: row.velocityY ?? row.velocity_y ?? 0,
+        z: row.velocityZ ?? row.velocity_z ?? 0,
       },
       lastImpulseX:
         (row as any).lastImpulseX ?? (row as any).last_impulse_x ?? 0,
@@ -97,6 +97,10 @@ function convertServerPlayer(row: any): {
       lastImpulseTime:
         (row as any).lastImpulseTime ?? (row as any).last_impulse_time ?? 0,
       lastShotAt: row.lastShotAt != null ? Number(row.lastShotAt) : undefined,
+      serverSnapshotId:
+        Number(
+          (row as any).serverSnapshotId ?? (row as any).server_snapshot_id,
+        ) || 0,
       lastGrenadeThrownAt:
         (row as any).lastGrenadeThrownAt != null
           ? Number((row as any).lastGrenadeThrownAt)

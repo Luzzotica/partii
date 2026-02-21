@@ -91,9 +91,11 @@ export default function LobbyUI() {
             .eq("id", user.id)
             .single();
 
-          // Same fallback chain as UserMenu: profiles.display_name > user_metadata > email
+          // Same fallback chain as UserMenu:
+          // profiles.display_name > user_metadata.display_name > full_name > name > email
           const displayName =
             data?.display_name?.trim() ||
+            user.user_metadata?.display_name ||
             user.user_metadata?.full_name ||
             user.user_metadata?.name ||
             user.email?.split("@")[0] ||

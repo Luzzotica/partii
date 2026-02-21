@@ -88,6 +88,7 @@ export function UserMenu() {
   // Use display_name from profile (fetched from DB), fallback to user metadata
   const shownName =
     displayName ||
+    user.user_metadata?.display_name ||
     user.user_metadata?.full_name ||
     user.user_metadata?.name ||
     user.email?.split("@")[0] ||

@@ -192,6 +192,7 @@ pub fn spawn_game_loop(state: Arc<RwLock<ServerState>>, registry: Registry) {
                     player.velocity_x = vx;
                     player.velocity_y = vy;
                     player.velocity_z = vz;
+                    player.server_snapshot_id = tick;
                 }
             }
 

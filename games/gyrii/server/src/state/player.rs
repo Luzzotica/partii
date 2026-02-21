@@ -56,6 +56,8 @@ pub struct Player {
     pub velocity_x: f32,
     pub velocity_y: f32,
     pub velocity_z: f32,
+    /// Monotonic server-authored snapshot id for position/velocity reconciliation.
+    pub server_snapshot_id: u64,
     pub input_x: f32,
     pub input_z: f32,
     pub aim_x: f32,

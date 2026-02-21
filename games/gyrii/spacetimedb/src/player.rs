@@ -55,6 +55,8 @@ pub struct Player {
     pub velocity_x: f32,
     pub velocity_y: f32,
     pub velocity_z: f32,
+    /// Monotonic server-authored snapshot id for position/velocity reconciliation.
+    pub server_snapshot_id: u64,
     pub input_x: f32,
     pub input_z: f32,
     pub aim_x: f32,
@@ -182,6 +184,7 @@ pub fn create_player_at(
         velocity_x: 0.0,
         velocity_y: 0.0,
         velocity_z: 0.0,
+        server_snapshot_id: ctx.timestamp.to_micros_since_unix_epoch() as u64,
         input_x: 0.0,
         input_z: 0.0,
         aim_x: 0.0,
@@ -273,6 +276,7 @@ pub fn request_spawn(
         player.velocity_x = 0.0;
         player.velocity_y = 0.0;
         player.velocity_z = 0.0;
+        player.server_snapshot_id = ctx.timestamp.to_micros_since_unix_epoch() as u64;
         player.input_x = 0.0;
         player.input_z = 0.0;
         player.aim_x = 0.0;
