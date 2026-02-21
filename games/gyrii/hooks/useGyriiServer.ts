@@ -291,7 +291,10 @@ function realtimeFromPayload(
   },
   fallbackSnapshotId = 0,
 ): Partial<import("../store/gameStore").Player> {
-  const snapshotId = Number(p.server_snapshot_id ?? fallbackSnapshotId) || 0;
+  const snapshotId = Math.max(
+    Number(p.server_snapshot_id ?? 0) || 0,
+    fallbackSnapshotId,
+  );
   return {
     id: canonicalPlayerId(p.id),
     team: p.team ?? 0,
@@ -344,7 +347,10 @@ function applyDelta(msg: any) {
   const ourId = canonicalPlayerId(identity ?? "");
   const deltaTick = Number(msg.tick ?? 0) || 0;
   for (const p of msg.players ?? []) {
-    const incomingSnapshotId = Number(p.server_snapshot_id ?? deltaTick) || 0;
+    const incomingSnapshotId = Math.max(
+      Number(p.server_snapshot_id ?? 0) || 0,
+      deltaTick,
+    );
     const id = canonicalPlayerId(p.id ?? "");
     if (!id) continue;
     const existing = id === ourId ? store.localPlayer : store.players.get(id);
