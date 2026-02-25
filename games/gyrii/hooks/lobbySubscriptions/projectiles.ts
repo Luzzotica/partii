@@ -35,7 +35,11 @@ registerLobbyEntity({
       if (!ownerIdHex) return;
       const projectileType = row.projectileType ?? row.projectile_type ?? 0;
       const weapon: WeaponType =
-        projectileType === 1 ? "bazooka" : "dualMachineGun";
+        projectileType === 1
+          ? "bazooka"
+          : projectileType === 2
+            ? "shotgun"
+            : "dualMachineGun";
       const position = {
         x: row.positionX ?? row.position_x ?? 0,
         y: row.positionY ?? row.position_y ?? 0,

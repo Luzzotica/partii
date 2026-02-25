@@ -1,37 +1,16 @@
 //! Combat logic: shooting, projectiles, grenades, damage
 
 use std::collections::HashMap;
-use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rapier3d::prelude::*;
 
 use crate::collision_groups::{GROUP_BULLET, GROUP_FLOOR, GROUP_GRENADE, GROUP_PLAYER, GROUP_WALL};
-use crate::constants::{BEAM_DURATION_TICKS, HEALTH_SCALE, PHOTON_RAY_MAX_DISTANCE};
+use crate::constants::{BEAM_DURATION_TICKS, HEALTH_SCALE, PHOTON_RAY_MAX_DISTANCE, PLAYER_MASS};
 use crate::protocol::{KillEventPayload, ShotEventPayload};
 use crate::state::{GameMode, PhotonBeamData, ProjectileData, ServerState, WeaponType};
 use crate::stats;
-
-const BULLET_SPEED: f32 = 35.0;
-const BULLET_SPRAY_RADIANS: f32 = 0.06;
-/// Recoil impulse applied to shooter when firing bullet weapons (per shot).
-const BULLET_RECOIL_IMPULSE: f32 = 0.24;
-const BULLET_TTL_SEC: u64 = 20;
-const PROJECTILE_TYPE_BULLET: u8 = 0;
-const PLAYER_MASS: f32 = 1.0;
-const BULLET_MASS: f32 = 0.01;
-
-/// Per-weapon muzzle offset in local space (x=right, y=up, z=forward; -z = barrel).
-fn muzzle_offset_local(weapon: WeaponType) -> (f32, f32, f32) {
-    match weapon {
-        WeaponType::DualMachineGun => (-0.38, 0.125, -0.7),
-        WeaponType::Smg => (1.0, 0.0, 0.0),
-        WeaponType::ChainGun => (1.0, 0.0, 0.0),
-        WeaponType::PhotonRifle => (0.0, 0.0, -0.5),
-        WeaponType::Bazooka => (1.0, 0.0, 0.0),
-        WeaponType::Flamethrower => (1.0, 0.0, 0.0),
-    }
-}
+use crate::weapon_config;
 
 /// World-space muzzle position from player position, aim direction, and per-weapon offset.
 fn muzzle_world_position(px: f32, py: f32, pz: f32, aim_x: f32, aim_z: f32, weapon: WeaponType) -> (f32, f32, f32) {
@@ -45,59 +24,26 @@ fn muzzle_world_position(px: f32, py: f32, pz: f32, aim_x: f32, aim_z: f32, weap
         ax /= len;
         az /= len;
     }
-    let (lx, ly, lz) = muzzle_offset_local(weapon);
+    let (lx, ly, lz) = weapon_config::weapon_config(weapon).muzzle_offset;
     let mx = px - az * lx - ax * lz;
     let my = py + ly;
     let mz = pz + ax * lx - az * lz;
     (mx, my, mz)
 }
 
-/// Photon rifle charge time before beam fires (micros).
-const PHOTON_CHARGE_MICROS: i64 = 1_200_000;
-/// Recoil impulse applied to shooter when firing photon rifle.
-const PHOTON_RECOIL_IMPULSE: f32 = 2.0;
-
-/// Total photon rifle damage over beam duration (matches weapon_damage).
-const PHOTON_TOTAL_DAMAGE: f32 = 120.0;
-/// Distance falloff: 1.0 = full damage at muzzle, 0.4 = 40% at beam end.
-const PHOTON_DAMAGE_FALLOFF: f32 = 0.6;
-const PHOTON_BEAM_RADIUS: f32 = 0.6;
-
-fn weapon_str(w: WeaponType) -> String {
-    match w {
-        WeaponType::Smg => "smg".to_string(),
-        WeaponType::DualMachineGun => "dualMachineGun".to_string(),
-        WeaponType::ChainGun => "chainGun".to_string(),
-        WeaponType::PhotonRifle => "photonRifle".to_string(),
-        WeaponType::Bazooka => "bazooka".to_string(),
-        WeaponType::Flamethrower => "flamethrower".to_string(),
-    }
-}
-
 fn now_micros() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros() as u64
 }
 
-pub fn weapon_damage(w: WeaponType) -> i32 {
-    match w {
-        WeaponType::Smg => 8,
-        WeaponType::DualMachineGun => 6,
-        WeaponType::ChainGun => 5,
-        WeaponType::PhotonRifle => 105,
-        WeaponType::Bazooka => 80,
-        WeaponType::Flamethrower => 4,
+/// S-curve damage falloff by distance. t=0 -> 1.0, t=1 -> 0.0. range=0 means no falloff.
+fn bullet_falloff_multiplier(distance: f32, range: f32, k: f32) -> f32 {
+    if range <= 0.0 {
+        return 1.0;
     }
-}
-
-pub fn weapon_fire_rate_micros(w: WeaponType) -> i64 {
-    (match w {
-        WeaponType::Smg => 67,
-        WeaponType::DualMachineGun => 50,
-        WeaponType::ChainGun => 33,
-        WeaponType::PhotonRifle => 2000,
-        WeaponType::Bazooka => 800,
-        WeaponType::Flamethrower => 50,
-    }) * 1000
+    let t = (distance / range).min(1.0);
+    let x = k * (t - 0.5);
+    let sigmoid = 1.0 / (1.0 + (-x).exp());
+    1.0 - sigmoid
 }
 
 pub fn try_fire_player(
@@ -105,26 +51,43 @@ pub fn try_fire_player(
     lobby_id: u64,
     identity: &str,
     tick_seed: u64,
-) -> Option<ShotEventPayload> {
-    let player = state.players.get(identity)?;
+) -> Vec<ShotEventPayload> {
+    let player = match state.players.get(identity) {
+        Some(p) => p,
+        None => return Vec::new(),
+    };
     if !player.is_alive || !player.is_shooting || player.rigid_body_id == 0 {
-        return None;
+        return Vec::new();
     }
 
     if player.weapon == WeaponType::PhotonRifle {
         try_fire_photon_rifle(state, lobby_id, identity);
-        return None;
+        return Vec::new();
     }
 
-    let fire_rate = weapon_fire_rate_micros(player.weapon);
+    if player.weapon == WeaponType::Shotgun {
+        return try_fire_shotgun(state, lobby_id, identity);
+    }
+
+    let cfg = weapon_config::weapon_config(player.weapon);
+    let proj = cfg
+        .projectile
+        .expect("bullet weapons must have projectile config");
+    let fire_rate = weapon_config::weapon_fire_rate_micros(player.weapon);
     let now = now_micros() as i64;
     if now - player.last_shot_at < fire_rate {
-        return None;
+        return Vec::new();
     }
 
     let rigid_body_id = player.rigid_body_id;
-    let physics = state.physics_worlds.get_mut(&lobby_id)?;
-    let (px, py, pz) = physics.get_position(rigid_body_id)?;
+    let physics = match state.physics_worlds.get_mut(&lobby_id) {
+        Some(p) => p,
+        None => return Vec::new(),
+    };
+    let (px, py, pz) = match physics.get_position(rigid_body_id) {
+        Some(p) => p,
+        None => return Vec::new(),
+    };
 
     let mut aim_x = player.aim_x;
     let mut aim_z = player.aim_z;
@@ -144,11 +107,11 @@ pub fn try_fire_player(
     let rand2 = (((angle >> 16) % 10000) as f32 / 10000.0) * 2.0 - 1.0;
     let perp_x = -aim_z;
     let perp_z = aim_x;
-    let ax = (aim_x + perp_x * rand1 * BULLET_SPRAY_RADIANS
-        + aim_x * rand2 * BULLET_SPRAY_RADIANS * 0.5)
+    let ax = (aim_x + perp_x * rand1 * proj.spray_radians
+        + aim_x * rand2 * proj.spray_radians * 0.5)
         .clamp(-1.0, 1.0);
-    let az = (aim_z + perp_z * rand1 * BULLET_SPRAY_RADIANS
-        + aim_z * rand2 * BULLET_SPRAY_RADIANS * 0.5)
+    let az = (aim_z + perp_z * rand1 * proj.spray_radians
+        + aim_z * rand2 * proj.spray_radians * 0.5)
         .clamp(-1.0, 1.0);
     let len2 = (ax * ax + az * az).sqrt();
     let (ax, az) = if len2 > 1e-6 {
@@ -157,9 +120,9 @@ pub fn try_fire_player(
         (aim_x, aim_z)
     };
 
-    let vx = ax * BULLET_SPEED;
+    let vx = ax * proj.speed;
     let vy = 0.0;
-    let vz = az * BULLET_SPEED;
+    let vz = az * proj.speed;
 
     let (mx, my, mz) = muzzle_world_position(px, py, pz, aim_x, aim_z, player.weapon);
 
@@ -185,15 +148,19 @@ pub fn try_fire_player(
         ProjectileData {
             owner_id: identity.to_string(),
             lobby_id,
-            damage: weapon_damage(player.weapon) as f32,
+            weapon_type: player.weapon,
+            damage: weapon_config::weapon_damage(player.weapon) as f32,
             velocity_x: vx,
             velocity_y: vy,
             velocity_z: vz,
-            expires_at_micros: now_micros() + BULLET_TTL_SEC * 1_000_000,
+            expires_at_micros: now_micros() + proj.ttl_micros,
+            origin_x: mx,
+            origin_y: my,
+            origin_z: mz,
         },
     );
 
-    let weapon_str_val = weapon_str(player.weapon);
+    let weapon_str_val = cfg.name.to_string();
     if let Some(p) = state.players.get_mut(identity) {
         p.last_shot_at = now;
     }
@@ -202,19 +169,148 @@ pub fn try_fire_player(
     if rigid_body_id > 0 {
         physics.apply_impulse(
             rigid_body_id,
-            -aim_x * BULLET_RECOIL_IMPULSE,
+            -aim_x * proj.recoil_impulse,
             0.0,
-            -aim_z * BULLET_RECOIL_IMPULSE,
+            -aim_z * proj.recoil_impulse,
         );
     }
 
-    Some(ShotEventPayload {
+    vec![ShotEventPayload {
         player_id: identity.to_string(),
         weapon: weapon_str_val,
-        projectile_type: PROJECTILE_TYPE_BULLET,
+        projectile_type: proj.projectile_type,
         position: [mx, my, mz],
         velocity: [vx, vy, vz],
-    })
+    }]
+}
+
+fn try_fire_shotgun(
+    state: &mut ServerState,
+    lobby_id: u64,
+    identity: &str,
+) -> Vec<ShotEventPayload> {
+    let player = match state.players.get(identity) {
+        Some(p) => p.clone(),
+        None => return Vec::new(),
+    };
+    let proj = weapon_config::weapon_config(WeaponType::Shotgun)
+        .projectile
+        .expect("Shotgun has projectile config");
+    let pellet_count = proj.pellets.unwrap_or(1) as usize;
+    let fire_rate = weapon_config::weapon_fire_rate_micros(WeaponType::Shotgun);
+    let now = now_micros() as i64;
+    if now - player.last_shot_at < fire_rate {
+        return Vec::new();
+    }
+
+    let physics = match state.physics_worlds.get_mut(&lobby_id) {
+        Some(p) => p,
+        None => return Vec::new(),
+    };
+    let (px, py, pz) = match physics.get_position(player.rigid_body_id) {
+        Some(p) => p,
+        None => return Vec::new(),
+    };
+
+    let mut aim_x = player.aim_x;
+    let mut aim_z = player.aim_z;
+    let len_sq = aim_x * aim_x + aim_z * aim_z;
+    if len_sq < 0.001 {
+        aim_x = 0.0;
+        aim_z = -1.0;
+    } else {
+        let len = len_sq.sqrt();
+        aim_x /= len;
+        aim_z /= len;
+    }
+
+    let (mx, my, mz) = muzzle_world_position(px, py, pz, aim_x, aim_z, WeaponType::Shotgun);
+    let damage_per_pellet = weapon_config::weapon_damage(WeaponType::Shotgun) as f32;
+    let expires = now_micros() + proj.ttl_micros;
+
+    let mut events = Vec::with_capacity(pellet_count);
+    let perp_x = -aim_z;
+    let perp_z = aim_x;
+
+    for i in 0..pellet_count {
+        let seed = (i as u64).wrapping_mul(2654435761).wrapping_add(now as u64);
+        let rand1 = ((seed % 10000) as f32 / 10000.0) * 2.0 - 1.0;
+        let rand2 = (((seed >> 16) % 10000) as f32 / 10000.0) * 2.0 - 1.0;
+        let ax = (aim_x + perp_x * rand1 * proj.spray_radians
+            + aim_x * rand2 * proj.spray_radians * 0.5)
+            .clamp(-1.0, 1.0);
+        let az = (aim_z + perp_z * rand1 * proj.spray_radians
+            + aim_z * rand2 * proj.spray_radians * 0.5)
+            .clamp(-1.0, 1.0);
+        let len2 = (ax * ax + az * az).sqrt();
+        let (ax, az) = if len2 > 1e-6 {
+            (ax / len2, az / len2)
+        } else {
+            (aim_x, aim_z)
+        };
+
+        let vx = ax * proj.speed;
+        let vy = 0.0;
+        let vz = az * proj.speed;
+
+        let body_id = physics.next_body_id();
+        let rb = RigidBodyBuilder::dynamic()
+            .translation(vector![mx, my, mz])
+            .linvel(vector![vx, vy, vz])
+            .linear_damping(0.0)
+            .gravity_scale(0.0)
+            .ccd_enabled(true);
+        let collider = ColliderBuilder::ball(0.16)
+            .sensor(true)
+            .active_events(ActiveEvents::COLLISION_EVENTS)
+            .collision_groups(InteractionGroups::new(
+                Group::from_bits_truncate(GROUP_BULLET),
+                Group::from_bits_truncate(GROUP_PLAYER | GROUP_WALL | GROUP_FLOOR | GROUP_GRENADE),
+            ));
+
+        physics.insert_body_with_sensor(body_id, rb, collider);
+
+        state.projectiles.insert(
+            body_id,
+            ProjectileData {
+                owner_id: identity.to_string(),
+                lobby_id,
+                weapon_type: WeaponType::Shotgun,
+                damage: damage_per_pellet,
+                velocity_x: vx,
+                velocity_y: vy,
+                velocity_z: vz,
+                expires_at_micros: expires,
+                origin_x: mx,
+                origin_y: my,
+                origin_z: mz,
+            },
+        );
+
+        events.push(ShotEventPayload {
+            player_id: identity.to_string(),
+            weapon: "shotgun".to_string(),
+            projectile_type: proj.projectile_type,
+            position: [mx, my, mz],
+            velocity: [vx, vy, vz],
+        });
+    }
+
+    if let Some(p) = state.players.get_mut(identity) {
+        p.last_shot_at = now;
+    }
+
+    let rigid_body_id = player.rigid_body_id;
+    if rigid_body_id > 0 {
+        physics.apply_impulse(
+            rigid_body_id,
+            -aim_x * proj.recoil_impulse,
+            0.0,
+            -aim_z * proj.recoil_impulse,
+        );
+    }
+
+    events
 }
 
 fn try_fire_photon_rifle(state: &mut ServerState, lobby_id: u64, identity: &str) {
@@ -227,10 +323,14 @@ fn try_fire_photon_rifle(state: &mut ServerState, lobby_id: u64, identity: &str)
         None => return,
     };
     let now = now_micros() as i64;
-    if now - charge_started < PHOTON_CHARGE_MICROS {
+    let beam = weapon_config::weapon_config(WeaponType::PhotonRifle)
+        .photon
+        .expect("PhotonRifle has photon config");
+    let charge_micros = beam.charge_micros;
+    if now - charge_started < charge_micros {
         return;
     }
-    let fire_rate = weapon_fire_rate_micros(WeaponType::PhotonRifle);
+    let fire_rate = weapon_config::weapon_fire_rate_micros(WeaponType::PhotonRifle);
     if now - player.last_shot_at < fire_rate {
         return;
     }
@@ -299,11 +399,12 @@ fn try_fire_photon_rifle(state: &mut ServerState, lobby_id: u64, identity: &str)
 
     // Recoil: push shooter backward
     if player.rigid_body_id > 0 {
+        let recoil = beam.recoil_impulse;
         physics.apply_impulse(
             player.rigid_body_id,
-            -dx * PHOTON_RECOIL_IMPULSE,
+            -dx * recoil,
             0.0,
-            -dz * PHOTON_RECOIL_IMPULSE,
+            -dz * recoil,
         );
     }
 }
@@ -335,8 +436,12 @@ pub fn process_photon_beam_damage(state: &mut ServerState) -> Vec<KillEventPaylo
         let dy = dy / beam_length;
         let dz = dz / beam_length;
 
+        let beam = weapon_config::weapon_config(WeaponType::PhotonRifle)
+            .photon
+            .expect("PhotonRifle has photon config");
+        let total_damage = beam.total_damage;
         let base_damage_per_tick =
-            PHOTON_TOTAL_DAMAGE * HEALTH_SCALE as f32 / BEAM_DURATION_TICKS as f32;
+            total_damage * HEALTH_SCALE as f32 / BEAM_DURATION_TICKS as f32;
 
         let mut to_hit: Vec<(String, i32)> = Vec::new();
         for (id, p) in state.players.iter() {
@@ -354,11 +459,13 @@ pub fn process_photon_beam_damage(state: &mut ServerState) -> Vec<KillEventPaylo
             let proj_y = oy + dy * t;
             let proj_z = oz + dz * t;
             let dist_sq = (px - proj_x).powi(2) + (py - proj_y).powi(2) + (pz - proj_z).powi(2);
-            if dist_sq > PHOTON_BEAM_RADIUS * PHOTON_BEAM_RADIUS {
+            let beam_radius = beam.beam_radius;
+            if dist_sq > beam_radius * beam_radius {
                 continue;
             }
             let frac = t / beam_length;
-            let mult = 1.0 - PHOTON_DAMAGE_FALLOFF * frac;
+            let falloff = beam.damage_falloff;
+            let mult = 1.0 - falloff * frac;
             let damage_tenths = (base_damage_per_tick * mult).round() as i32;
             if damage_tenths > 0 {
                 to_hit.push((id.clone(), damage_tenths));
@@ -392,7 +499,7 @@ pub fn apply_damage(
         )
     };
 
-    let mut damage = damage;
+    let damage = damage;
     if source_id != target_id && is_team_mode {
         if let Some(source) = state.players.get(source_id) {
             if source.team == team {
@@ -600,8 +707,29 @@ pub fn process_projectile_collisions(
             if hit_id == &proj.owner_id {
                 continue;
             }
-            let damage_tenths = (proj.damage * HEALTH_SCALE as f32).round() as i32;
-            if let Some(ke) = apply_damage(state, hit_id, damage_tenths, &proj.owner_id) {
+            let proj_cfg = weapon_config::weapon_config(proj.weapon_type)
+                .projectile
+                .expect("projectile must have config");
+            let mut damage = proj.damage;
+            if proj_cfg.falloff_range > 0.0 {
+                let (proj_x, proj_y, proj_z) = state
+                    .physics_worlds
+                    .get(&proj.lobby_id)
+                    .and_then(|p| p.get_position(sensor_body_id))
+                    .unwrap_or((proj.origin_x, proj.origin_y, proj.origin_z));
+                let dx = proj_x - proj.origin_x;
+                let dy = proj_y - proj.origin_y;
+                let dz = proj_z - proj.origin_z;
+                let dist = (dx * dx + dy * dy + dz * dz).sqrt();
+                let mult = bullet_falloff_multiplier(
+                    dist,
+                    proj_cfg.falloff_range,
+                    proj_cfg.falloff_k,
+                );
+                damage *= mult;
+            }
+            let damage_tenths = (damage * HEALTH_SCALE as f32).round() as i32;
+            if let Some(ke) = apply_damage(state, hit_id, damage_tenths.max(0), &proj.owner_id) {
                 kill_events.push(ke);
             }
 
@@ -609,7 +737,7 @@ pub fn process_projectile_collisions(
                 if let Some((vx, vy, vz)) = physics.get_linvel(sensor_body_id) {
                     let speed = (vx * vx + vy * vy + vz * vz).sqrt();
                     if speed > 1e-6 {
-                        let dv = BULLET_MASS * speed / PLAYER_MASS;
+                        let dv = proj_cfg.mass * speed / PLAYER_MASS;
                         let ix = vx / speed * dv;
                         let iy = vy / speed * dv;
                         let iz = vz / speed * dv;

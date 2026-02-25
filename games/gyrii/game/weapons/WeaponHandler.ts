@@ -76,6 +76,16 @@ function makeBazookaHandler(): IWeaponHandler {
   };
 }
 
+function makeShotgunHandler(): IWeaponHandler {
+  const config = WEAPON_CONFIGS.shotgun;
+  return {
+    config,
+    onShotFired() {
+      // 6 pellets come from server shot_events; no local predictive fire
+    },
+  };
+}
+
 export const WEAPON_HANDLERS: Record<WeaponType, IWeaponHandler> = {
   smg: makeBulletHandler("smg"),
   dualMachineGun: makeBulletHandler("dualMachineGun"),
@@ -83,4 +93,5 @@ export const WEAPON_HANDLERS: Record<WeaponType, IWeaponHandler> = {
   photonRifle: makePhotonRifleHandler(),
   bazooka: makeBazookaHandler(),
   flamethrower: makeHitscanHandler("flamethrower"),
+  shotgun: makeShotgunHandler(),
 };

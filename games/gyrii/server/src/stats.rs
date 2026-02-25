@@ -121,6 +121,7 @@ fn map_id_to_str(map_id: MapId) -> &'static str {
         MapId::Arena => "Arena",
         MapId::Maze => "Maze",
         MapId::Warehouse => "Warehouse",
+        MapId::Custom => "Custom",
     }
 }
 

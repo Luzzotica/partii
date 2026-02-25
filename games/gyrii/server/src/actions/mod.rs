@@ -27,6 +27,7 @@ pub async fn handle_action(
         "list_lobbies" => lobby::list_lobbies(state).await,
         "create_lobby" => lobby::create_lobby(state, identity, params).await,
         "join_lobby" => lobby::join_lobby(state, identity, params).await,
+        "request_lobby_state" => lobby::request_lobby_state(state, identity).await,
         "leave_lobby" => lobby::leave_lobby(state, identity).await,
         "set_ready" => lobby::set_ready(state, identity, params).await,
         "start_game" => lobby::start_game(state, identity).await,

@@ -13,7 +13,10 @@ import {
   activateGyriiServer,
   deactivateGyriiServer,
   useGyriiServer,
+  requestSpawnAction,
 } from "./useGyriiServer";
+
+export { requestSpawnAction };
 
 const USE_NEW_SERVER = process.env.NEXT_PUBLIC_GYRII_USE_NEW_SERVER === "true";
 

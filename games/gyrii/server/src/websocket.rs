@@ -1,16 +1,28 @@
-//! WebSocket connection handler
+//! WebSocket connection handler - binary protobuf only
 
 use crate::actions;
-use crate::protocol::{ActionMessage, ErrorMessage, InitMessage, OkMessage};
 use crate::registry::Registry;
 use crate::state::ServerState;
 use crate::stats;
 use crate::sync;
+use crate::ws::{build_action_responses, decode_client_message, ResponseTarget};
 use futures_util::{SinkExt, StreamExt};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio_tungstenite::tungstenite::Message;
 use uuid::Uuid;
+
+async fn get_identity_lobby_id(
+    state: &Arc<RwLock<ServerState>>,
+    identity: &str,
+) -> Option<u64> {
+    let state_guard = state.read().await;
+    state_guard
+        .lobby_players
+        .iter()
+        .find(|lp| lp.player_identity == identity)
+        .map(|lp| lp.lobby_id)
+}
 
 async fn broadcast_lobby_list(state: &Arc<RwLock<ServerState>>, registry: &Registry) {
     let lobbies: Vec<_> = {
@@ -28,10 +40,8 @@ async fn broadcast_lobby_list(state: &Arc<RwLock<ServerState>>, registry: &Regis
             })
             .collect()
     };
-    let lobby_list = sync::build_lobby_list(&lobbies);
-    if let Ok(json) = serde_json::to_string(&lobby_list) {
-        registry.read().await.broadcast_to_all(&json);
-    }
+    let bytes = sync::build_lobby_list(&lobbies);
+    registry.read().await.broadcast_to_all(&bytes);
 }
 
 /// Handle a single WebSocket connection
@@ -48,11 +58,8 @@ pub async fn handle_connection(
         r.register(identity.clone())
     };
 
-    // Send init with assigned identity
-    let init = InitMessage::new(identity.clone());
-    if let Ok(json) = serde_json::to_string(&init) {
-        let _ = write.send(Message::Text(json)).await;
-    }
+    let init_bytes = sync::build_init(&identity);
+    let _ = write.send(Message::Binary(init_bytes)).await;
 
     tracing::info!("Client connected: identity={}", identity);
 
@@ -60,108 +67,46 @@ pub async fn handle_connection(
         tokio::select! {
             msg = read.next() => {
                 match msg {
-                    Some(Ok(Message::Text(text))) => {
-                        match serde_json::from_str::<ActionMessage>(&text) {
-                            Ok(action_msg) => {
-                                let result = actions::handle_action(
-                                    Arc::clone(&state),
-                                    &identity,
-                                    &action_msg.action,
-                                    action_msg.params.clone(),
-                                )
-                                .await;
+                    Some(Ok(Message::Binary(data))) => {
+                        if let Some((action, params)) = decode_client_message(&data) {
+                            let result = actions::handle_action(
+                                Arc::clone(&state),
+                                &identity,
+                                action,
+                                params,
+                            )
+                            .await;
 
-                                match result {
-                                    Ok(maybe_broadcast) => {
-                                        let ok_msg = OkMessage { ok: true };
-                                        if let Ok(json) = serde_json::to_string(&ok_msg) {
-                                            let _ = write.send(Message::Text(json)).await;
-                                        }
-                                        if let Some(broadcast) = maybe_broadcast {
-                                            let msg = sync::build_player_joined(&broadcast.player);
-                                            if let Ok(json) = serde_json::to_string(&msg) {
-                                                registry.read().await.broadcast_to_lobby(broadcast.lobby_id, &json);
-                                            }
-                                        }
-                                        if action_msg.action == "join_lobby" {
-                                            if let Some(lobby_id) = action_msg.params.get("lobbyId").and_then(|v| v.as_u64()) {
-                                                registry.write().await.set_lobby(&identity, Some(lobby_id));
-                                                let state_guard = state.read().await;
-                                                if let Some(lobby) = state_guard.lobbies.get(&lobby_id) {
-                                                    let players: Vec<_> = state_guard.players.values().filter(|p| p.lobby_id == lobby_id).cloned().collect();
-                                                    let lobby_state = sync::build_lobby_state(lobby, &players);
-                                                    if let Ok(json) = serde_json::to_string(&lobby_state) {
-                                                        let _ = write.send(Message::Text(json)).await;
-                                                    }
-                                                }
-                                            }
-                                            broadcast_lobby_list(&state, &registry).await;
-                                        }
-                                        if action_msg.action == "create_lobby" {
-                                            let state_guard = state.read().await;
-                                            if let Some(lp) = state_guard.lobby_players.iter().find(|lp| lp.player_identity == identity) {
-                                                let lobby_id = lp.lobby_id;
-                                                registry.write().await.set_lobby(&identity, Some(lobby_id));
-                                                if let Some(lobby) = state_guard.lobbies.get(&lobby_id) {
-                                                    let players: Vec<_> = state_guard.players.values().filter(|p| p.lobby_id == lobby_id).cloned().collect();
-                                                    let lobby_state = sync::build_lobby_state(lobby, &players);
-                                                    if let Ok(json) = serde_json::to_string(&lobby_state) {
-                                                        let _ = write.send(Message::Text(json)).await;
-                                                    }
-                                                }
-                                            }
-                                            broadcast_lobby_list(&state, &registry).await;
-                                        }
-                                        if action_msg.action == "leave_lobby" {
-                                            let lobby_id_before_leave = registry.read().await.get_lobby(&identity);
-                                            if let Some(lobby_id) = lobby_id_before_leave {
-                                                let left_msg = sync::build_player_left(&identity);
-                                                if let Ok(json) = serde_json::to_string(&left_msg) {
-                                                    registry.read().await.broadcast_to_lobby(lobby_id, &json);
-                                                }
-                                            }
-                                            registry.write().await.set_lobby(&identity, None);
-                                            broadcast_lobby_list(&state, &registry).await;
-                                        }
-                                        if action_msg.action == "list_lobbies" {
-                                            let lobbies: Vec<_> = {
-                                                let state_guard = state.read().await;
-                                                state_guard
-                                                    .lobbies
-                                                    .values()
-                                                    .map(|lobby| {
-                                                        let player_count = state_guard
-                                                            .lobby_players
-                                                            .iter()
-                                                            .filter(|lp| lp.lobby_id == lobby.id)
-                                                            .count() as u32;
-                                                        (lobby.clone(), player_count)
-                                                    })
-                                                    .collect()
-                                            };
-                                            let lobby_list = sync::build_lobby_list(&lobbies);
-                                            if let Ok(json) = serde_json::to_string(&lobby_list) {
-                                                let _ = write.send(Message::Text(json)).await;
-                                            }
-                                        }
+                            let responses = build_action_responses(
+                                action,
+                                &result,
+                                &identity,
+                                &state,
+                                &registry,
+                            )
+                            .await;
+
+                            for (target, bytes) in responses {
+                                match target {
+                                    ResponseTarget::Direct => {
+                                        let _ = write.send(Message::Binary(bytes)).await;
                                     }
-                                    Err(e) => {
-                                        let err_msg = ErrorMessage { error: e };
-                                        if let Ok(json) = serde_json::to_string(&err_msg) {
-                                            let _ = write.send(Message::Text(json)).await;
-                                        }
+                                    ResponseTarget::BroadcastToLobby(lobby_id) => {
+                                        registry.read().await.broadcast_to_lobby(lobby_id, &bytes);
+                                    }
+                                    ResponseTarget::BroadcastToAll => {
+                                        registry.read().await.broadcast_to_all(&bytes);
                                     }
                                 }
                             }
-                            Err(e) => {
-                                let err_msg = ErrorMessage {
-                                    error: format!("Invalid message: {}", e),
-                                };
-                                if let Ok(json) = serde_json::to_string(&err_msg) {
-                                    let _ = write.send(Message::Text(json)).await;
-                                }
-                            }
+                        } else {
+                            let err_bytes = sync::build_error("Invalid message");
+                            let _ = write.send(Message::Binary(err_bytes)).await;
                         }
+                    }
+                    Some(Ok(Message::Text(_))) => {
+                        let err_bytes = sync::build_error("Text messages not supported, use binary protobuf");
+                        let _ = write.send(Message::Binary(err_bytes)).await;
                     }
                     Some(Ok(Message::Close(_))) | None => break,
                     Some(Ok(_)) => {}
@@ -169,8 +114,8 @@ pub async fn handle_connection(
                 }
             }
             msg = rx.recv() => {
-                if let Some(json) = msg {
-                    if write.send(Message::Text(json)).await.is_err() {
+                if let Some(bytes) = msg {
+                    if write.send(Message::Binary(bytes)).await.is_err() {
                         break;
                     }
                 } else {
@@ -180,16 +125,17 @@ pub async fn handle_connection(
         }
     }
 
-    // If socket closed while still in a lobby, remove from lobby and broadcast player_left.
-    let lobby_id_before_disconnect = registry.read().await.get_lobby(&identity);
+    let lobby_id_before_disconnect = registry
+        .read()
+        .await
+        .get_lobby(&identity)
+        .or(get_identity_lobby_id(&state, &identity).await);
+    let _ = crate::actions::lobby::leave_lobby(Arc::clone(&state), &identity).await;
     if let Some(lobby_id) = lobby_id_before_disconnect {
-        let _ = crate::actions::lobby::leave_lobby(Arc::clone(&state), &identity).await;
         let left_msg = sync::build_player_left(&identity);
-        if let Ok(json) = serde_json::to_string(&left_msg) {
-            registry.read().await.broadcast_to_lobby(lobby_id, &json);
-        }
-        broadcast_lobby_list(&state, &registry).await;
+        registry.read().await.broadcast_to_lobby(lobby_id, &left_msg);
     }
+    broadcast_lobby_list(&state, &registry).await;
 
     registry.write().await.unregister(&identity);
     {

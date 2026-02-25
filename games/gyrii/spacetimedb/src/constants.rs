@@ -13,7 +13,7 @@ pub const BEAM_HALF_WIDTH: f32 = 0.3;
 pub const PHOTON_RAY_MAX_DISTANCE: f32 = 2000.0;
 
 /// Player acceleration in world units per second squared.
-pub const PLAYER_ACCEL: f32 = 12.0;
+pub const PLAYER_ACCEL: f32 = 10.2; // 12.0 * 0.85 (15% slower)
 
 /// Velocity damping per input tick when no input (velocity *= PLAYER_DAMPING).
 pub const PLAYER_DAMPING: f32 = 0.92;
@@ -26,7 +26,7 @@ pub const GRENADE_FUSE_SEC: u64 = 5;
 /// Grenade throw speed (horizontal and vertical equal = 45° lob).
 pub const GRENADE_THROW_SPEED: f32 = 7.2;
 /// Impulse applied to thrower when throwing grenade.
-pub const GRENADE_THROWER_IMPULSE: f32 = 0.9;
+pub const GRENADE_THROWER_IMPULSE: f32 = 1.35; // 0.9 * 1.5 (50% faster)
 /// Grenade physics restitution (bounciness).
 pub const GRENADE_RESTITUTION: f32 = 0.75;
 /// Grenade explosion knockback magnitude at center (scales with S-curve at edge).

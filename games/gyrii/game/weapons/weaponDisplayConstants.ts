@@ -3,7 +3,7 @@
  * Root faces aim direction (-Z forward); these are in root local space.
  */
 
-export type WeaponTemplateKey = "dualMachineGun" | "photonRifle";
+export type WeaponTemplateKey = "dualMachineGun" | "photonRifle" | "shotgun";
 
 export interface WeaponDisplayConfig {
   /** Local position from player root (Z negative = in front of player). */
@@ -36,6 +36,12 @@ export const WEAPON_DISPLAY_CONFIG: Record<
     rotation: { y: 0 * DEG },
     scale: { x: 1, y: 1, z: 1 },
     muzzleOffset: { x: 0, y: 0.05, z: -0.35 },
+  },
+  shotgun: {
+    offset: { x: 0.5, y: 0.125, z: -0.35 },
+    rotation: { x: 0, y: 0, z: 0 },
+    scale: { x: 0.3, y: 1, z: 1 },
+    muzzleOffset: { x: 1, y: 0, z: 0 },
   },
 };
 

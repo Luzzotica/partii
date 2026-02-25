@@ -1,6 +1,10 @@
 "use client";
 
-import type { MapData, WallData } from "../game/maps/MapLoader";
+import type {
+  MapData,
+  WallData,
+  FlagLocationData,
+} from "../game/maps/MapLoader";
 
 interface MinimapPreviewProps {
   mapData: MapData;
@@ -14,6 +18,22 @@ function gridToWorldX(gx: number, mapWidth: number): number {
 function gridToWorldZ(gy: number, mapHeight: number): number {
   return gy - mapHeight / 2 + 0.5;
 }
+
+function isInteriorCell(
+  gx: number,
+  gy: number,
+  width: number,
+  height: number,
+): boolean {
+  return gx >= 1 && gx < width - 1 && gy >= 1 && gy < height - 1;
+}
+
+const FLAG_TEAM_COLORS: Record<number, string> = {
+  1: "#e04040",
+  2: "#4070f0",
+  3: "#33c060",
+  4: "#e0d830",
+};
 
 /**
  * Renders a top-down minimap of a map (floor + walls).
@@ -46,6 +66,12 @@ export default function MinimapPreview({
     return { x, y };
   });
 
+  const grid =
+    mapData.floorGrid ??
+    Array(mapData.height)
+      .fill(null)
+      .map(() => Array(mapData.width).fill(1));
+
   return (
     <svg
       viewBox={viewBox}
@@ -55,17 +81,27 @@ export default function MinimapPreview({
       style={{ display: "block" }}
     >
       <g transform="scale(1, -1)">
-        {/* Floor */}
-        <rect
-          x={-halfWidth}
-          y={-halfHeight}
-          width={mapData.width}
-          height={mapData.height}
-          fill="rgba(0.08, 0.08, 0.14, 0.95)"
-          stroke="rgba(80, 80, 110, 0.6)"
-          strokeWidth={0.4}
-        />
-        {/* Boundary walls: one cell each, same as interior walls */}
+        {/* Floor cells (per-cell for holes) */}
+        {grid.map((row: number[], gy: number) =>
+          row.map((solid: number, gx: number) => {
+            const wx = gridToWorldX(gx, mapData.width);
+            const wz = gridToWorldZ(gy, mapData.height);
+            const isHole = solid === 0;
+            return (
+              <rect
+                key={`f-${gx}-${gy}`}
+                x={wx - 0.5}
+                y={wz - 0.5}
+                width={1}
+                height={1}
+                fill={isHole ? "#111111" : "#e8e8e8"}
+                stroke="#bbb"
+                strokeWidth={0.1}
+              />
+            );
+          }),
+        )}
+        {/* Boundary walls - filled, high contrast */}
         {uniqueBoundaryCells.map((c, i) => {
           const wx = gridToWorldX(c.x, mapData.width);
           const wz = gridToWorldZ(c.y, mapData.height);
@@ -76,31 +112,59 @@ export default function MinimapPreview({
               y={wz - 0.5}
               width={1}
               height={1}
-              fill="rgb(0.35, 0.32, 0.45)"
-              stroke="rgba(200, 200, 255, 0.7)"
-              strokeWidth={0.6}
+              fill="#8880b3"
+              stroke="#7a7a8a"
+              strokeWidth={0.15}
             />
           );
         })}
-        {/* Grid walls: one cell each */}
-        {mapData.walls.map((w: WallData, i: number) => {
-          const wx = gridToWorldX(w.x, mapData.width);
-          const wz = gridToWorldZ(w.y, mapData.height);
-          const fill =
-            w.height >= 2 ? "rgb(0.45, 0.42, 0.58)" : "rgb(0.38, 0.45, 0.55)";
-          return (
-            <rect
-              key={i}
-              x={wx - 0.5}
-              y={wz - 0.5}
-              width={1}
-              height={1}
-              fill={fill}
-              stroke="rgba(200, 200, 255, 0.7)"
-              strokeWidth={0.6}
-            />
-          );
-        })}
+        {/* Interior walls - solid fills, short (cyan-gray) vs tall (brown) */}
+        {mapData.walls
+          .filter((w) =>
+            isInteriorCell(w.x, w.y, mapData.width, mapData.height),
+          )
+          .map((w: WallData, i: number) => {
+            const wx = gridToWorldX(w.x, mapData.width);
+            const wz = gridToWorldZ(w.y, mapData.height);
+            const fill = w.height >= 2 ? "#d98c58" : "#5a99e6";
+            return (
+              <rect
+                key={i}
+                x={wx - 0.5}
+                y={wz - 0.5}
+                width={1}
+                height={1}
+                fill={fill}
+                stroke="#8a8a9a"
+                strokeWidth={0.15}
+              />
+            );
+          })}
+        {/* Spawn points - filled circles */}
+        {mapData.spawnPoints.map((s, i) => (
+          <circle
+            key={`s-${i}`}
+            cx={s.x}
+            cy={s.y}
+            r={0.4}
+            fill="#28e666"
+            stroke="#fff"
+            strokeWidth={0.12}
+          />
+        ))}
+        {/* Flag locations - filled, team colored */}
+        {(mapData.flagLocations ?? []).map((f: FlagLocationData, i: number) => (
+          <rect
+            key={`fl-${i}`}
+            x={f.x - 0.4}
+            y={f.y - 0.4}
+            width={0.8}
+            height={0.8}
+            fill={FLAG_TEAM_COLORS[f.team ?? 1] ?? FLAG_TEAM_COLORS[1]}
+            stroke="#fff"
+            strokeWidth={0.12}
+          />
+        ))}
       </g>
     </svg>
   );

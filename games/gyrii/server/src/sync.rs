@@ -1,72 +1,100 @@
-//! Build serializable payloads for client sync
+//! Build protobuf payloads for client sync
 
-use crate::protocol::{
-    DeltaMessage, GrenadeDeletePayload, GrenadeInsertPayload, GrenadeUpdatePayload,
-    GameEndedMessage, KillEventPayload, LobbyListMessage, LobbyPayload, LobbyStateMessage,
-    LobbySummaryPayload, PhotonBeamPayload, PlayerJoinedMessage, PlayerLeftMessage, PlayerPayload,
-    PlayerProfilePayload, PlayerRealtimePayload, ShotEventPayload,
+use crate::pb::gyrii::{
+    server_message, Delta, GameEnded, GrenadeDelete, GrenadeInsert, GrenadeUpdate, KillEvent,
+    Lobby, LobbyList, LobbyState, LobbySummary, PhotonBeam, Player, PlayerJoined, PlayerLeft,
+    PlayerProfile, PlayerRealtime, ServerMessage, ShotEvent,
 };
-use crate::state::{GameMode, GameState, GrenadeData, Lobby, PhotonBeamData, Player};
+use crate::protocol::{KillEventPayload, ShotEventPayload};
+use crate::state::{GameMode, GameState, GrenadeData, Lobby as StateLobby, PhotonBeamData, Player as StatePlayer};
+use crate::state::{MapId, SecondaryType, WeaponType};
+use uuid::Uuid;
 
-fn game_state_str(s: GameState) -> &'static str {
-    match s {
-        GameState::Waiting => "waiting",
-        GameState::Starting => "starting",
-        GameState::InProgress => "inProgress",
-        GameState::Ended => "ended",
-    }
+fn identity_to_bytes(s: &str) -> Vec<u8> {
+    Uuid::parse_str(s)
+        .map(|u| u.as_bytes().to_vec())
+        .unwrap_or_default()
 }
 
-fn game_mode_str(m: GameMode) -> &'static str {
-    match m {
-        GameMode::FreeForAll => "freeForAll",
-        GameMode::TeamDeathmatch => "teamDeathmatch",
-        GameMode::CaptureTheFlag => "captureTheFlag",
-    }
+fn weapon_to_proto(w: WeaponType) -> i32 {
+    use crate::pb::gyrii::WeaponType as P;
+    let v = match w {
+        WeaponType::Smg => P::WeaponSmg,
+        WeaponType::DualMachineGun => P::WeaponDualMachineGun,
+        WeaponType::ChainGun => P::WeaponChainGun,
+        WeaponType::PhotonRifle => P::WeaponPhotonRifle,
+        WeaponType::Bazooka => P::WeaponBazooka,
+        WeaponType::Flamethrower => P::WeaponFlamethrower,
+        WeaponType::Shotgun => P::WeaponShotgun,
+    };
+    v as i32
 }
 
-fn map_id_str(id: crate::state::MapId) -> &'static str {
-    id.as_lower()
+fn secondary_to_proto(s: SecondaryType) -> i32 {
+    use crate::pb::gyrii::SecondaryType as P;
+    let v = match s {
+        SecondaryType::PopupKnives => P::SecondaryPopupKnives,
+        SecondaryType::BubbleShield => P::SecondaryBubbleShield,
+        SecondaryType::SelfDestructNuke => P::SecondarySelfDestructNuke,
+    };
+    v as i32
 }
 
-fn weapon_str(w: crate::state::WeaponType) -> &'static str {
-    match w {
-        crate::state::WeaponType::Smg => "smg",
-        crate::state::WeaponType::DualMachineGun => "dualMachineGun",
-        crate::state::WeaponType::ChainGun => "chainGun",
-        crate::state::WeaponType::PhotonRifle => "photonRifle",
-        crate::state::WeaponType::Bazooka => "bazooka",
-        crate::state::WeaponType::Flamethrower => "flamethrower",
-    }
+fn game_mode_to_proto(m: GameMode) -> i32 {
+    use crate::pb::gyrii::GameMode as P;
+    let v = match m {
+        GameMode::FreeForAll => P::FreeForAll,
+        GameMode::TeamDeathmatch => P::TeamDeathmatch,
+        GameMode::CaptureTheFlag => P::CaptureTheFlag,
+    };
+    v as i32
 }
 
-fn secondary_str(s: crate::state::SecondaryType) -> &'static str {
-    match s {
-        crate::state::SecondaryType::PopupKnives => "popupKnives",
-        crate::state::SecondaryType::BubbleShield => "bubbleShield",
-        crate::state::SecondaryType::SelfDestructNuke => "selfDestructNuke",
-    }
+fn game_state_to_proto(s: GameState) -> i32 {
+    use crate::pb::gyrii::GameState as P;
+    let v = match s {
+        GameState::Waiting => P::Waiting,
+        GameState::Starting => P::Starting,
+        GameState::InProgress => P::InProgress,
+        GameState::Ended => P::Ended,
+    };
+    v as i32
 }
 
-fn player_to_payload(p: &Player) -> PlayerPayload {
-    PlayerPayload {
-        id: p.identity.clone(),
+fn map_id_to_proto(id: MapId) -> i32 {
+    use crate::pb::gyrii::MapId as P;
+    let v = match id {
+        MapId::Arena => P::MapArena,
+        MapId::Maze => P::MapMaze,
+        MapId::Warehouse => P::MapWarehouse,
+        MapId::Custom => P::MapCustom,
+    };
+    v as i32
+}
+
+fn player_to_proto(p: &StatePlayer) -> Player {
+    Player {
+        id: identity_to_bytes(&p.identity),
         name: p.name.clone(),
-        position: [p.position_x, p.position_y, p.position_z],
+        position_x: p.position_x,
+        position_y: p.position_y,
+        position_z: p.position_z,
         health: p.health,
         kills: p.kills,
         deaths: p.deaths,
         team: p.team,
-        color: [p.color_r, p.color_g, p.color_b],
-        design_id: p.design_id,
-        secondary_color: [
-            p.secondary_color_r,
-            p.secondary_color_g,
-            p.secondary_color_b,
-        ],
-        weapon: weapon_str(p.weapon).to_string(),
-        secondary: secondary_str(p.secondary).to_string(),
-        velocity: [p.velocity_x, p.velocity_y, p.velocity_z],
+        color_r: p.color_r,
+        color_g: p.color_g,
+        color_b: p.color_b,
+        design_id: p.design_id as u32,
+        secondary_color_r: p.secondary_color_r,
+        secondary_color_g: p.secondary_color_g,
+        secondary_color_b: p.secondary_color_b,
+        weapon: weapon_to_proto(p.weapon),
+        secondary: secondary_to_proto(p.secondary),
+        velocity_x: p.velocity_x,
+        velocity_y: p.velocity_y,
+        velocity_z: p.velocity_z,
         server_snapshot_id: p.server_snapshot_id,
         is_alive: p.is_alive,
         grenade_count: p.grenades,
@@ -86,34 +114,38 @@ fn player_to_payload(p: &Player) -> PlayerPayload {
     }
 }
 
-pub fn player_to_profile_payload(p: &Player) -> PlayerProfilePayload {
-    PlayerProfilePayload {
-        id: p.identity.clone(),
+fn player_to_profile_proto(p: &StatePlayer) -> PlayerProfile {
+    PlayerProfile {
+        id: identity_to_bytes(&p.identity),
         name: p.name.clone(),
         team: p.team,
-        color: [p.color_r, p.color_g, p.color_b],
-        design_id: p.design_id,
-        secondary_color: [
-            p.secondary_color_r,
-            p.secondary_color_g,
-            p.secondary_color_b,
-        ],
-        weapon: weapon_str(p.weapon).to_string(),
-        secondary: secondary_str(p.secondary).to_string(),
+        color_r: p.color_r,
+        color_g: p.color_g,
+        color_b: p.color_b,
+        design_id: p.design_id as u32,
+        secondary_color_r: p.secondary_color_r,
+        secondary_color_g: p.secondary_color_g,
+        secondary_color_b: p.secondary_color_b,
+        weapon: weapon_to_proto(p.weapon),
+        secondary: secondary_to_proto(p.secondary),
     }
 }
 
-fn player_to_realtime_payload(p: &Player) -> PlayerRealtimePayload {
-    PlayerRealtimePayload {
-        id: p.identity.clone(),
+fn player_to_realtime_proto(p: &StatePlayer) -> PlayerRealtime {
+    PlayerRealtime {
+        id: identity_to_bytes(&p.identity),
         team: p.team,
-        weapon: weapon_str(p.weapon).to_string(),
-        secondary: secondary_str(p.secondary).to_string(),
-        position: [p.position_x, p.position_y, p.position_z],
+        weapon: weapon_to_proto(p.weapon),
+        secondary: secondary_to_proto(p.secondary),
+        position_x: p.position_x,
+        position_y: p.position_y,
+        position_z: p.position_z,
         health: p.health,
         kills: p.kills,
         deaths: p.deaths,
-        velocity: [p.velocity_x, p.velocity_y, p.velocity_z],
+        velocity_x: p.velocity_x,
+        velocity_y: p.velocity_y,
+        velocity_z: p.velocity_z,
         server_snapshot_id: p.server_snapshot_id,
         is_alive: p.is_alive,
         grenade_count: p.grenades,
@@ -133,65 +165,114 @@ fn player_to_realtime_payload(p: &Player) -> PlayerRealtimePayload {
     }
 }
 
-pub fn build_player_joined(player: &Player) -> PlayerJoinedMessage {
-    PlayerJoinedMessage {
-        r#type: "player_joined",
-        player: player_to_profile_payload(player),
-    }
+pub fn encode_server_message(msg: ServerMessage) -> Vec<u8> {
+    use prost::Message;
+    let mut buf = Vec::with_capacity(msg.encoded_len());
+    msg.encode(&mut buf).expect("encode");
+    buf
 }
 
-pub fn build_player_left(player_id: &str) -> PlayerLeftMessage {
-    PlayerLeftMessage {
-        r#type: "player_left",
-        player_id: player_id.to_string(),
-    }
+pub fn build_init(identity: &str) -> Vec<u8> {
+    let msg = ServerMessage {
+        message: Some(server_message::Message::Init(crate::pb::gyrii::Init {
+            identity: identity_to_bytes(identity),
+        })),
+    };
+    encode_server_message(msg)
+}
+
+pub fn build_ok() -> Vec<u8> {
+    let msg = ServerMessage {
+        message: Some(server_message::Message::Ok(crate::pb::gyrii::Ok { ok: true })),
+    };
+    encode_server_message(msg)
+}
+
+pub fn build_error(error: &str) -> Vec<u8> {
+    let msg = ServerMessage {
+        message: Some(server_message::Message::Error(crate::pb::gyrii::Error {
+            error: error.to_string(),
+        })),
+    };
+    encode_server_message(msg)
+}
+
+pub fn build_player_joined(player: &StatePlayer) -> Vec<u8> {
+    let msg = ServerMessage {
+        message: Some(server_message::Message::PlayerJoined(PlayerJoined {
+            player: Some(player_to_profile_proto(player)),
+        })),
+    };
+    encode_server_message(msg)
+}
+
+pub fn build_player_left(player_id: &str) -> Vec<u8> {
+    let msg = ServerMessage {
+        message: Some(server_message::Message::PlayerLeft(PlayerLeft {
+            player_id: identity_to_bytes(player_id),
+        })),
+    };
+    encode_server_message(msg)
 }
 
 pub fn build_lobby_state(
-    lobby: &Lobby,
-    players: &[Player],
-) -> LobbyStateMessage {
-    LobbyStateMessage {
-        r#type: "lobby_state",
-        lobby: LobbyPayload {
-            id: lobby.id.to_string(),
+    lobby: &StateLobby,
+    players: &[StatePlayer],
+    snapshot_id: u64,
+    last_delta_id: u64,
+) -> Vec<u8> {
+    let lobby_proto = Lobby {
+        id: lobby.id,
+        name: lobby.name.clone(),
+        host_id: identity_to_bytes(&lobby.host_id),
+        map_id: map_id_to_proto(lobby.map_id),
+        map_pool: lobby.map_pool.iter().map(|m| map_id_to_proto(*m)).collect(),
+        max_players: lobby.max_players as u32,
+        game_mode: game_mode_to_proto(lobby.game_mode),
+        game_state: game_state_to_proto(lobby.game_state),
+        score_limit: lobby.score_limit,
+        flag_limit: lobby.flag_limit,
+        next_round_starts_at_ms: lobby.next_round_starts_at_ms,
+        is_custom_map: lobby.custom_map_json.is_some(),
+        map_json: lobby.custom_map_json.clone(),
+    };
+    let msg = ServerMessage {
+        message: Some(server_message::Message::LobbyState(LobbyState {
+            snapshot_id,
+            last_delta_id,
+            lobby: Some(lobby_proto),
+            players: players.iter().map(player_to_proto).collect(),
+        })),
+    };
+    encode_server_message(msg)
+}
+
+pub fn build_lobby_list(lobbies: &[(StateLobby, u32)]) -> Vec<u8> {
+    let summaries: Vec<LobbySummary> = lobbies
+        .iter()
+        .map(|(lobby, player_count)| LobbySummary {
+            id: lobby.id,
             name: lobby.name.clone(),
-            host_id: lobby.host_id.clone(),
-            map_id: map_id_str(lobby.map_id).to_string(),
-            map_pool: lobby.map_pool.iter().map(|m| m.as_lower().to_string()).collect(),
-            max_players: lobby.max_players,
-            game_mode: game_mode_str(lobby.game_mode).to_string(),
-            game_state: game_state_str(lobby.game_state).to_string(),
+            host_id: identity_to_bytes(&lobby.host_id),
+            map_id: map_id_to_proto(lobby.map_id),
+            map_pool: lobby.map_pool.iter().map(|m| map_id_to_proto(*m)).collect(),
+            max_players: lobby.max_players as u32,
+            player_count: *player_count,
+            game_mode: game_mode_to_proto(lobby.game_mode),
+            game_state: game_state_to_proto(lobby.game_state),
+            has_password: lobby.has_password,
             score_limit: lobby.score_limit,
             flag_limit: lobby.flag_limit,
             next_round_starts_at_ms: lobby.next_round_starts_at_ms,
-        },
-        players: players.iter().map(player_to_payload).collect(),
-    }
-}
-
-pub fn build_lobby_list(lobbies: &[(Lobby, u32)]) -> LobbyListMessage {
-    LobbyListMessage {
-        r#type: "lobby_list",
-        lobbies: lobbies
-            .iter()
-            .map(|(lobby, player_count)| LobbySummaryPayload {
-                id: lobby.id.to_string(),
-                name: lobby.name.clone(),
-                host_id: lobby.host_id.clone(),
-                map_id: map_id_str(lobby.map_id).to_string(),
-                map_pool: lobby.map_pool.iter().map(|m| m.as_lower().to_string()).collect(),
-                max_players: lobby.max_players,
-                player_count: *player_count,
-                game_mode: game_mode_str(lobby.game_mode).to_string(),
-                game_state: game_state_str(lobby.game_state).to_string(),
-                has_password: lobby.has_password,
-                score_limit: lobby.score_limit,
-                flag_limit: lobby.flag_limit,
-                next_round_starts_at_ms: lobby.next_round_starts_at_ms,
-            })
-            .collect(),
-    }
+            is_custom_map: lobby.custom_map_json.is_some(),
+        })
+        .collect();
+    let msg = ServerMessage {
+        message: Some(server_message::Message::LobbyList(LobbyList {
+            lobbies: summaries,
+        })),
+    };
+    encode_server_message(msg)
 }
 
 pub fn build_game_ended(
@@ -199,51 +280,63 @@ pub fn build_game_ended(
     winner_team: Option<i32>,
     winner_player_identity: Option<String>,
     winner_player_name: Option<String>,
-    next_map_id: crate::state::MapId,
+    next_map_id: MapId,
     countdown_ms: u64,
-) -> GameEndedMessage {
-    GameEndedMessage {
-        r#type: "game_ended",
-        lobby_id: lobby_id.to_string(),
-        winner_team,
-        winner_player_identity,
-        winner_player_name,
-        next_map_id: next_map_id.as_lower().to_string(),
-        countdown_ms,
-    }
+) -> Vec<u8> {
+    let msg = ServerMessage {
+        message: Some(server_message::Message::GameEnded(GameEnded {
+            lobby_id,
+            winner_team,
+            winner_player_identity: winner_player_identity.map(|s| identity_to_bytes(&s)),
+            winner_player_name,
+            next_map_id: map_id_to_proto(next_map_id),
+            countdown_ms,
+        })),
+    };
+    encode_server_message(msg)
 }
 
-pub fn grenade_to_insert_payload(
+pub fn grenade_to_insert_proto(
     g: &GrenadeData,
     position: (f32, f32, f32),
     velocity: (f32, f32, f32),
     owner_color: [f32; 3],
-) -> crate::protocol::GrenadeInsertPayload {
-    crate::protocol::GrenadeInsertPayload {
+) -> GrenadeInsert {
+    GrenadeInsert {
         rigid_body_id: g.rigid_body_id,
-        position: [position.0, position.1, position.2],
-        velocity: [velocity.0, velocity.1, velocity.2],
-        owner_id: g.owner_id.clone(),
-        owner_color,
+        position_x: position.0,
+        position_y: position.1,
+        position_z: position.2,
+        velocity_x: velocity.0,
+        velocity_y: velocity.1,
+        velocity_z: velocity.2,
+        owner_id: identity_to_bytes(&g.owner_id),
+        owner_color_r: owner_color[0],
+        owner_color_g: owner_color[1],
+        owner_color_b: owner_color[2],
     }
 }
 
-pub fn grenade_to_update_payload(
+pub fn grenade_to_update_proto(
     rigid_body_id: u64,
     position: (f32, f32, f32),
     velocity: (f32, f32, f32),
-) -> crate::protocol::GrenadeUpdatePayload {
-    crate::protocol::GrenadeUpdatePayload {
+) -> GrenadeUpdate {
+    GrenadeUpdate {
         rigid_body_id,
-        position: [position.0, position.1, position.2],
-        velocity: [velocity.0, velocity.1, velocity.2],
+        position_x: position.0,
+        position_y: position.1,
+        position_z: position.2,
+        velocity_x: velocity.0,
+        velocity_y: velocity.1,
+        velocity_z: velocity.2,
     }
 }
 
-pub fn photon_beam_to_payload(b: &PhotonBeamData) -> PhotonBeamPayload {
-    PhotonBeamPayload {
+pub fn photon_beam_to_proto(b: &PhotonBeamData) -> PhotonBeam {
+    PhotonBeam {
         id: b.id,
-        owner_id: b.owner_id.clone(),
+        owner_id: identity_to_bytes(&b.owner_id),
         origin_x: b.origin_x,
         origin_y: b.origin_y,
         origin_z: b.origin_z,
@@ -254,25 +347,70 @@ pub fn photon_beam_to_payload(b: &PhotonBeamData) -> PhotonBeamPayload {
     }
 }
 
+fn weapon_str_to_proto(s: &str) -> i32 {
+    use crate::pb::gyrii::WeaponType as P;
+    let v = match s {
+        "smg" => P::WeaponSmg,
+        "dualMachineGun" => P::WeaponDualMachineGun,
+        "chainGun" => P::WeaponChainGun,
+        "photonRifle" => P::WeaponPhotonRifle,
+        "bazooka" => P::WeaponBazooka,
+        "flamethrower" => P::WeaponFlamethrower,
+        "shotgun" => P::WeaponShotgun,
+        _ => P::WeaponSmg,
+    };
+    v as i32
+}
+
 pub fn build_delta(
     tick: u64,
-    players: &[Player],
+    delta_id: u64,
+    base_snapshot_id: u64,
+    players: &[StatePlayer],
     shot_events: &[ShotEventPayload],
-    grenade_inserts: &[GrenadeInsertPayload],
-    grenade_deletes: &[GrenadeDeletePayload],
-    grenade_updates: &[GrenadeUpdatePayload],
+    grenade_inserts: &[GrenadeInsert],
+    grenade_deletes: &[GrenadeDelete],
+    grenade_updates: &[GrenadeUpdate],
     kill_events: &[KillEventPayload],
-    photon_beams: &[PhotonBeamPayload],
-) -> DeltaMessage {
-    DeltaMessage {
-        r#type: "delta",
+    photon_beams: &[PhotonBeam],
+) -> Vec<u8> {
+    let delta = Delta {
         tick,
-        players: players.iter().map(player_to_realtime_payload).collect(),
-        shot_events: shot_events.to_vec(),
+        delta_id,
+        base_snapshot_id,
+        players: players.iter().map(player_to_realtime_proto).collect(),
+        shot_events: shot_events
+            .iter()
+            .map(|e| ShotEvent {
+                player_id: identity_to_bytes(&e.player_id),
+                weapon: weapon_str_to_proto(&e.weapon),
+                projectile_type: e.projectile_type as u32,
+                position_x: e.position[0],
+                position_y: e.position[1],
+                position_z: e.position[2],
+                velocity_x: e.velocity[0],
+                velocity_y: e.velocity[1],
+                velocity_z: e.velocity[2],
+            })
+            .collect(),
         grenade_inserts: grenade_inserts.to_vec(),
         grenade_deletes: grenade_deletes.to_vec(),
         grenade_updates: grenade_updates.to_vec(),
-        kill_events: kill_events.to_vec(),
+        kill_events: kill_events
+            .iter()
+            .map(|e| KillEvent {
+                killer_id: identity_to_bytes(&e.killer_id),
+                killer_name: e.killer_name.clone(),
+                victim_id: identity_to_bytes(&e.victim_id),
+                victim_name: e.victim_name.clone(),
+                weapon: e.weapon.clone(),
+                timestamp: e.timestamp,
+            })
+            .collect(),
         photon_beams: photon_beams.to_vec(),
-    }
+    };
+    let msg = ServerMessage {
+        message: Some(server_message::Message::Delta(delta)),
+    };
+    encode_server_message(msg)
 }

@@ -16,6 +16,8 @@ pub struct MapJson {
     pub spawn_points: Vec<SpawnPointJson>,
     #[serde(rename = "flagLocations", default)]
     pub flag_locations: Vec<FlagLocationJson>,
+    #[serde(default)]
+    pub launchers: Vec<LauncherJson>,
 }
 
 #[derive(Deserialize)]
@@ -40,6 +42,21 @@ pub struct FlagLocationJson {
     pub team: i32,
 }
 
+#[derive(Deserialize)]
+pub struct LauncherJson {
+    pub id: String,
+    pub x: f32,
+    pub y: f32,
+    pub radius: f32,
+    #[serde(rename = "directionX")]
+    pub direction_x: f32,
+    #[serde(rename = "directionY")]
+    pub direction_y: f32,
+    #[serde(rename = "directionZ")]
+    pub direction_z: f32,
+    pub force: f32,
+}
+
 pub struct ParsedMap {
     pub width: u32,
     pub height: u32,
@@ -47,6 +64,7 @@ pub struct ParsedMap {
     pub floor_grid: Option<Vec<Vec<u8>>>,
     pub spawn_points: Vec<(f32, f32, Option<i32>)>,
     pub flag_locations: Vec<(f32, f32, i32)>,
+    pub launchers: Vec<(f32, f32, f32, f32, f32, f32, f32)>, // (x, y, radius, dir_x, dir_y, dir_z, force)
 }
 
 pub fn grid_to_world_x(gx: u32, map_width: u32) -> f32 {
@@ -70,6 +88,27 @@ pub fn parse_map_json(json: &str) -> Result<ParsedMap, String> {
             ));
         }
     }
+    let launchers: Vec<_> = m
+        .launchers
+        .into_iter()
+        .map(|l| {
+            let len_sq = l.direction_x * l.direction_x
+                + l.direction_y * l.direction_y
+                + l.direction_z * l.direction_z;
+            let (dx, dy, dz) = if len_sq > 0.0001 {
+                let len = len_sq.sqrt();
+                (
+                    l.direction_x / len,
+                    l.direction_y / len,
+                    l.direction_z / len,
+                )
+            } else {
+                (0.0, 1.0, 0.0)
+            };
+            (l.x, l.y, l.radius, dx, dy, dz, l.force)
+        })
+        .collect();
+
     Ok(ParsedMap {
         width: m.width,
         height: m.height,
@@ -85,6 +124,7 @@ pub fn parse_map_json(json: &str) -> Result<ParsedMap, String> {
             .into_iter()
             .map(|f| (f.x, f.y, f.team))
             .collect(),
+        launchers,
     })
 }
 
@@ -93,6 +133,7 @@ pub fn get_builtin_map_json(map_id: MapId) -> &'static str {
         MapId::Arena => ARENA_JSON,
         MapId::Maze => MAZE_JSON,
         MapId::Warehouse => WAREHOUSE_JSON,
+        MapId::Custom => ARENA_JSON, // Caller should use custom_map_json; fallback only
     }
 }
 

@@ -14,7 +14,8 @@ export type WeaponType =
   | "chainGun"
   | "photonRifle"
   | "bazooka"
-  | "flamethrower";
+  | "flamethrower"
+  | "shotgun";
 export type SecondaryType = "popupKnives" | "bubbleShield" | "selfDestructNuke";
 
 export type MarbleDesignId = 0 | 1 | 2 | 3 | 4;
@@ -65,6 +66,7 @@ export interface Player {
 /** Projectile type: which pool and behavior. Must match server PROJECTILE_TYPE_*. */
 export const PROJECTILE_TYPE_BULLET = 0;
 export const PROJECTILE_TYPE_ROCKET = 1;
+export const PROJECTILE_TYPE_SHOTGUN = 2;
 
 /** Event pushed when server creates a projectile (bullet/rocket); game loop spawns visual. */
 export interface PendingShotEvent {
@@ -112,6 +114,8 @@ export interface Lobby {
   scoreLimit: number;
   flagLimit: number;
   nextRoundStartsAtMs?: number;
+  isCustomMap?: boolean;
+  mapJson?: string;
 }
 
 export interface RoundEndedBanner {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { useAuth } from "@/lib/supabase/auth-context";
 import { createClient } from "@/lib/supabase/client";
 import { useGyriiStore } from "../store/gameStore";
@@ -39,6 +40,7 @@ const MAP_LABELS: Record<string, string> = {
   arena: "Arena",
   maze: "Maze",
   warehouse: "Warehouse",
+  custom: "Custom",
 };
 
 export default function LobbyUI() {
@@ -66,6 +68,11 @@ export default function LobbyUI() {
   const [selectedLobbyId, setSelectedLobbyId] = useState<string | null>(null);
   const [joiningLobbyId, setJoiningLobbyId] = useState<string | null>(null);
   const [joinPassword, setJoinPassword] = useState("");
+  const [customMapConfirmPending, setCustomMapConfirmPending] = useState<{
+    lobbyId: string;
+    hasPassword: boolean;
+    password: string;
+  } | null>(null);
   const [statsLoading, setStatsLoading] = useState(false);
   const [leaderboard, setLeaderboard] = useState<GyriiLeaderboardEntry[]>([]);
   const [personalStats, setPersonalStats] = useState<GyriiPersonalStats | null>(
@@ -202,25 +209,13 @@ export default function LobbyUI() {
     }
   };
 
-  const handleJoinSelected = async () => {
-    const lobbyId = selectedLobbyId || joiningLobbyId;
-    if (!lobbyId) return;
-    const lobby = availableLobbies.find((l) => l.id === lobbyId);
-    if (!lobby) return;
-    if (lobby.hasPassword && !joinPassword.trim()) {
-      setJoiningLobbyId(lobbyId);
-      setJoinPassword("");
-      return;
-    }
+  const doJoinLobby = async (lobbyId: string, password: string) => {
     try {
-      await joinLobby(
-        parseInt(lobbyId),
-        playerName,
-        lobby.hasPassword ? joinPassword : "",
-      );
+      await joinLobby(parseInt(lobbyId), playerName, password);
       setJoiningLobbyId(null);
       setJoinPassword("");
       setSelectedLobbyId(null);
+      setCustomMapConfirmPending(null);
       let attempts = 0;
       const checkForLobby = () => {
         attempts++;
@@ -237,27 +232,50 @@ export default function LobbyUI() {
     }
   };
 
+  const handleJoinSelected = async () => {
+    const lobbyId = selectedLobbyId || joiningLobbyId;
+    if (!lobbyId) return;
+    const lobby = availableLobbies.find((l) => l.id === lobbyId);
+    if (!lobby) return;
+    if (lobby.hasPassword && !joinPassword.trim()) {
+      setJoiningLobbyId(lobbyId);
+      setJoinPassword("");
+      return;
+    }
+    if (lobby.isCustomMap) {
+      setCustomMapConfirmPending({
+        lobbyId,
+        hasPassword: lobby.hasPassword,
+        password: lobby.hasPassword ? joinPassword : "",
+      });
+      return;
+    }
+    await doJoinLobby(lobbyId, lobby.hasPassword ? joinPassword : "");
+  };
+
   const handleConfirmJoin = async () => {
-    if (!joiningLobbyId || !joinPassword.trim()) return;
-    const targetId = joiningLobbyId;
-    try {
-      await joinLobby(parseInt(joiningLobbyId), playerName, joinPassword);
+    if (!joiningLobbyId) return;
+    const lobby = availableLobbies.find((l) => l.id === joiningLobbyId);
+    if (!lobby || !joinPassword.trim()) return;
+    if (lobby.isCustomMap) {
+      setCustomMapConfirmPending({
+        lobbyId: joiningLobbyId,
+        hasPassword: true,
+        password: joinPassword,
+      });
       setJoiningLobbyId(null);
       setJoinPassword("");
-      let attempts = 0;
-      const checkForLobby = () => {
-        attempts++;
-        const current = useGyriiStore.getState().currentLobby;
-        if (current && current.id === targetId) {
-          setGameState("playing");
-        } else if (attempts < 25) {
-          setTimeout(checkForLobby, 200);
-        }
-      };
-      setTimeout(checkForLobby, 300);
-    } catch (error) {
-      console.error("Failed to join lobby:", error);
+      return;
     }
+    await doJoinLobby(joiningLobbyId, joinPassword);
+  };
+
+  const handleCustomMapConfirmContinue = async () => {
+    if (!customMapConfirmPending) return;
+    await doJoinLobby(
+      customMapConfirmPending.lobbyId,
+      customMapConfirmPending.password,
+    );
   };
 
   return (
@@ -269,7 +287,15 @@ export default function LobbyUI() {
             GYRII
           </span>
         </h1>
-        <p className="text-center text-gray-400 mb-4">Neon Ball Shooter</p>
+        <p className="text-center text-gray-400 mb-2">Neon Ball Shooter</p>
+        <p className="text-center mb-4">
+          <Link
+            href="/arcade/gyrii/maps"
+            className="inline-block py-2 px-4 rounded-lg bg-cyan-600/30 hover:bg-cyan-600/50 text-cyan-400 text-sm font-medium border border-cyan-500/50"
+          >
+            My Maps
+          </Link>
+        </p>
 
         <div className="flex gap-6 flex-col lg:flex-row">
           {/* Left 1/3: Player Name + Marble Designer */}
@@ -429,12 +455,23 @@ export default function LobbyUI() {
                                     🔒
                                   </span>
                                 )}
+                                {lobby.isCustomMap && (
+                                  <span
+                                    className="text-amber-400 text-sm"
+                                    title="Custom map - content not reviewed"
+                                  >
+                                    🗺️
+                                  </span>
+                                )}
                                 {lobby.name}
                               </div>
                               <div className="text-sm text-gray-400">
                                 {GAME_MODE_LABELS[lobby.gameMode] ||
                                   lobby.gameMode}{" "}
-                                • {MAP_LABELS[lobby.mapId] || lobby.mapId}
+                                •{" "}
+                                {lobby.isCustomMap
+                                  ? "Custom"
+                                  : MAP_LABELS[lobby.mapId] || lobby.mapId}
                               </div>
                             </div>
                             <div className="text-right">
@@ -478,6 +515,33 @@ export default function LobbyUI() {
             )}
           </div>
         </div>
+
+        {/* Custom map warning modal */}
+        {customMapConfirmPending && (
+          <div className="fixed inset-0 flex items-center justify-center bg-black/70 z-50">
+            <div className="bg-gray-900 border border-amber-500/50 rounded-lg p-6 max-w-sm w-full mx-4 space-y-4">
+              <h3 className="text-lg font-bold text-amber-400">Custom Map</h3>
+              <p className="text-sm text-gray-400">
+                This lobby uses a player-created map. Content has not been
+                reviewed. Continue?
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setCustomMapConfirmPending(null)}
+                  className="flex-1 py-2 bg-gray-800 hover:bg-gray-700 rounded text-gray-300 transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleCustomMapConfirmContinue}
+                  className="flex-1 py-2 bg-amber-600 hover:bg-amber-500 rounded text-white font-semibold transition-all"
+                >
+                  Continue
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Password prompt modal */}
         {joiningLobbyId && (

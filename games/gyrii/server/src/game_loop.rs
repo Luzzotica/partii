@@ -5,7 +5,8 @@ use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 
 use crate::actions::lobby::{end_round_and_schedule, process_scheduled_round_restarts, ROUND_RESTART_COUNTDOWN_MS};
-use crate::combat::{explode_grenade, process_photon_beam_damage, process_projectile_collisions, remove_projectile, try_fire_player};
+use crate::combat::{apply_damage, explode_grenade, process_photon_beam_damage, process_projectile_collisions, remove_projectile, try_fire_player};
+use crate::constants::FALL_DEATH_Y_THRESHOLD;
 use crate::registry::Registry;
 use crate::state::{GameMode, GameState, ServerState};
 use crate::sync;
@@ -40,6 +41,32 @@ pub fn spawn_game_loop(state: Arc<RwLock<ServerState>>, registry: Registry) {
                 all_kill_events.extend(kill_events);
                 for body_id in to_remove {
                     remove_projectile(&mut state, body_id, lobby_id);
+                }
+                // Launcher collisions: sensor = launcher, other = player
+                let launcher_impulses = state
+                    .physics_worlds
+                    .get(&lobby_id)
+                    .map(|p| p.launcher_impulses.clone())
+                    .unwrap_or_default();
+                let to_apply: Vec<_> = collisions
+                    .iter()
+                    .filter_map(|(sensor_id, other_id)| {
+                        launcher_impulses.get(sensor_id).and_then(|&(force, dx, dy, dz)| {
+                            let is_player = state.players.values().any(|p| {
+                                p.lobby_id == lobby_id && p.rigid_body_id == *other_id && p.is_alive
+                            });
+                            if is_player {
+                                Some((*other_id, dx * force, dy * force, dz * force))
+                            } else {
+                                None
+                            }
+                        })
+                    })
+                    .collect();
+                if let Some(physics) = state.physics_worlds.get_mut(&lobby_id) {
+                    for (other_id, ix, iy, iz) in to_apply {
+                        physics.apply_impulse(other_id, ix, iy, iz);
+                    }
                 }
             }
 
@@ -163,7 +190,7 @@ pub fn spawn_game_loop(state: Arc<RwLock<ServerState>>, registry: Registry) {
                         }
                     }
                     let lobby_id = player.lobby_id;
-                    if let Some(ev) = try_fire_player(&mut state, lobby_id, &identity, tick) {
+                    for ev in try_fire_player(&mut state, lobby_id, &identity, tick) {
                         all_shot_events.push((lobby_id, ev));
                     }
                 }
@@ -184,6 +211,7 @@ pub fn spawn_game_loop(state: Arc<RwLock<ServerState>>, registry: Registry) {
                 }
             }
 
+            let mut fall_death_victims: Vec<String> = Vec::new();
             for (identity, px, py, pz, vx, vy, vz) in updates {
                 if let Some(player) = state.players.get_mut(&identity) {
                     player.position_x = px;
@@ -192,28 +220,47 @@ pub fn spawn_game_loop(state: Arc<RwLock<ServerState>>, registry: Registry) {
                     player.velocity_x = vx;
                     player.velocity_y = vy;
                     player.velocity_z = vz;
-                    player.server_snapshot_id = tick;
+                    if player.is_alive && py < FALL_DEATH_Y_THRESHOLD {
+                        fall_death_victims.push(identity.clone());
+                    }
                 }
+            }
+            for identity in &fall_death_victims {
+                let _ = apply_damage(
+                    &mut state,
+                    identity,
+                    crate::constants::MAX_HEALTH,
+                    identity,
+                );
             }
 
             tick += 1;
 
             let mut all_grenade_inserts_to_mark = Vec::new();
 
-            for (lobby_id, _lobby) in state.lobbies.iter() {
-                let players: Vec<_> = state
+            for lobby_id in state.lobbies.keys().copied().collect::<Vec<_>>() {
+                let mut players: Vec<_> = state
                     .players
                     .values()
-                    .filter(|p| p.lobby_id == *lobby_id)
+                    .filter(|p| p.lobby_id == lobby_id)
                     .cloned()
                     .collect();
                 if !players.is_empty() {
+                    let (delta_id, base_snapshot_id) =
+                        if let Some(lobby) = state.lobbies.get_mut(&lobby_id) {
+                            (lobby.allocate_delta_id(), lobby.current_snapshot_id)
+                        } else {
+                            continue;
+                        };
+                    for p in &mut players {
+                        p.server_snapshot_id = base_snapshot_id;
+                    }
                     let shot_events: Vec<_> = all_shot_events
                         .iter()
-                        .filter(|(lid, _)| *lid == *lobby_id)
+                        .filter(|(lid, _)| *lid == lobby_id)
                         .map(|(_, e)| e.clone())
                         .collect();
-                    let lobby_id_ref = *lobby_id;
+                    let lobby_id_ref = lobby_id;
                     let kill_events: Vec<_> = all_kill_events
                         .iter()
                         .filter(|k| {
@@ -229,7 +276,7 @@ pub fn spawn_game_loop(state: Arc<RwLock<ServerState>>, registry: Registry) {
                         .photon_beams
                         .values()
                         .filter(|b| b.lobby_id == lobby_id_ref)
-                        .map(sync::photon_beam_to_payload)
+                        .map(sync::photon_beam_to_proto)
                         .collect();
 
                     let mut grenade_inserts = Vec::new();
@@ -238,7 +285,7 @@ pub fn spawn_game_loop(state: Arc<RwLock<ServerState>>, registry: Registry) {
                         .grenade_deletes_this_tick
                         .iter()
                         .filter(|(_, lid)| *lid == lobby_id_ref)
-                        .map(|(bid, _)| crate::protocol::GrenadeDeletePayload {
+                        .map(|(bid, _)| crate::pb::gyrii::GrenadeDelete {
                             rigid_body_id: *bid,
                         })
                         .collect();
@@ -265,17 +312,19 @@ pub fn spawn_game_loop(state: Arc<RwLock<ServerState>>, registry: Registry) {
                                 .get(&g.owner_id)
                                 .map(|p| [p.color_r, p.color_g, p.color_b])
                                 .unwrap_or([0.5, 0.5, 0.5]);
-                            grenade_inserts.push(sync::grenade_to_insert_payload(
+                            grenade_inserts.push(sync::grenade_to_insert_proto(
                                 g, pos, vel, owner_color,
                             ));
                             all_grenade_inserts_to_mark.push(*body_id);
                         } else {
-                            grenade_updates.push(sync::grenade_to_update_payload(*body_id, pos, vel));
+                            grenade_updates.push(sync::grenade_to_update_proto(*body_id, pos, vel));
                         }
                     }
 
                     let delta = sync::build_delta(
                         tick,
+                        delta_id,
+                        base_snapshot_id,
                         &players,
                         &shot_events,
                         &grenade_inserts,
@@ -284,31 +333,33 @@ pub fn spawn_game_loop(state: Arc<RwLock<ServerState>>, registry: Registry) {
                         &kill_events,
                         &photon_beams,
                     );
-                    if let Ok(json) = serde_json::to_string(&delta) {
-                        registry.read().await.broadcast_to_lobby(*lobby_id, &json);
-                    }
+                    registry.read().await.broadcast_to_lobby(lobby_id, &delta);
                 }
             }
 
             for (lobby_id, msg) in game_ended_messages {
-                if let Ok(json) = serde_json::to_string(&msg) {
-                    registry.read().await.broadcast_to_lobby(lobby_id, &json);
-                }
+                registry.read().await.broadcast_to_lobby(lobby_id, &msg);
             }
 
             let restarted_lobbies = process_scheduled_round_restarts(&mut state);
             for lobby_id in restarted_lobbies {
-                if let Some(lobby) = state.lobbies.get(&lobby_id) {
+                if let Some(lobby) = state.lobbies.get_mut(&lobby_id) {
+                    let snapshot_id = lobby.allocate_snapshot_id();
+                    let last_delta_id = lobby.current_delta_id;
+                    let lobby_payload = lobby.clone();
                     let players: Vec<_> = state
                         .players
                         .values()
                         .filter(|p| p.lobby_id == lobby_id)
                         .cloned()
                         .collect();
-                    let lobby_state = sync::build_lobby_state(lobby, &players);
-                    if let Ok(json) = serde_json::to_string(&lobby_state) {
-                        registry.read().await.broadcast_to_lobby(lobby_id, &json);
-                    }
+                    let lobby_state = sync::build_lobby_state(
+                        &lobby_payload,
+                        &players,
+                        snapshot_id,
+                        last_delta_id,
+                    );
+                    registry.read().await.broadcast_to_lobby(lobby_id, &lobby_state);
                 }
             }
 

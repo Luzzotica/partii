@@ -6,7 +6,6 @@
 
 import {
   PLAYER_ACCEL,
-  PLAYER_DAMPING,
   PLAYER_INPUT_TICK_DT,
   GRAVITY,
   PLAYER_BALL_RADIUS,
@@ -24,6 +23,7 @@ import { gridToWorldX, gridToWorldZ } from "../maps/MapLoader";
 
 const FLOOR_HALF_Y = 0.05;
 const BOUNDARY_WALL_HEIGHT = 2;
+const PLAYER_LINEAR_DAMPING = 3.5;
 
 type RAPIER = typeof import("@dimforge/rapier3d").default;
 let RAPIER: RAPIER | null = null;
@@ -45,10 +45,17 @@ function getRAPIER(): RAPIER {
   return RAPIER;
 }
 
+/** Grace period in seconds: own bullets don't hit self. */
+export const BULLET_SELF_HIT_GRACE_SEC = 0.5;
+
 export type WorldHandle = {
   world: InstanceType<RAPIER["World"]>;
   eventQueue: InstanceType<RAPIER["EventQueue"]>;
   playerBodies: Map<string, InstanceType<RAPIER["RigidBody"]>>;
+  /** Player collider handle -> player id (for filtering self-hit). */
+  colliderToPlayerId: Map<number, string>;
+  /** Player id -> collider handle (for cleanup on remove). */
+  playerIdToColliderHandle: Map<string, number>;
   throwableBodies: Map<string, InstanceType<RAPIER["RigidBody"]>>;
   projectileBodies: Map<
     string,
@@ -59,14 +66,110 @@ export type WorldHandle = {
   >;
   /** Collider handle -> projectile id (for collision event lookup). */
   colliderToProjectileId: Map<number, string>;
+  /** Projectile id -> owner + spawn time (for self-hit grace period). */
+  projectileMeta: Map<string, { ownerId: string; spawnTime: number }>;
   lastInputTime: number;
   physicsAccumulator: number;
 };
 
+/** Build vertices and indices for a single trimesh collider from floorGrid (solid=1, hole=0). */
+function buildFloorTrimesh(mapData: MapData): {
+  vertices: Float32Array;
+  indices: Uint32Array;
+} {
+  const grid = mapData.floorGrid!;
+  const height = grid.length;
+  const width = grid[0]?.length ?? 0;
+  const verts: number[] = [];
+  const inds: number[] = [];
+  let vi = 0;
+  for (let gy = 0; gy < height; gy++) {
+    const row = grid[gy] ?? [];
+    for (let gx = 0; gx < width; gx++) {
+      if ((row[gx] ?? 0) === 0) continue;
+      const cx = gridToWorldX(gx, mapData.width);
+      const cz = gridToWorldZ(gy, mapData.height);
+      const bl = [cx - 0.5, 0, cz - 0.5];
+      const br = [cx + 0.5, 0, cz - 0.5];
+      const tl = [cx - 0.5, 0, cz + 0.5];
+      const tr = [cx + 0.5, 0, cz + 0.5];
+      verts.push(
+        bl[0],
+        bl[1],
+        bl[2],
+        br[0],
+        br[1],
+        br[2],
+        tl[0],
+        tl[1],
+        tl[2],
+        tr[0],
+        tr[1],
+        tr[2],
+      );
+      inds.push(vi, vi + 2, vi + 3, vi, vi + 3, vi + 1);
+      vi += 4;
+    }
+  }
+  return {
+    vertices: new Float32Array(verts),
+    indices: new Uint32Array(inds),
+  };
+}
+
+/**
+ * Build merged wall runs from mapData.walls.
+ * Connected walls (same row, adjacent in X, same height) are merged into runs.
+ * Returns list of { gxStart, gxEnd, gy, height } for each run.
+ */
+function buildMergedWallRuns(mapData: MapData): Array<{
+  gxStart: number;
+  gxEnd: number;
+  gy: number;
+  height: 1 | 2;
+}> {
+  const w = mapData.width;
+  const h = mapData.height;
+  const grid: number[][] = Array.from({ length: h }, () =>
+    Array.from({ length: w }, () => 0),
+  );
+  for (const wall of mapData.walls) {
+    const gy = Math.min(wall.y, h - 1);
+    const gx = Math.min(wall.x, w - 1);
+    grid[gy][gx] = wall.height === 2 ? 2 : 1;
+  }
+  const runs: Array<{
+    gxStart: number;
+    gxEnd: number;
+    gy: number;
+    height: 1 | 2;
+  }> = [];
+  for (let gy = 0; gy < h; gy++) {
+    const row = grid[gy];
+    let gx = 0;
+    while (gx < w) {
+      const hgt = row[gx] as 0 | 1 | 2;
+      if (hgt === 0) {
+        gx++;
+        continue;
+      }
+      const gxStart = gx;
+      while (gx < w && (row[gx] as number) === hgt) gx++;
+      runs.push({
+        gxStart,
+        gxEnd: gx,
+        gy,
+        height: hgt as 1 | 2,
+      });
+    }
+  }
+  return runs;
+}
+
 /**
  * Create a Rapier world from the same map data the server uses.
- * Floor: half-space (one large thin cuboid) if no floorGrid; else merged horizontal runs.
- * Boundary: one 1×1×2 static cuboid per edge cell. Interior: mapData.walls.
+ * Floor: half-space (one cuboid) if no floorGrid; else single trimesh collider.
+ * Boundary: 4 merged cuboids (north, south, west, east). Interior: merged horizontal runs.
  */
 export function createWorldFromMap(mapData: MapData): WorldHandle {
   const R = getRAPIER();
@@ -80,10 +183,24 @@ export function createWorldFromMap(mapData: MapData): WorldHandle {
   const playerMembership = GROUP_PLAYER;
   const playerFilter = GROUP_FLOOR | GROUP_WALL | GROUP_BULLET | GROUP_GRENADE;
 
-  // Floor
-  if (!mapData.floorGrid || mapData.floorGrid.length === 0) {
-    const halfW = mapData.width / 2;
-    const halfH = mapData.height / 2;
+  // Floor: trimesh when floorGrid has holes, else single cuboid
+  const halfW = mapData.width / 2;
+  const halfH = mapData.height / 2;
+  const hasHoles =
+    mapData.floorGrid?.some((r) => r.some((s) => s === 0)) ?? false;
+  if (hasHoles) {
+    const { vertices, indices } = buildFloorTrimesh(mapData);
+    if (vertices.length > 0) {
+      const floorBody = world.createRigidBody(
+        R.RigidBodyDesc.fixed().setTranslation(0, 0, 0),
+      );
+      const floorCollider = R.ColliderDesc.trimesh(
+        vertices,
+        indices,
+      ).setCollisionGroups(collisionGroups(floorMembership, floorFilter));
+      world.createCollider(floorCollider, floorBody);
+    }
+  } else {
     const floorBodyDesc = R.RigidBodyDesc.fixed().setTranslation(
       0,
       -FLOOR_HALF_Y,
@@ -96,96 +213,58 @@ export function createWorldFromMap(mapData: MapData): WorldHandle {
       halfH,
     ).setCollisionGroups(collisionGroups(floorMembership, floorFilter));
     world.createCollider(floorCollider, floorBody);
-  } else {
-    const grid = mapData.floorGrid;
-    const height = grid.length;
-    const width = grid[0]?.length ?? 0;
-    for (let gy = 0; gy < height; gy++) {
-      const row = grid[gy] ?? [];
-      let gx = 0;
-      while (gx < width) {
-        if ((row[gx] ?? 0) === 0) {
-          gx++;
-          continue;
-        }
-        let runEnd = gx;
-        while (runEnd < width && (row[runEnd] ?? 0) === 1) runEnd++;
-        const runLen = runEnd - gx;
-        const midGx = gx + runLen / 2 - 0.5;
-        const worldX = gridToWorldX(midGx, mapData.width);
-        const worldZ = gridToWorldZ(gy, mapData.height);
-        const halfX = runLen / 2;
-        const halfZ = 0.5;
-        const floorBodyDesc = R.RigidBodyDesc.fixed().setTranslation(
-          worldX,
-          -FLOOR_HALF_Y,
-          worldZ,
-        );
-        const floorBody = world.createRigidBody(floorBodyDesc);
-        const floorCollider = R.ColliderDesc.cuboid(
-          halfX,
-          FLOOR_HALF_Y,
-          halfZ,
-        ).setCollisionGroups(collisionGroups(floorMembership, floorFilter));
-        world.createCollider(floorCollider, floorBody);
-        gx = runEnd;
-      }
-    }
   }
 
-  // Boundary: one 1×1×2 cuboid per edge cell (north, south, west, east)
+  // Boundary: 4 merged cuboids (north, south, west, east)
   const w = mapData.width;
   const h = mapData.height;
   const wallHalf = BOUNDARY_WALL_HEIGHT / 2;
-  for (let gx = 0; gx < w; gx++) {
-    const wx = gridToWorldX(gx, w);
-    for (const gy of [0, h - 1]) {
-      const worldZ = gridToWorldZ(gy, h);
-      const body = world.createRigidBody(
-        R.RigidBodyDesc.fixed().setTranslation(wx, 1, worldZ),
-      );
-      world.createCollider(
-        R.ColliderDesc.cuboid(0.5, wallHalf, 0.5).setCollisionGroups(
-          collisionGroups(wallMembership, wallFilter),
-        ),
-        body,
-      );
-    }
-  }
-  for (let gy = 0; gy < h; gy++) {
-    const wz = gridToWorldZ(gy, h);
-    for (const gx of [0, w - 1]) {
-      const worldX = gridToWorldX(gx, w);
-      const body = world.createRigidBody(
-        R.RigidBodyDesc.fixed().setTranslation(worldX, 1, wz),
-      );
-      world.createCollider(
-        R.ColliderDesc.cuboid(0.5, wallHalf, 0.5).setCollisionGroups(
-          collisionGroups(wallMembership, wallFilter),
-        ),
-        body,
-      );
-    }
-  }
-
-  // Interior walls
-  for (const wall of mapData.walls) {
-    const wallHeight = wall.height === 2 ? 2 : 1;
-    const centerY = wallHeight / 2;
-    const worldX = gridToWorldX(wall.x, mapData.width);
-    const worldZ = gridToWorldZ(wall.y, mapData.height);
-    const bodyDesc = R.RigidBodyDesc.fixed().setTranslation(
-      worldX,
-      centerY,
-      worldZ,
+  const northZ = gridToWorldZ(0, h);
+  const southZ = gridToWorldZ(h - 1, h);
+  const westX = gridToWorldX(0, w);
+  const eastX = gridToWorldX(w - 1, w);
+  const boundaryCollider = (hx: number, hy: number, hz: number) =>
+    R.ColliderDesc.cuboid(hx, hy, hz).setCollisionGroups(
+      collisionGroups(wallMembership, wallFilter),
     );
-    const body = world.createRigidBody(bodyDesc);
-    const collider = R.ColliderDesc.cuboid(
-      0.5,
-      wallHeight / 2,
-      0.5,
-    ).setCollisionGroups(collisionGroups(wallMembership, wallFilter));
-    world.createCollider(collider, body);
+  world.createCollider(
+    boundaryCollider(halfW, wallHalf, 0.5),
+    world.createRigidBody(R.RigidBodyDesc.fixed().setTranslation(0, 1, northZ)),
+  );
+  world.createCollider(
+    boundaryCollider(halfW, wallHalf, 0.5),
+    world.createRigidBody(R.RigidBodyDesc.fixed().setTranslation(0, 1, southZ)),
+  );
+  world.createCollider(
+    boundaryCollider(0.5, wallHalf, halfH),
+    world.createRigidBody(R.RigidBodyDesc.fixed().setTranslation(westX, 1, 0)),
+  );
+  world.createCollider(
+    boundaryCollider(0.5, wallHalf, halfH),
+    world.createRigidBody(R.RigidBodyDesc.fixed().setTranslation(eastX, 1, 0)),
+  );
+
+  // Interior walls: merged horizontal runs
+  const wallRuns = buildMergedWallRuns(mapData);
+  for (const run of wallRuns) {
+    const runLen = run.gxEnd - run.gxStart;
+    const midGx = run.gxStart + runLen / 2 - 0.5;
+    const worldX = gridToWorldX(midGx, w);
+    const worldZ = gridToWorldZ(run.gy, h);
+    const wallHeight = run.height === 2 ? 2 : 1;
+    const centerY = wallHeight / 2;
+    const halfX = runLen / 2;
+    const halfZ = 0.5;
+    const halfY = wallHeight / 2;
+    const body = world.createRigidBody(
+      R.RigidBodyDesc.fixed().setTranslation(worldX, centerY, worldZ),
+    );
+    world.createCollider(
+      R.ColliderDesc.cuboid(halfX, halfY, halfZ).setCollisionGroups(
+        collisionGroups(wallMembership, wallFilter),
+      ),
+      body,
+    );
   }
 
   const eventQueue = new R.EventQueue(true);
@@ -193,9 +272,12 @@ export function createWorldFromMap(mapData: MapData): WorldHandle {
     world,
     eventQueue,
     playerBodies: new Map(),
+    colliderToPlayerId: new Map(),
+    playerIdToColliderHandle: new Map(),
     throwableBodies: new Map(),
     projectileBodies: new Map(),
     colliderToProjectileId: new Map(),
+    projectileMeta: new Map(),
     lastInputTime: 0,
     physicsAccumulator: 0,
   };
@@ -216,20 +298,31 @@ export function createPlayerBody(
   const bodyDesc = R.RigidBodyDesc.dynamic()
     .setTranslation(x, y, z)
     .setLinvel(vx, vy, vz)
+    .setLinearDamping(PLAYER_LINEAR_DAMPING)
     .setCcdEnabled(true);
   const body = handle.world.createRigidBody(bodyDesc);
-  const collider = R.ColliderDesc.ball(PLAYER_BALL_RADIUS)
+  const colliderDesc = R.ColliderDesc.ball(PLAYER_BALL_RADIUS)
     .setMass(1)
     .setCollisionGroups(
-      collisionGroups(GROUP_PLAYER, GROUP_FLOOR | GROUP_WALL | GROUP_BULLET),
+      collisionGroups(
+        GROUP_PLAYER,
+        GROUP_FLOOR | GROUP_WALL | GROUP_BULLET | GROUP_PLAYER,
+      ),
     );
-  handle.world.createCollider(collider, body);
+  const collider = handle.world.createCollider(colliderDesc, body);
+  handle.colliderToPlayerId.set(collider.handle, playerId);
+  handle.playerIdToColliderHandle.set(playerId, collider.handle);
   handle.playerBodies.set(playerId, body);
 }
 
 export function removePlayerBody(handle: WorldHandle, playerId: string): void {
   const body = handle.playerBodies.get(playerId);
   if (body) {
+    const colliderHandle = handle.playerIdToColliderHandle.get(playerId);
+    if (colliderHandle != null) {
+      handle.colliderToPlayerId.delete(colliderHandle);
+      handle.playerIdToColliderHandle.delete(playerId);
+    }
     handle.world.removeRigidBody(body);
     handle.playerBodies.delete(playerId);
   }
@@ -286,7 +379,9 @@ export function applyImpulseToPlayer(
 }
 
 /**
- * Apply input for local player at input-tick rate (same formula as server).
+ * Apply input for local player with catch-up (FPS-independent).
+ * When elapsed >= dt, applies multiple ticks to catch up to real time.
+ * Returns number of ticks applied.
  */
 export function applyInput(
   handle: WorldHandle,
@@ -294,39 +389,48 @@ export function applyInput(
   inputX: number,
   inputZ: number,
   now: number,
-): void {
+): number {
   const body = handle.playerBodies.get(playerId);
-  if (!body) return;
+  if (!body) return 0;
   const dt = PLAYER_INPUT_TICK_DT;
   const elapsed = now - handle.lastInputTime;
-  if (elapsed < dt) return;
+  if (elapsed < dt) return 0;
+  const ticks = Math.min(Math.floor(elapsed / dt), 10);
   handle.lastInputTime = now;
-  const v = body.linvel();
-  let vx = v.x + inputX * PLAYER_ACCEL * dt;
-  let vz = v.z + inputZ * PLAYER_ACCEL * dt;
-  vx *= PLAYER_DAMPING;
-  vz *= PLAYER_DAMPING;
-  body.setLinvel({ x: vx, y: v.y, z: vz }, true);
+  let v = body.linvel();
+  for (let i = 0; i < ticks; i++) {
+    const vx = v.x + inputX * PLAYER_ACCEL * dt;
+    const vz = v.z + inputZ * PLAYER_ACCEL * dt;
+    body.setLinvel({ x: vx, y: v.y, z: vz }, true);
+    v = body.linvel();
+  }
+  return ticks;
 }
 
 /** Server physics timestep (1/60 s); must match server ticks_per_second for sync. */
 const PHYSICS_DT = 1 / 60;
 
-/** Max steps per frame to avoid spiral of death on lag spikes. */
-const MAX_STEPS_PER_FRAME = 4;
+/** Max steps per frame to maintain 60Hz simulation at low FPS (e.g. 10fps needs 6 steps). */
+const MAX_STEPS_PER_FRAME = 15;
 
 /**
  * Step physics by actual elapsed time so client and server simulate at the same rate.
  * Rapier defaults to dt=1/60 per step; at 120fps we'd simulate 2x real time without this.
  * We use fixed timestep accumulation: add dt, step once per PHYSICS_DT, carry remainder.
+ * @param localPlayerId - If provided, own bullets won't register as "hit" when colliding with self for BULLET_SELF_HIT_GRACE_SEC.
  */
 /** Projectile ids that collided this step (to remove from WeaponRenderer). */
 const projectileCollisionsThisStep = new Set<string>();
 
-export function step(handle: WorldHandle, dt: number): string[] {
+export function step(
+  handle: WorldHandle,
+  dt: number,
+  localPlayerId?: string,
+): string[] {
   projectileCollisionsThisStep.clear();
   handle.physicsAccumulator += dt;
   handle.world.timestep = PHYSICS_DT;
+  const nowSec = performance.now() / 1000;
   let steps = 0;
   while (
     handle.physicsAccumulator >= PHYSICS_DT &&
@@ -335,10 +439,26 @@ export function step(handle: WorldHandle, dt: number): string[] {
     handle.world.step(handle.eventQueue);
     handle.eventQueue.drainCollisionEvents((h1, h2, started) => {
       if (!started) return;
-      const id1 = handle.colliderToProjectileId.get(h1);
-      const id2 = handle.colliderToProjectileId.get(h2);
-      if (id1) projectileCollisionsThisStep.add(id1);
-      if (id2) projectileCollisionsThisStep.add(id2);
+      const projId1 = handle.colliderToProjectileId.get(h1);
+      const projId2 = handle.colliderToProjectileId.get(h2);
+      const projId = projId1 ?? projId2;
+      const otherHandle = projId1 ? h2 : h1;
+      const hitPlayerId = handle.colliderToPlayerId.get(otherHandle);
+
+      if (
+        projId &&
+        hitPlayerId &&
+        localPlayerId &&
+        hitPlayerId === localPlayerId
+      ) {
+        const meta = handle.projectileMeta.get(projId);
+        if (meta?.ownerId === localPlayerId) {
+          const age = nowSec - meta.spawnTime;
+          if (age < BULLET_SELF_HIT_GRACE_SEC) return;
+        }
+      }
+      if (projId1) projectileCollisionsThisStep.add(projId1);
+      if (projId2) projectileCollisionsThisStep.add(projId2);
     });
     handle.physicsAccumulator -= PHYSICS_DT;
     steps++;
@@ -399,6 +519,7 @@ export function createProjectileBody(
   vy: number,
   vz: number,
   isRocket: boolean,
+  ownerId?: string,
 ): void {
   if (handle.projectileBodies.has(id)) return;
   const R = getRAPIER();
@@ -418,12 +539,19 @@ export function createProjectileBody(
   const collider = handle.world.createCollider(colliderDesc, body);
   handle.projectileBodies.set(id, { body, collider });
   handle.colliderToProjectileId.set(collider.handle, id);
+  if (ownerId != null) {
+    handle.projectileMeta.set(id, {
+      ownerId,
+      spawnTime: performance.now() / 1000,
+    });
+  }
 }
 
 export function removeProjectileBody(handle: WorldHandle, id: string): void {
   const entry = handle.projectileBodies.get(id);
   if (entry) {
     handle.colliderToProjectileId.delete(entry.collider.handle);
+    handle.projectileMeta.delete(id);
     handle.world.removeRigidBody(entry.body);
     handle.projectileBodies.delete(id);
   }
@@ -474,12 +602,53 @@ export function setThrowableState(
   body.setLinvel({ x: vx, y: vy, z: vz }, true);
 }
 
+/**
+ * Cast a ray against floor and wall colliders only. Used for tracer visuals (no mesh picking).
+ * @returns Hit point or null if no hit within maxToi.
+ */
+export function castRay(
+  handle: WorldHandle,
+  originX: number,
+  originY: number,
+  originZ: number,
+  dirX: number,
+  dirY: number,
+  dirZ: number,
+  maxToi: number,
+): { x: number; y: number; z: number } | null {
+  const R = getRAPIER();
+  const lenSq = dirX * dirX + dirY * dirY + dirZ * dirZ;
+  if (lenSq < 1e-12) return null;
+  const len = Math.sqrt(lenSq);
+  const ray = new R.Ray(
+    { x: originX, y: originY, z: originZ },
+    { x: dirX / len, y: dirY / len, z: dirZ / len },
+  );
+  const hit = handle.world.castRay(
+    ray,
+    maxToi,
+    true,
+    undefined,
+    collisionGroups(0xffff, GROUP_FLOOR | GROUP_WALL),
+  );
+  if (!hit) return null;
+  const t = hit.toi;
+  return {
+    x: originX + (dirX / len) * t,
+    y: originY + (dirY / len) * t,
+    z: originZ + (dirZ / len) * t,
+  };
+}
+
 export function destroyWorld(handle: WorldHandle): void {
   handle.projectileBodies.forEach(({ body }) =>
     handle.world.removeRigidBody(body),
   );
   handle.projectileBodies.clear();
   handle.colliderToProjectileId.clear();
+  handle.projectileMeta.clear();
+  handle.colliderToPlayerId.clear();
+  handle.playerIdToColliderHandle.clear();
   handle.eventQueue.free();
   handle.world.free();
   handle.playerBodies.clear();

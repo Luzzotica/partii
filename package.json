@@ -24,7 +24,8 @@
     "gyrii:spacetime:publish:local": "cd games/gyrii && spacetime publish gyrii --project-path spacetimedb -s http://127.0.0.1:3001",
     "gyrii:server:build": "cargo build --manifest-path games/gyrii/server/Cargo.toml",
     "gyrii:server:run": "GYRII_ENV_FILE=.env.local cargo run --manifest-path games/gyrii/server/Cargo.toml",
-    "gyrii:server:run:prod": "GYRII_ENV_FILE=.env cargo run --manifest-path games/gyrii/server/Cargo.toml"
+    "gyrii:server:run:prod": "GYRII_ENV_FILE=.env cargo run --manifest-path games/gyrii/server/Cargo.toml",
+    "gyrii:proto:generate": "cd games/gyrii && npx buf generate"
   },
   "dependencies": {
     "@babylonjs/core": "^7.x",
@@ -37,9 +38,12 @@
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "spacetimedb": "^1.12.0",
-    "zustand": "^5.0.10"
+    "zustand": "^5.0.10",
+    "@bufbuild/protobuf": "^2.2.0"
   },
   "devDependencies": {
+    "@bufbuild/buf": "^1.65.0",
+    "@bufbuild/protoc-gen-es": "^2.2.0",
     "@elevenlabs/elevenlabs-js": "^2.32.0",
     "@eslint/js": "^9.39.1",
     "@tailwindcss/postcss": "^4.1.18",

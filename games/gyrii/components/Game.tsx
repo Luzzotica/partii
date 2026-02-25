@@ -49,6 +49,7 @@ export default function GyriiGame() {
         /** Last authoritative server snapshot we reconciled this body to. */
         lastServerPos?: { x: number; y: number; z: number };
         lastServerVel?: { x: number; y: number; z: number };
+        lastServerTime?: number;
         /** Last applied impulse time (for local player hit prediction). */
         lastAppliedImpulseTime?: number;
         /** Track designId so we can recreate material when it changes. */
@@ -73,6 +74,7 @@ export default function GyriiGame() {
   const updateInputIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
     null,
   );
+  const frameCountRef = useRef(0);
   const [isLoading, setIsLoading] = useState(true);
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [bannerNowMs, setBannerNowMs] = useState(Date.now());
@@ -95,6 +97,11 @@ export default function GyriiGame() {
     chargeStartTime: number;
     canvasRef: React.RefObject<HTMLCanvasElement | null>;
     throwableRenderer: any;
+    /** Compute aim from pointer event (same logic as gun); set by game loop. */
+    getAimFromPointerEvent?: (e: MouseEvent | PointerEvent) => {
+      aimX: number;
+      aimZ: number;
+    };
   }>(null as any);
 
   // Sync marble config to server when we enter the game
@@ -127,6 +134,7 @@ export default function GyriiGame() {
       chargeStartTime: 0,
       canvasRef,
       throwableRenderer: null as any,
+      getAimFromPointerEvent: undefined,
     };
 
     const handlePointerDown = (e: MouseEvent | PointerEvent) => {
@@ -139,21 +147,30 @@ export default function GyriiGame() {
         if (!me || !r) return;
         if (e.button === 2) {
           if (me.grenadeCount <= 0) return;
-          const nowMicros = Date.now() * 1000;
-          const lastThrown = me.lastGrenadeThrownAt ?? 0;
-          if (nowMicros - lastThrown < 1_000_000) return;
-          r.throwGrenade(r.aimX, r.aimZ);
+          const nowMicros = Number(Date.now()) * 1000;
+          const lastThrown = Number(me.lastGrenadeThrownAt ?? 0);
+          const elapsedMicros = nowMicros - lastThrown;
+          if (elapsedMicros < 1_000_000) return;
+          const aim = r.getAimFromPointerEvent?.(e) ?? {
+            aimX: r.aimX,
+            aimZ: r.aimZ,
+          };
+          r.throwGrenade(aim.aimX, aim.aimZ);
         } else if (e.button === 1) {
           if (me.molotovCount <= 0) return;
-          r.throwMolotov(r.aimX, r.aimZ);
+          const aim = r.getAimFromPointerEvent?.(e) ?? {
+            aimX: r.aimX,
+            aimZ: r.aimZ,
+          };
+          r.throwMolotov(aim.aimX, aim.aimZ);
           if (r.throwableRenderer) {
             const pos = new Vector3(
               me.position.x,
               me.position.y ?? 0.5,
               me.position.z,
             );
-            const aim = new Vector3(r.aimX, 0, r.aimZ);
-            r.throwableRenderer.throw(pos, aim, 12, "molotov", "local");
+            const aimVec = new Vector3(aim.aimX, 0, aim.aimZ);
+            r.throwableRenderer.throw(pos, aimVec, 12, "molotov", "local");
           }
         }
         e.preventDefault();
@@ -234,6 +251,10 @@ export default function GyriiGame() {
         // Create scene
         const scene = new BABYLON.Scene(engine);
         scene.clearColor = new BABYLON.Color4(0.02, 0.02, 0.05, 1);
+        // Disable all Babylon mesh picking - we use Rapier for collision/raycast only
+        scene.skipPointerMovePicking = true;
+        scene.skipPointerDownPicking = true;
+        scene.skipPointerUpPicking = true;
 
         setLoadingProgress(20);
 
@@ -253,6 +274,7 @@ export default function GyriiGame() {
         camera.attachControl(canvasRef.current, false);
         camera.panningSensibility = 0; // Disable panning
         camera.inputs.removeByType("ArcRotateCameraPointersInput"); // Disable orbit on drag
+        camera.inputs.removeByType("ArcRotateCameraKeyboardMoveInput"); // Disable arrow-key camera controls
 
         // Initialize camera target for smooth following
         let cameraTarget = BABYLON.Vector3.Zero();
@@ -275,9 +297,15 @@ export default function GyriiGame() {
         );
         mainLight.intensity = 0.8;
 
-        // Load map from JSON based on lobby's mapId
-        const mapId = useGyriiStore.getState().currentLobby?.mapId ?? "arena";
-        const mapData = maps[mapId] ?? maps.arena;
+        // Load map from JSON: use custom mapJson if present, else built-in
+        const lobby = useGyriiStore.getState().currentLobby;
+        const mapId = lobby?.mapId ?? "arena";
+        const mapData =
+          lobby?.isCustomMap && lobby?.mapJson
+            ? (JSON.parse(
+                lobby.mapJson,
+              ) as import("../game/maps/MapLoader").MapData)
+            : (maps[mapId] ?? maps.arena);
         loadMap(BABYLON, scene, mapData as any);
 
         // Client Rapier physics (same world as server: floor, boundary, interior walls)
@@ -333,13 +361,21 @@ export default function GyriiGame() {
             loadWeapon("machine_gun.glb", "dualMachineGun"),
             loadWeapon("ray_gun.glb", "photonRifle"),
           ]);
+          // Shotgun = 2× machine_gun side by side; reuse dualMachineGun template
+          if (weaponTemplates.dualMachineGun) {
+            weaponTemplates.shotgun = weaponTemplates.dualMachineGun;
+          }
         } catch (e) {
           console.warn("Weapon models failed to load:", e);
         }
 
         // Helper to get template key for a weapon type (fallback to machine gun)
         const getWeaponTemplateKey = (weapon: string) =>
-          weapon === "photonRifle" ? "photonRifle" : "dualMachineGun";
+          weapon === "photonRifle"
+            ? "photonRifle"
+            : weapon === "shotgun"
+              ? "shotgun"
+              : "dualMachineGun";
 
         // Use store's single source of truth for player id (matches store keys and player.id)
         const idForKey = canonicalPlayerId;
@@ -359,6 +395,7 @@ export default function GyriiGame() {
             lastAppliedSnapshotId?: number;
             lastServerPos?: { x: number; y: number; z: number };
             lastServerVel?: { x: number; y: number; z: number };
+            lastServerTime?: number;
             lastAppliedImpulseTime?: number;
             lastDesignId?: number;
             lastAimDir?: InstanceType<typeof BABYLON.Vector3>;
@@ -410,6 +447,7 @@ export default function GyriiGame() {
               { diameter: 1 },
               scene,
             );
+            mesh.isPickable = false;
             mesh.position.y = player.position?.y ?? PLAYER_BALL_RADIUS;
             const config = player.marbleConfig ?? {
               designId: 0 as const,
@@ -430,6 +468,7 @@ export default function GyriiGame() {
               { width: 2, height: 0.5 },
               scene,
             );
+            namePlane.isPickable = false;
             namePlane.parent = rootNode;
             namePlane.position.y = 1.2;
             namePlane.billboardMode = BABYLON.Mesh.BILLBOARDMODE_ALL;
@@ -495,16 +534,18 @@ export default function GyriiGame() {
               nameTexture,
               lastDisplayName: displayName,
             });
-            createPlayerBody(
-              physicsHandle,
-              id,
-              player.position?.x ?? 0,
-              player.position?.y ?? PLAYER_BALL_RADIUS,
-              player.position?.z ?? 0,
-              player.velocity?.x ?? 0,
-              player.velocity?.y ?? 0,
-              player.velocity?.z ?? 0,
-            );
+            if (player.isAlive) {
+              createPlayerBody(
+                physicsHandle,
+                id,
+                player.position?.x ?? 0,
+                player.position?.y ?? PLAYER_BALL_RADIUS,
+                player.position?.z ?? 0,
+                player.velocity?.x ?? 0,
+                player.velocity?.y ?? 0,
+                player.velocity?.z ?? 0,
+              );
+            }
           }
         };
 
@@ -514,45 +555,89 @@ export default function GyriiGame() {
           rootNode: any,
         ): { weaponMesh: any; muzzleNode: any } => {
           const templateKey = getWeaponTemplateKey(player.weapon);
-          const template =
-            weaponTemplates[templateKey] ?? weaponTemplates.dualMachineGun;
+          const baseTemplate =
+            weaponTemplates.dualMachineGun ??
+            weaponTemplates[templateKey] ??
+            weaponTemplates.dualMachineGun;
           const displayConfig = getWeaponDisplayConfig(templateKey);
           const noWeapon = { weaponMesh: undefined, muzzleNode: undefined };
-          if (!template) return noWeapon;
-          const clone = template.clone(`weapon-${id}`, scene)!;
-          while (clone.behaviors.length) {
-            clone.removeBehavior(clone.behaviors[0]);
-          }
-          clone.setEnabled(true);
-          clone.setParent(rootNode);
-          clone.position.set(
-            displayConfig.offset.x,
-            displayConfig.offset.y,
-            displayConfig.offset.z,
-          );
-          if (displayConfig.rotation) {
-            const r = displayConfig.rotation;
-            const yaw = r.y ?? 0;
-            const pitch = r.x ?? 0;
-            const roll = r.z ?? 0;
-            clone.rotationQuaternion = BABYLON.Quaternion.RotationYawPitchRoll(
-              yaw,
-              pitch,
-              roll,
+          if (!baseTemplate) return noWeapon;
+
+          let weaponRoot: any;
+          if (templateKey === "shotgun") {
+            const container = new BABYLON.TransformNode(
+              `weaponContainer-${id.slice(-12)}`,
+              scene,
             );
-          }
-          if (displayConfig.scale) {
-            const s = displayConfig.scale;
-            if (s.x !== 1 || s.y !== 1 || s.z !== 1) {
-              clone.scaling.set(s.x, s.y, s.z);
+            container.setParent(rootNode);
+            container.position.set(
+              displayConfig.offset.x,
+              displayConfig.offset.y,
+              displayConfig.offset.z,
+            );
+            if (displayConfig.rotation) {
+              const r = displayConfig.rotation;
+              container.rotationQuaternion =
+                BABYLON.Quaternion.RotationYawPitchRoll(
+                  r.y ?? 0,
+                  r.x ?? 0,
+                  r.z ?? 0,
+                );
             }
+            const s = displayConfig.scale ?? { x: 1, y: 1, z: 1 };
+            for (const side of [-1, 1]) {
+              const clone = baseTemplate.clone(
+                `weapon-${id.slice(-12)}-${side}`,
+                scene,
+              )!;
+              while (clone.behaviors.length) {
+                clone.removeBehavior(clone.behaviors[0]);
+              }
+              clone.setEnabled(true);
+              clone.setParent(container);
+              clone.position.set(side * 0.25, 0, 0);
+              if (s.x !== 1 || s.y !== 1 || s.z !== 1) {
+                clone.scaling.set(s.x, s.y, s.z);
+              }
+            }
+            weaponRoot = container;
+          } else {
+            const template =
+              weaponTemplates[templateKey] ?? weaponTemplates.dualMachineGun;
+            const clone = template.clone(`weapon-${id}`, scene)!;
+            while (clone.behaviors.length) {
+              clone.removeBehavior(clone.behaviors[0]);
+            }
+            clone.setEnabled(true);
+            clone.setParent(rootNode);
+            clone.position.set(
+              displayConfig.offset.x,
+              displayConfig.offset.y,
+              displayConfig.offset.z,
+            );
+            if (displayConfig.rotation) {
+              const r = displayConfig.rotation;
+              const yaw = r.y ?? 0;
+              const pitch = r.x ?? 0;
+              const roll = r.z ?? 0;
+              clone.rotationQuaternion =
+                BABYLON.Quaternion.RotationYawPitchRoll(yaw, pitch, roll);
+            }
+            if (displayConfig.scale) {
+              const sc = displayConfig.scale;
+              if (sc.x !== 1 || sc.y !== 1 || sc.z !== 1) {
+                clone.scaling.set(sc.x, sc.y, sc.z);
+              }
+            }
+            weaponRoot = clone;
           }
+
           // Muzzle as child of weapon: local offset only, no math at fire time
           const muzzleNode = new BABYLON.TransformNode(
             `muzzle-${id.slice(-12)}`,
             scene,
           );
-          muzzleNode.setParent(clone);
+          muzzleNode.setParent(weaponRoot);
           muzzleNode.position.set(
             displayConfig.muzzleOffset.x,
             displayConfig.muzzleOffset.y,
@@ -573,7 +658,7 @@ export default function GyriiGame() {
           debugMat.emissiveColor = new BABYLON.Color3(1, 0.3, 0);
           debugMat.disableLighting = true;
           debugMuzzleSphere.material = debugMat;
-          return { weaponMesh: clone, muzzleNode };
+          return { weaponMesh: weaponRoot, muzzleNode };
         };
 
         // Create/update/delete weapon meshes from store (weapon type changes)
@@ -646,6 +731,7 @@ export default function GyriiGame() {
 
             if (player.isAlive === false) {
               if (wasAlive) {
+                removePlayerBody(physicsHandle, id);
                 const pos = new BABYLON.Vector3(
                   player.position.x,
                   player.position.y ?? PLAYER_BALL_RADIUS,
@@ -667,14 +753,24 @@ export default function GyriiGame() {
                 // createDeathDecal(scene, groundPos, color3);
               }
               entry.mesh.setEnabled(false);
-              entry.mesh.isPickable = false;
               entry.rootNode.setEnabled(false);
               lastAliveByPlayerId.set(id, false);
               continue;
             }
 
+            // Recreate physics body on respawn (was removed on death)
+            const px = player.position.x;
+            const py = player.position.y ?? PLAYER_BALL_RADIUS;
+            const pz = player.position.z;
+            const vx = player.velocity?.x ?? 0;
+            const vy = player.velocity?.y ?? 0;
+            const vz = player.velocity?.z ?? 0;
+            if (!getPlayerPosition(physicsHandle, id)) {
+              createPlayerBody(physicsHandle, id, px, py, pz, vx, vy, vz);
+            }
+
             entry.mesh.setEnabled(true);
-            entry.mesh.isPickable = true;
+            entry.mesh.isPickable = false;
             entry.rootNode.setEnabled(true);
             lastAliveByPlayerId.set(id, true);
 
@@ -686,15 +782,10 @@ export default function GyriiGame() {
                 ? localAim
                 : (player.aimDirection ?? { x: 0, z: -1 });
 
-            const px = player.position.x;
-            const py = player.position.y ?? PLAYER_BALL_RADIUS;
-            const pz = player.position.z;
-            const vx = player.velocity?.x ?? 0;
-            const vy = player.velocity?.y ?? 0;
-            const vz = player.velocity?.z ?? 0;
-            const snapshotId = player.serverSnapshotId ?? 0;
+            // serverSnapshotId is now snapshot lineage from lobby_state/base_snapshot_id.
+            const snapshotLineageId = player.serverSnapshotId ?? 0;
             const isNewSnapshot =
-              snapshotId > (entry.lastAppliedSnapshotId ?? -1);
+              snapshotLineageId > (entry.lastAppliedSnapshotId ?? -1);
 
             const prevPos = entry.lastServerPos;
             const prevVel = entry.lastServerVel;
@@ -711,9 +802,10 @@ export default function GyriiGame() {
             // Reconcile to server only when we receive a fresh authoritative snapshot.
             // Between snapshots, local body velocity stays client-predicted from input.
             if (isNewSnapshot && serverStateChanged) {
-              entry.lastAppliedSnapshotId = snapshotId;
+              entry.lastAppliedSnapshotId = snapshotLineageId;
               entry.lastServerPos = { x: px, y: py, z: pz };
               entry.lastServerVel = { x: vx, y: vy, z: vz };
+              entry.lastServerTime = performance.now() / 1000;
               if (isLocal) {
                 const currentPos = getPlayerPosition(physicsHandle, id);
                 const currentVel = getPlayerLinvel(physicsHandle, id);
@@ -770,7 +862,7 @@ export default function GyriiGame() {
 
             const mesh = entry.mesh;
             const rootNode = entry.rootNode;
-            const pos =
+            let pos =
               isLocal && localRenderPos
                 ? localRenderPos
                 : (getPlayerPosition(physicsHandle, id) ?? {
@@ -778,6 +870,31 @@ export default function GyriiGame() {
                     y: py,
                     z: pz,
                   });
+
+            // Extrapolate non-local players from last authoritative server state.
+            if (
+              !isLocal &&
+              entry.lastServerPos &&
+              entry.lastServerVel &&
+              entry.lastServerTime != null
+            ) {
+              const now = performance.now() / 1000;
+              const predictAheadSec = Math.min(
+                0.25,
+                Math.max(0, now - entry.lastServerTime),
+              );
+              pos = {
+                x:
+                  entry.lastServerPos.x +
+                  entry.lastServerVel.x * predictAheadSec,
+                y:
+                  entry.lastServerPos.y +
+                  entry.lastServerVel.y * predictAheadSec,
+                z:
+                  entry.lastServerPos.z +
+                  entry.lastServerVel.z * predictAheadSec,
+              };
+            }
 
             mesh.position.x = pos.x;
             mesh.position.y = pos.y;
@@ -979,7 +1096,7 @@ export default function GyriiGame() {
         let lastShotAtRef = 0;
         const lastShotAtPerPlayer = new Map<string, number>();
 
-        // Send input to server every frame (~60 Hz)
+        // Send input to server and apply to client physics at fixed rate (independent of FPS)
         const INPUT_INTERVAL_MS = 16;
         updateInputIntervalRef.current = setInterval(() => {
           if (useGyriiStore.getState().gameState === "paused") return;
@@ -999,12 +1116,16 @@ export default function GyriiGame() {
           }
         }, INPUT_INTERVAL_MS);
 
-        // Game loop
+        // Game loop (physics + input with catch-up in render loop; setInterval starves when main thread is busy)
         let lastFrameTime = performance.now();
 
         scene.onBeforeRenderObservable.add(() => {
           const currentState = useGyriiStore.getState().gameState;
           if (currentState === "paused") return;
+
+          // #region agent log
+          const t0 = performance.now();
+          // #endregion
 
           const currentTime = performance.now();
           const deltaTime = (currentTime - lastFrameTime) / 1000;
@@ -1018,29 +1139,26 @@ export default function GyriiGame() {
           const mapCenter = new BABYLON.Vector3(0, 0.5, 0);
           const localId = localPlayer ? idForKey(localPlayer.id) : null;
 
-          // Resolve mouse world target first; aim direction is finalized after physics step.
+          // Resolve mouse world target: ray-plane intersection at y=0 (no mesh picking).
           let mouseWorldPos: Vector3 | null = null;
-          const pickInfo = scene.pick(mouseScreenPos.x, mouseScreenPos.y);
-          if (pickInfo?.pickedPoint) {
-            mouseWorldPos = pickInfo.pickedPoint.clone();
-            mouseWorldPos.y = 0;
-          } else {
-            const ray = scene.createPickingRay(
-              mouseScreenPos.x,
-              mouseScreenPos.y,
-              BABYLON.Matrix.Identity(),
-              camera,
-            );
-            if (ray.direction.y !== 0) {
-              const t = -ray.origin.y / ray.direction.y;
-              if (t > 0) {
-                mouseWorldPos = ray.origin.add(ray.direction.scale(t));
-                mouseWorldPos.y = 0;
-              }
+          const ray = scene.createPickingRay(
+            mouseScreenPos.x,
+            mouseScreenPos.y,
+            BABYLON.Matrix.Identity(),
+            camera,
+          );
+          if (ray.direction.y !== 0) {
+            const t = -ray.origin.y / ray.direction.y;
+            if (t > 0) {
+              mouseWorldPos = ray.origin.add(ray.direction.scale(t));
+              mouseWorldPos.y = 0;
             }
           }
 
-          // Client physics: apply local input, step world, then sync meshes from physics
+          // Apply input with catch-up, then step physics (both run in render loop to avoid setInterval starvation)
+          // #region agent log
+          const t1 = performance.now();
+          // #endregion
           let inputX = 0,
             inputZ = 0;
           if (inputMap["w"] || inputMap["arrowup"]) inputZ = 1;
@@ -1049,10 +1167,22 @@ export default function GyriiGame() {
           if (inputMap["d"] || inputMap["arrowright"]) inputX = 1;
           const nowSec = currentTime / 1000;
           if (localPlayer) {
-            const localId = idForKey(localPlayer.id);
-            applyInput(physicsHandle, localId, inputX, inputZ, nowSec);
+            applyInput(
+              physicsHandle,
+              idForKey(localPlayer.id),
+              inputX,
+              inputZ,
+              nowSec,
+            );
           }
-          const projectileCollisions = step(physicsHandle, deltaTime);
+          const projectileCollisions = step(
+            physicsHandle,
+            deltaTime,
+            localPlayer ? idForKey(localPlayer.id) : undefined,
+          );
+          // #region agent log
+          const t2 = performance.now();
+          // #endregion
 
           const localPhysicsPos = localId
             ? getPlayerPosition(physicsHandle, localId)
@@ -1098,6 +1228,44 @@ export default function GyriiGame() {
           shootRef.aimX = aimDirection.x;
           shootRef.aimZ = aimDirection.z;
 
+          // Register aim-from-pointer so grenade/molotov use same aim as gun (computed at click position)
+          shootRef.getAimFromPointerEvent = (e: MouseEvent | PointerEvent) => {
+            const canvas = shootRef.canvasRef?.current;
+            if (!canvas || !localPlayer) {
+              return { aimX: aimDirection.x, aimZ: aimDirection.z };
+            }
+            const rect = canvas.getBoundingClientRect();
+            const canvasX = e.clientX - rect.left;
+            const canvasY = e.clientY - rect.top;
+            let mouseWorldPos: Vector3 | null = null;
+            const pickRay = scene.createPickingRay(
+              canvasX,
+              canvasY,
+              BABYLON.Matrix.Identity(),
+              camera,
+            );
+            if (pickRay.direction.y !== 0) {
+              const t = -pickRay.origin.y / pickRay.direction.y;
+              if (t > 0) {
+                mouseWorldPos = pickRay.origin.add(pickRay.direction.scale(t));
+                mouseWorldPos.y = 0;
+              }
+            }
+            if (mouseWorldPos && myPos) {
+              const dx = mouseWorldPos.x - myPos.x;
+              const dz = mouseWorldPos.z - myPos.z;
+              const lenSq = dx * dx + dz * dz;
+              if (lenSq > MIN_AIM_LENGTH_SQ) {
+                const invLen = 1 / Math.sqrt(lenSq);
+                return {
+                  aimX: dx * invLen,
+                  aimZ: dz * invLen,
+                };
+              }
+            }
+            return { aimX: aimDirection.x, aimZ: aimDirection.z };
+          };
+
           // Sync player meshes from physics (positions/velocities from Rapier)
           syncPlayerMeshes(
             localPlayer,
@@ -1114,6 +1282,7 @@ export default function GyriiGame() {
               ev.position,
               ev.velocity,
               ev.projectileType,
+              ev.playerId,
             );
           }
 
@@ -1285,11 +1454,45 @@ export default function GyriiGame() {
               Math.min(1, deltaTime * 8),
             );
           }
+
+          // #region agent log
+          const t3 = performance.now();
+          frameCountRef.current++;
+          if (frameCountRef.current % 60 === 0) {
+            const fps = deltaTime > 0 ? 1 / deltaTime : 0;
+            fetch(
+              "http://127.0.0.1:7247/ingest/59a503ab-d1b6-4f2a-aa9a-a2ee2d892623",
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  location: "Game.tsx:frameTiming",
+                  message: "Frame timing",
+                  data: {
+                    totalMs: t3 - t0,
+                    prePhysicsMs: t1 - t0,
+                    physicsMs: t2 - t1,
+                    postPhysicsMs: t3 - t2,
+                    renderMs: renderTimeRef.current,
+                    deltaMs: deltaTime * 1000,
+                    fps: Math.round(fps),
+                    frameCount: frameCountRef.current,
+                  },
+                  timestamp: Date.now(),
+                  hypothesisId: "H1",
+                }),
+              },
+            ).catch(() => {});
+          }
+          // #endregion
         });
 
-        // Start render loop
+        // Start render loop (measure render time; physics runs in separate 60Hz interval)
+        const renderTimeRef = { current: 0 };
         engine.runRenderLoop(() => {
+          const tRenderStart = performance.now();
           scene.render();
+          renderTimeRef.current = performance.now() - tRenderStart;
         });
 
         setIsLoading(false);

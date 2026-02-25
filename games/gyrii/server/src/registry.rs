@@ -8,7 +8,7 @@ pub type Registry = Arc<RwLock<ConnectionRegistry>>;
 
 pub struct ConnectionRegistry {
     /// identity -> (lobby_id if in a lobby, sender for server->client messages)
-    conns: HashMap<String, (Option<u64>, mpsc::UnboundedSender<String>)>,
+    conns: HashMap<String, (Option<u64>, mpsc::UnboundedSender<Vec<u8>>)>,
 }
 
 impl ConnectionRegistry {
@@ -18,7 +18,7 @@ impl ConnectionRegistry {
         }
     }
 
-    pub fn register(&mut self, identity: String) -> mpsc::UnboundedReceiver<String> {
+    pub fn register(&mut self, identity: String) -> mpsc::UnboundedReceiver<Vec<u8>> {
         let (tx, rx) = mpsc::unbounded_channel();
         self.conns.insert(identity, (None, tx));
         rx
@@ -39,18 +39,18 @@ impl ConnectionRegistry {
     }
 
     /// Send message to all clients in the given lobby
-    pub fn broadcast_to_lobby(&self, lobby_id: u64, msg: &str) {
+    pub fn broadcast_to_lobby(&self, lobby_id: u64, msg: &[u8]) {
         for (_, (lobby, tx)) in self.conns.iter() {
             if *lobby == Some(lobby_id) {
-                let _ = tx.send(msg.to_string());
+                let _ = tx.send(msg.to_vec());
             }
         }
     }
 
     /// Send message to ALL connected clients (e.g. lobby list updates)
-    pub fn broadcast_to_all(&self, msg: &str) {
+    pub fn broadcast_to_all(&self, msg: &[u8]) {
         for (_, (_, tx)) in self.conns.iter() {
-            let _ = tx.send(msg.to_string());
+            let _ = tx.send(msg.to_vec());
         }
     }
 }

@@ -5,7 +5,7 @@ export const PLAYER_BALL_RADIUS = 0.5;
 export const GRAVITY = -9.81;
 
 /** Player movement; must match server constants.rs. */
-export const PLAYER_ACCEL = 12.0;
+export const PLAYER_ACCEL = 10.2; // 12.0 * 0.85 (15% slower)
 export const PLAYER_DAMPING = 0.96;
 export const PLAYER_INPUT_TICK_DT = 0.05;
 
@@ -19,6 +19,7 @@ export const BULLET_SPEED = 35000;
  */
 export const PROJECTILE_TTL_BULLET_SEC = 4;
 export const PROJECTILE_TTL_ROCKET_SEC = 6;
+export const PROJECTILE_TTL_SHOTGUN_SEC = 0.5;
 
 /**
  * Compute muzzle world position - must match server muzzle_world_position in weapons/common.rs

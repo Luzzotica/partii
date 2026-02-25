@@ -3,7 +3,12 @@ name = "gyrii-server"
 version = "0.1.0"
 edition = "2021"
 
+[build-dependencies]
+prost-build = "0.13"
+protoc-bin-vendored = "3"
+
 [dependencies]
+prost = "0.13"
 tokio = { version = "1", features = ["full"] }
 tokio-tungstenite = { version = "0.21", features = ["native-tls"] }
 futures-util = "0.3"

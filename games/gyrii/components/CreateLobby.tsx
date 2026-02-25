@@ -1,10 +1,22 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import Link from "next/link";
+import { useAuth } from "@/lib/supabase/auth-context";
 import { useGyriiStore } from "../store/gameStore";
 import { useGyriiConnection } from "../hooks/useGyriiConnection";
 import { maps } from "../game/maps";
 import MinimapPreview from "./MinimapPreview";
+
+type CustomMapMeta = {
+  id: string;
+  creatorId: string;
+  name: string;
+  description: string | null;
+  isPublic: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
 
 type GameModeId = "freeForAll" | "teamDeathmatch" | "captureTheFlag";
 
@@ -43,6 +55,7 @@ interface CreateLobbyProps {
 }
 
 export default function CreateLobby({ onBack, isConnected }: CreateLobbyProps) {
+  const { user } = useAuth();
   const { setGameState } = useGyriiStore();
   const { createLobby } = useGyriiConnection();
   const isConnecting = useGyriiStore((s) => s.isConnecting);
@@ -50,17 +63,43 @@ export default function CreateLobby({ onBack, isConnected }: CreateLobbyProps) {
   const [lobbyName, setLobbyName] = useState("");
   const [maxPlayers, setMaxPlayers] = useState(8);
   const [gameMode, setGameMode] = useState<GameModeId>("freeForAll");
+  const [mapSource, setMapSource] = useState<"builtin" | "custom">("builtin");
   const [mapPool, setMapPool] = useState<string[]>([
     "arena",
     "maze",
     "warehouse",
   ]);
+  const [selectedCustomMapId, setSelectedCustomMapId] = useState<string | null>(
+    null,
+  );
+  const [customMaps, setCustomMaps] = useState<CustomMapMeta[]>([]);
+  const [customMapsLoading, setCustomMapsLoading] = useState(false);
   const [password, setPassword] = useState("");
   const [scoreLimit, setScoreLimit] = useState(25);
   const [flagLimit, setFlagLimit] = useState(3);
 
+  useEffect(() => {
+    if (!user) {
+      setCustomMaps([]);
+      return;
+    }
+    setCustomMapsLoading(true);
+    fetch("/api/gyrii/maps")
+      .then((r) => (r.ok ? r.json() : { maps: [] }))
+      .then((data) => setCustomMaps(data.maps ?? []))
+      .catch(() => setCustomMaps([]))
+      .finally(() => setCustomMapsLoading(false));
+  }, [user]);
+
   const handleCreate = async () => {
     if (!lobbyName.trim() || isConnecting || !isConnected) return;
+    if (
+      mapSource === "custom" &&
+      (!selectedCustomMapId ||
+        !customMaps.some((m) => m.id === selectedCustomMapId))
+    ) {
+      return;
+    }
 
     try {
       const mapIdMap: Record<string, "Arena" | "Maze" | "Warehouse"> = {
@@ -68,12 +107,6 @@ export default function CreateLobby({ onBack, isConnected }: CreateLobbyProps) {
         maze: "Maze",
         warehouse: "Warehouse",
       };
-      const selectedPool = mapPool.length > 0 ? mapPool : ["arena"];
-      const mapPoolTags = selectedPool
-        .map((m) => mapIdMap[m])
-        .filter(Boolean) as ("Arena" | "Maze" | "Warehouse")[];
-      const primaryMap = selectedPool[0] ?? "arena";
-
       const gameModeMap: Record<
         string,
         "FreeForAll" | "TeamDeathmatch" | "CaptureTheFlag"
@@ -86,16 +119,40 @@ export default function CreateLobby({ onBack, isConnected }: CreateLobbyProps) {
       const name = lobbyName.trim();
       const isCtf = gameMode === "captureTheFlag";
       const hostPlayerName = useGyriiStore.getState().playerName;
+
+      let mapId: "Arena" | "Maze" | "Warehouse" | "Custom";
+      let mapPoolTags: ("Arena" | "Maze" | "Warehouse")[];
+      let customMapJson: string | undefined;
+
+      if (mapSource === "custom" && selectedCustomMapId) {
+        const res = await fetch(`/api/gyrii/maps/${selectedCustomMapId}`);
+        if (!res.ok) throw new Error("Failed to load map");
+        const mapData = await res.json();
+        customMapJson = JSON.stringify(mapData);
+        mapId = "Custom";
+        mapPoolTags = [];
+      } else {
+        const selectedPool = mapPool.length > 0 ? mapPool : ["arena"];
+        mapPoolTags = selectedPool.map((m) => mapIdMap[m]).filter(Boolean) as (
+          | "Arena"
+          | "Maze"
+          | "Warehouse"
+        )[];
+        const primaryMap = selectedPool[0] ?? "arena";
+        mapId = mapIdMap[primaryMap] || "Arena";
+      }
+
       await createLobby(
         name,
         hostPlayerName,
-        mapIdMap[primaryMap] || "Arena",
+        mapId,
         mapPoolTags,
         maxPlayers,
         gameModeMap[gameMode] || "FreeForAll",
         isCtf ? 25 : scoreLimit,
         isCtf ? flagLimit : 3,
         password,
+        customMapJson,
       );
 
       let attempts = 0;
@@ -185,57 +242,140 @@ export default function CreateLobby({ onBack, isConnected }: CreateLobbyProps) {
         </div>
 
         <div>
-          <label className="block text-xs text-gray-400 mb-2">
-            MAP POOL (for next rounds)
-          </label>
-          <div className="overflow-x-auto pb-1">
-            <div className="flex gap-3 min-w-max">
-              {MAPS.map((map) => {
-                const selected = mapPool.includes(map.id);
-                return (
-                  <button
-                    key={`pool-${map.id}`}
-                    onClick={() => {
-                      setMapPool((prev) => {
-                        const has = prev.includes(map.id);
-                        if (has) {
-                          if (prev.length === 1) return prev;
-                          return prev.filter((m) => m !== map.id);
-                        }
-                        return [...prev, map.id];
-                      });
-                    }}
-                    className={`rounded text-left transition-all border ${
-                      selected
-                        ? "bg-cyan-600/90 text-white border-cyan-300/80"
-                        : "bg-gray-800 text-gray-300 border-gray-600 hover:bg-gray-700"
-                    }`}
-                    style={{ minWidth: 220, maxWidth: 220 }}
-                  >
-                    <div className="p-2">
-                      <div className="text-sm font-semibold">{map.name}</div>
-                      <div className="text-[10px] opacity-70">
-                        {map.description}
-                      </div>
-                      <div className="mt-2 rounded border border-white/20 bg-black/30 p-1">
-                        <MinimapPreview
-                          mapData={maps[map.id] ?? maps.arena}
-                          size={160}
-                          className="rounded"
-                        />
-                      </div>
-                      <div className="text-[10px] mt-2 opacity-80">
-                        {selected ? "Included" : "Excluded"}
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
+          <label className="block text-xs text-gray-400 mb-2">MAP</label>
+          <div className="flex gap-2 mb-3">
+            <button
+              onClick={() => setMapSource("builtin")}
+              className={`px-3 py-1.5 rounded text-sm ${
+                mapSource === "builtin"
+                  ? "bg-cyan-600 text-white"
+                  : "bg-gray-800 text-gray-400 hover:bg-gray-700"
+              }`}
+            >
+              Built-in
+            </button>
+            <button
+              onClick={() => setMapSource("custom")}
+              disabled={!user}
+              className={`px-3 py-1.5 rounded text-sm ${
+                mapSource === "custom"
+                  ? "bg-cyan-600 text-white"
+                  : user
+                    ? "bg-gray-800 text-gray-400 hover:bg-gray-700"
+                    : "bg-gray-900 text-gray-600 opacity-70 cursor-not-allowed"
+              }`}
+              title={!user ? "Sign in to use custom maps" : undefined}
+            >
+              Custom
+            </button>
           </div>
-          <p className="text-[11px] text-gray-500 mt-2">
-            At least one map must stay selected.
-          </p>
+
+          {mapSource === "builtin" ? (
+            <>
+              <p className="text-[11px] text-gray-500 mb-2">
+                Map pool (for next rounds)
+              </p>
+              <div className="overflow-x-auto pb-1">
+                <div className="flex gap-3 min-w-max">
+                  {MAPS.map((map) => {
+                    const selected = mapPool.includes(map.id);
+                    return (
+                      <button
+                        key={`pool-${map.id}`}
+                        onClick={() => {
+                          setMapPool((prev) => {
+                            const has = prev.includes(map.id);
+                            if (has) {
+                              if (prev.length === 1) return prev;
+                              return prev.filter((m) => m !== map.id);
+                            }
+                            return [...prev, map.id];
+                          });
+                        }}
+                        className={`rounded text-left transition-all border ${
+                          selected
+                            ? "bg-cyan-600/90 text-white border-cyan-300/80"
+                            : "bg-gray-800 text-gray-300 border-gray-600 hover:bg-gray-700"
+                        }`}
+                        style={{ minWidth: 220, maxWidth: 220 }}
+                      >
+                        <div className="p-2">
+                          <div className="text-sm font-semibold">
+                            {map.name}
+                          </div>
+                          <div className="text-[10px] opacity-70">
+                            {map.description}
+                          </div>
+                          <div className="mt-2 rounded border border-white/20 bg-black/30 p-1">
+                            <MinimapPreview
+                              mapData={maps[map.id] ?? maps.arena}
+                              size={160}
+                              className="rounded"
+                            />
+                          </div>
+                          <div className="text-[10px] mt-2 opacity-80">
+                            {selected ? "Included" : "Excluded"}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <p className="text-[11px] text-gray-500 mt-2">
+                At least one map must stay selected.
+              </p>
+            </>
+          ) : (
+            <div className="space-y-2">
+              {!user ? (
+                <p className="text-sm text-gray-500">
+                  Sign in to create and use custom maps.
+                </p>
+              ) : customMapsLoading ? (
+                <p className="text-sm text-gray-500">Loading custom maps...</p>
+              ) : customMaps.length === 0 ? (
+                <p className="text-sm text-gray-500">
+                  No custom maps yet.{" "}
+                  <Link
+                    href="/arcade/gyrii/maps"
+                    className="text-cyan-400 hover:underline"
+                  >
+                    Create one
+                  </Link>
+                  .
+                </p>
+              ) : (
+                <div className="flex flex-col gap-2 max-h-40 overflow-y-auto">
+                  {customMaps.map((m) => (
+                    <button
+                      key={m.id}
+                      onClick={() =>
+                        setSelectedCustomMapId(
+                          selectedCustomMapId === m.id ? null : m.id,
+                        )
+                      }
+                      className={`rounded text-left p-3 border transition-all ${
+                        selectedCustomMapId === m.id
+                          ? "bg-cyan-600/90 text-white border-cyan-300/80"
+                          : "bg-gray-800 text-gray-300 border-gray-600 hover:bg-gray-700"
+                      }`}
+                    >
+                      <div className="font-semibold">{m.name}</div>
+                      {m.description && (
+                        <div className="text-xs opacity-80 mt-0.5">
+                          {m.description}
+                        </div>
+                      )}
+                      <div className="text-[10px] mt-1 opacity-70">
+                        {m.isPublic ? "Public" : "Private"}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {(gameMode === "freeForAll" || gameMode === "teamDeathmatch") && (
@@ -328,7 +468,11 @@ export default function CreateLobby({ onBack, isConnected }: CreateLobbyProps) {
 
         <button
           onClick={handleCreate}
-          disabled={!lobbyName.trim() || !isConnected}
+          disabled={
+            !lobbyName.trim() ||
+            !isConnected ||
+            (mapSource === "custom" && !selectedCustomMapId)
+          }
           className="w-full py-3 bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-white font-bold transition-all"
         >
           CREATE LOBBY

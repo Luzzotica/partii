@@ -1,0 +1,381 @@
+syntax = "proto3";
+
+package gyrii;
+
+// Enums - replace string keys for compact encoding
+enum WeaponType {
+  WEAPON_UNSPECIFIED = 0;
+  WEAPON_SMG = 1;
+  WEAPON_DUAL_MACHINE_GUN = 2;
+  WEAPON_CHAIN_GUN = 3;
+  WEAPON_PHOTON_RIFLE = 4;
+  WEAPON_BAZOOKA = 5;
+  WEAPON_FLAMETHROWER = 6;
+  WEAPON_SHOTGUN = 7;
+}
+
+enum SecondaryType {
+  SECONDARY_UNSPECIFIED = 0;
+  SECONDARY_POPUP_KNIVES = 1;
+  SECONDARY_BUBBLE_SHIELD = 2;
+  SECONDARY_SELF_DESTRUCT_NUKE = 3;
+}
+
+enum GameMode {
+  GAME_MODE_UNSPECIFIED = 0;
+  GAME_MODE_FREE_FOR_ALL = 1;
+  GAME_MODE_TEAM_DEATHMATCH = 2;
+  GAME_MODE_CAPTURE_THE_FLAG = 3;
+}
+
+enum GameState {
+  GAME_STATE_UNSPECIFIED = 0;
+  GAME_STATE_WAITING = 1;
+  GAME_STATE_STARTING = 2;
+  GAME_STATE_IN_PROGRESS = 3;
+  GAME_STATE_ENDED = 4;
+}
+
+enum MapId {
+  MAP_UNSPECIFIED = 0;
+  MAP_ARENA = 1;
+  MAP_MAZE = 2;
+  MAP_WAREHOUSE = 3;
+  MAP_CUSTOM = 4;
+}
+
+// Server -> Client: init on connect
+message Init {
+  bytes identity = 1;  // 16-byte UUID
+}
+
+// Server -> Client: success response
+message Ok {
+  bool ok = 1;
+}
+
+// Server -> Client: error response
+message Error {
+  string error = 1;
+}
+
+// Lobby payload (full)
+message Lobby {
+  uint64 id = 1;
+  string name = 2;
+  bytes host_id = 3;  // 16-byte UUID
+  MapId map_id = 4;
+  repeated MapId map_pool = 5;
+  uint32 max_players = 6;
+  GameMode game_mode = 7;
+  GameState game_state = 8;
+  int32 score_limit = 9;
+  int32 flag_limit = 10;
+  optional uint64 next_round_starts_at_ms = 11;
+  bool is_custom_map = 12;
+  optional string map_json = 13;
+}
+
+// Full player payload (profile + realtime) - synced on join / lobby_state
+message Player {
+  bytes id = 1;  // 16-byte UUID
+  string name = 2;
+  float position_x = 3;
+  float position_y = 4;
+  float position_z = 5;
+  int32 health = 6;
+  int32 kills = 7;
+  int32 deaths = 8;
+  int32 team = 9;
+  float color_r = 10;
+  float color_g = 11;
+  float color_b = 12;
+  uint32 design_id = 13;
+  float secondary_color_r = 14;
+  float secondary_color_g = 15;
+  float secondary_color_b = 16;
+  WeaponType weapon = 17;
+  SecondaryType secondary = 18;
+  float velocity_x = 19;
+  float velocity_y = 20;
+  float velocity_z = 21;
+  uint64 server_snapshot_id = 22;
+  bool is_alive = 23;
+  int32 grenade_count = 24;
+  int32 molotov_count = 25;
+  optional int64 last_shot_at = 26;
+  optional int64 last_grenade_thrown_at = 27;
+  float aim_x = 28;
+  float aim_z = 29;
+}
+
+// Profile (appearance) - synced on join and when a new player spawns
+message PlayerProfile {
+  bytes id = 1;
+  string name = 2;
+  int32 team = 3;
+  float color_r = 4;
+  float color_g = 5;
+  float color_b = 6;
+  uint32 design_id = 7;
+  float secondary_color_r = 8;
+  float secondary_color_g = 9;
+  float secondary_color_b = 10;
+  WeaponType weapon = 11;
+  SecondaryType secondary = 12;
+}
+
+// Realtime data - sent every tick in delta
+message PlayerRealtime {
+  bytes id = 1;
+  int32 team = 2;
+  WeaponType weapon = 3;
+  SecondaryType secondary = 4;
+  float position_x = 5;
+  float position_y = 6;
+  float position_z = 7;
+  int32 health = 8;
+  int32 kills = 9;
+  int32 deaths = 10;
+  float velocity_x = 11;
+  float velocity_y = 12;
+  float velocity_z = 13;
+  uint64 server_snapshot_id = 14;
+  bool is_alive = 15;
+  int32 grenade_count = 16;
+  int32 molotov_count = 17;
+  optional int64 last_shot_at = 18;
+  optional int64 last_grenade_thrown_at = 19;
+  float aim_x = 20;
+  float aim_z = 21;
+}
+
+// Server -> Client: full lobby state (on join)
+message LobbyState {
+  uint64 snapshot_id = 1;
+  uint64 last_delta_id = 2;
+  Lobby lobby = 3;
+  repeated Player players = 4;
+}
+
+// Lobby summary for list
+message LobbySummary {
+  uint64 id = 1;
+  string name = 2;
+  bytes host_id = 3;
+  MapId map_id = 4;
+  repeated MapId map_pool = 5;
+  uint32 max_players = 6;
+  uint32 player_count = 7;
+  GameMode game_mode = 8;
+  GameState game_state = 9;
+  bool has_password = 10;
+  int32 score_limit = 11;
+  int32 flag_limit = 12;
+  optional uint64 next_round_starts_at_ms = 13;
+  bool is_custom_map = 14;
+}
+
+// Server -> Client: list of available lobbies
+message LobbyList {
+  repeated LobbySummary lobbies = 1;
+}
+
+// Sent when a new player spawns (broadcast to lobby)
+message PlayerJoined {
+  PlayerProfile player = 1;
+}
+
+// Sent when a player leaves a lobby (broadcast to lobby)
+message PlayerLeft {
+  bytes player_id = 1;  // 16-byte UUID
+}
+
+// Game ended
+message GameEnded {
+  uint64 lobby_id = 1;
+  optional int32 winner_team = 2;
+  optional bytes winner_player_identity = 3;
+  optional string winner_player_name = 4;
+  MapId next_map_id = 5;
+  uint64 countdown_ms = 6;
+}
+
+// Shot event
+message ShotEvent {
+  bytes player_id = 1;
+  WeaponType weapon = 2;
+  uint32 projectile_type = 3;
+  float position_x = 4;
+  float position_y = 5;
+  float position_z = 6;
+  float velocity_x = 7;
+  float velocity_y = 8;
+  float velocity_z = 9;
+}
+
+// Grenade insert
+message GrenadeInsert {
+  uint64 rigid_body_id = 1;
+  float position_x = 2;
+  float position_y = 3;
+  float position_z = 4;
+  float velocity_x = 5;
+  float velocity_y = 6;
+  float velocity_z = 7;
+  bytes owner_id = 8;
+  float owner_color_r = 9;
+  float owner_color_g = 10;
+  float owner_color_b = 11;
+}
+
+// Grenade delete
+message GrenadeDelete {
+  uint64 rigid_body_id = 1;
+}
+
+// Grenade update
+message GrenadeUpdate {
+  uint64 rigid_body_id = 1;
+  float position_x = 2;
+  float position_y = 3;
+  float position_z = 4;
+  float velocity_x = 5;
+  float velocity_y = 6;
+  float velocity_z = 7;
+}
+
+// Kill event (weapon is damage source: "bullet", "photon", "grenade", etc.)
+message KillEvent {
+  bytes killer_id = 1;
+  string killer_name = 2;
+  bytes victim_id = 3;
+  string victim_name = 4;
+  string weapon = 5;
+  uint64 timestamp = 6;
+}
+
+// Photon beam
+message PhotonBeam {
+  uint64 id = 1;
+  bytes owner_id = 2;
+  float origin_x = 3;
+  float origin_y = 4;
+  float origin_z = 5;
+  float end_x = 6;
+  float end_y = 7;
+  float end_z = 8;
+  int32 remaining_ticks = 9;
+}
+
+// Server -> Client: incremental update (each tick)
+message Delta {
+  uint64 tick = 1;
+  uint64 delta_id = 2;
+  uint64 base_snapshot_id = 3;
+  repeated PlayerRealtime players = 4;
+  repeated ShotEvent shot_events = 5;
+  repeated GrenadeInsert grenade_inserts = 6;
+  repeated GrenadeDelete grenade_deletes = 7;
+  repeated GrenadeUpdate grenade_updates = 8;
+  repeated KillEvent kill_events = 9;
+  repeated PhotonBeam photon_beams = 10;
+}
+
+// Top-level wrapper: all server->client messages
+message ServerMessage {
+  oneof message {
+    Init init = 1;
+    Ok ok = 2;
+    Error error = 3;
+    LobbyState lobby_state = 4;
+    LobbyList lobby_list = 5;
+    Delta delta = 6;
+    PlayerJoined player_joined = 7;
+    PlayerLeft player_left = 8;
+    GameEnded game_ended = 9;
+  }
+}
+
+// Client -> Server: all actions
+message ClientMessage {
+  oneof message {
+    Authenticate authenticate = 1;
+    ListLobbies list_lobbies = 2;
+    CreateLobby create_lobby = 3;
+    JoinLobby join_lobby = 4;
+    RequestLobbyState request_lobby_state = 5;
+    LeaveLobby leave_lobby = 6;
+    SetReady set_ready = 7;
+    StartGame start_game = 8;
+    EndGame end_game = 9;
+    RequestSpawn request_spawn = 10;
+    UpdateInput update_input = 11;
+    SetShooting set_shooting = 12;
+    SetLoadout set_loadout = 13;
+    SetMarbleConfig set_marble_config = 14;
+    Shoot shoot = 15;
+    DetonateRocket detonate_rocket = 16;
+    ThrowGrenade throw_grenade = 17;
+    ThrowMolotov throw_molotov = 18;
+    UseSecondary use_secondary = 19;
+  }
+}
+
+message Authenticate { string access_token = 1; }
+message ListLobbies {}
+message CreateLobby {
+  string name = 1;
+  string host_player_name = 2;
+  MapId map_id = 3;
+  repeated MapId map_pool = 4;
+  GameMode game_mode = 5;
+  uint32 max_players = 6;
+  int32 score_limit = 7;
+  int32 flag_limit = 8;
+  string password = 9;
+  optional string custom_map_json = 10;
+}
+message JoinLobby {
+  uint64 lobby_id = 1;
+  string player_name = 2;
+  string password = 3;
+}
+message RequestLobbyState {}
+message LeaveLobby {}
+message SetReady { bool ready = 1; }
+message StartGame {}
+message EndGame { uint64 lobby_id = 1; }
+message RequestSpawn {
+  WeaponType weapon = 1;
+  SecondaryType secondary = 2;
+}
+message UpdateInput {
+  float input_x = 1;
+  float input_z = 2;
+  float aim_x = 3;
+  float aim_z = 4;
+}
+message SetShooting {
+  bool is_shooting = 1;
+  float aim_x = 2;
+  float aim_z = 3;
+}
+message SetLoadout {
+  WeaponType weapon = 1;
+  SecondaryType secondary = 2;
+}
+message SetMarbleConfig {
+  uint32 design_id = 1;
+  float main_r = 2;
+  float main_g = 3;
+  float main_b = 4;
+  float sec_r = 5;
+  float sec_g = 6;
+  float sec_b = 7;
+}
+message Shoot {}
+message DetonateRocket {}
+message ThrowGrenade { float aim_x = 1; float aim_z = 2; }
+message ThrowMolotov { float aim_x = 1; float aim_z = 2; }
+message UseSecondary {}

@@ -1,44 +1,290 @@
 /**
  * WebSocket client for the new Rust Gyrii server.
  * Use when NEXT_PUBLIC_GYRII_USE_NEW_SERVER=true.
+ * Uses binary protobuf for all messages (client and server).
  */
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { canonicalPlayerId, useGyriiStore } from "../store/gameStore";
 import type { Player } from "../store/gameStore";
+import {
+  GameMode,
+  GameState,
+  MapId,
+  type Player as ProtoPlayer,
+  type PlayerRealtime as ProtoPlayerRealtime,
+  type PlayerProfile as ProtoPlayerProfile,
+  type Lobby as ProtoLobby,
+  type LobbySummary as ProtoLobbySummary,
+  WeaponType as ProtoWeaponType,
+  SecondaryType as ProtoSecondaryType,
+} from "../proto-gen/gyrii_pb";
+import * as transport from "../services/gyriiTransport";
+import * as gyriiClient from "../services/gyriiClient";
+import * as messageRouter from "../services/gyriiMessageRouter";
+const DELTA_GAP_TIMEOUT_MS = 33;
+const lastAppliedDeltaIdByLobby = new Map<string, number>();
+const pendingDeltasByLobby = new Map<string, Map<number, any>>();
+const gapTimersByLobby = new Map<string, ReturnType<typeof setTimeout>>();
+let unregisterMessageHandler: (() => void) | null = null;
 
-const GYRII_SERVER_WS =
-  process.env.NEXT_PUBLIC_GYRII_SERVER_WS || "ws://localhost:4000";
+function bytesToUuidString(bytes: Uint8Array): string {
+  const hex = Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+  if (hex.length === 32) {
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+  }
+  return hex;
+}
 
-let ws: WebSocket | null = null;
-let identity: string | null = null;
-let isActive = false;
-let isConnecting = false;
+function weaponProtoToStr(n: number): string {
+  const m: Record<number, string> = {
+    [ProtoWeaponType.WEAPON_SMG]: "smg",
+    [ProtoWeaponType.WEAPON_DUAL_MACHINE_GUN]: "dualMachineGun",
+    [ProtoWeaponType.WEAPON_CHAIN_GUN]: "chainGun",
+    [ProtoWeaponType.WEAPON_PHOTON_RIFLE]: "photonRifle",
+    [ProtoWeaponType.WEAPON_BAZOOKA]: "bazooka",
+    [ProtoWeaponType.WEAPON_FLAMETHROWER]: "flamethrower",
+    [ProtoWeaponType.WEAPON_SHOTGUN]: "shotgun",
+  };
+  return m[n] ?? "smg";
+}
 
-function playerFromPayload(p: {
-  id: string;
-  name: string;
-  position: number[];
-  health: number;
-  kills: number;
-  deaths: number;
-  team: number;
-  color: number[];
-  design_id?: number;
-  secondary_color?: number[];
-  weapon: string;
-  secondary: string;
-  velocity: number[];
-  server_snapshot_id?: number;
-  is_alive: boolean;
-  grenade_count: number;
-  molotov_count: number;
-  last_shot_at?: number;
-  last_grenade_thrown_at?: number;
-  aim_x?: number;
-  aim_z?: number;
-}): Player {
+function secondaryProtoToStr(n: number): string {
+  const m: Record<number, string> = {
+    [ProtoSecondaryType.SECONDARY_POPUP_KNIVES]: "popupKnives",
+    [ProtoSecondaryType.SECONDARY_BUBBLE_SHIELD]: "bubbleShield",
+    [ProtoSecondaryType.SECONDARY_SELF_DESTRUCT_NUKE]: "selfDestructNuke",
+  };
+  return m[n] ?? "popupKnives";
+}
+
+function gameModeProtoToStr(n: number): string {
+  const m: Record<number, string> = {
+    [GameMode.FREE_FOR_ALL]: "freeForAll",
+    [GameMode.TEAM_DEATHMATCH]: "teamDeathmatch",
+    [GameMode.CAPTURE_THE_FLAG]: "captureTheFlag",
+  };
+  return m[n] ?? "freeForAll";
+}
+
+function gameStateProtoToStr(n: number): string {
+  const m: Record<number, string> = {
+    [GameState.WAITING]: "waiting",
+    [GameState.STARTING]: "starting",
+    [GameState.IN_PROGRESS]: "inProgress",
+    [GameState.ENDED]: "ended",
+  };
+  return m[n] ?? "waiting";
+}
+
+function mapIdProtoToStr(n: number): string {
+  const m: Record<number, string> = {
+    [MapId.MAP_ARENA]: "arena",
+    [MapId.MAP_MAZE]: "maze",
+    [MapId.MAP_WAREHOUSE]: "warehouse",
+    [MapId.MAP_CUSTOM]: "custom",
+  };
+  return m[n] ?? "arena";
+}
+
+function protoPlayerToJson(
+  p: ProtoPlayer,
+): Parameters<typeof playerFromPayload>[0] {
+  return {
+    id: bytesToUuidString(p.id),
+    name: p.name,
+    position: [p.positionX, p.positionY, p.positionZ],
+    color: [p.colorR, p.colorG, p.colorB],
+    secondary_color: [p.secondaryColorR, p.secondaryColorG, p.secondaryColorB],
+    weapon: weaponProtoToStr(p.weapon),
+    secondary: secondaryProtoToStr(p.secondary),
+    velocity: [p.velocityX, p.velocityY, p.velocityZ],
+    server_snapshot_id: Number(p.serverSnapshotId),
+    design_id: p.designId,
+    health: p.health,
+    kills: p.kills,
+    deaths: p.deaths,
+    team: p.team,
+    is_alive: p.isAlive,
+    grenade_count: p.grenadeCount,
+    molotov_count: p.molotovCount,
+    last_shot_at: p.lastShotAt,
+    last_grenade_thrown_at: p.lastGrenadeThrownAt,
+    aim_x: p.aimX,
+    aim_z: p.aimZ,
+  } as any;
+}
+
+function protoPlayerRealtimeToJson(
+  p: ProtoPlayerRealtime,
+): Parameters<typeof realtimeFromPayload>[0] {
+  return {
+    id: bytesToUuidString(p.id),
+    team: p.team,
+    weapon: weaponProtoToStr(p.weapon),
+    secondary: secondaryProtoToStr(p.secondary),
+    position: [p.positionX, p.positionY, p.positionZ],
+    health: p.health,
+    kills: p.kills,
+    deaths: p.deaths,
+    velocity: [p.velocityX, p.velocityY, p.velocityZ],
+    server_snapshot_id: Number(p.serverSnapshotId),
+    is_alive: p.isAlive,
+    grenade_count: p.grenadeCount,
+    molotov_count: p.molotovCount,
+    last_shot_at: p.lastShotAt,
+    last_grenade_thrown_at: p.lastGrenadeThrownAt,
+    aim_x: p.aimX,
+    aim_z: p.aimZ,
+  } as any;
+}
+
+function protoProfileToJson(
+  p: ProtoPlayerProfile,
+): Parameters<typeof profileFromPayload>[0] {
+  return {
+    id: bytesToUuidString(p.id),
+    name: p.name,
+    team: p.team,
+    color: [p.colorR, p.colorG, p.colorB],
+    secondary_color: [p.secondaryColorR, p.secondaryColorG, p.secondaryColorB],
+    design_id: p.designId,
+    weapon: weaponProtoToStr(p.weapon),
+    secondary: secondaryProtoToStr(p.secondary),
+  } as any;
+}
+
+function protoLobbyToJson(l: ProtoLobby): any {
+  return {
+    id: String(l.id),
+    name: l.name,
+    host_id: bytesToUuidString(l.hostId),
+    map_id: mapIdProtoToStr(l.mapId),
+    map_pool: l.mapPool.map(mapIdProtoToStr),
+    max_players: l.maxPlayers,
+    game_mode: gameModeProtoToStr(l.gameMode),
+    game_state: gameStateProtoToStr(l.gameState),
+    score_limit: l.scoreLimit,
+    flag_limit: l.flagLimit,
+    next_round_starts_at_ms: l.nextRoundStartsAtMs,
+    is_custom_map: l.isCustomMap ?? false,
+    map_json: l.mapJson,
+  };
+}
+
+function protoLobbySummaryToJson(l: ProtoLobbySummary): any {
+  return {
+    id: String(l.id),
+    name: l.name,
+    host_id: bytesToUuidString(l.hostId),
+    map_id: mapIdProtoToStr(l.mapId),
+    map_pool: l.mapPool.map(mapIdProtoToStr),
+    max_players: l.maxPlayers,
+    player_count: l.playerCount,
+    game_mode: gameModeProtoToStr(l.gameMode),
+    game_state: gameStateProtoToStr(l.gameState),
+    has_password: l.hasPassword,
+    score_limit: l.scoreLimit,
+    flag_limit: l.flagLimit,
+    next_round_starts_at_ms: l.nextRoundStartsAtMs,
+    is_custom_map: l.isCustomMap ?? false,
+  };
+}
+
+function protoDeltaToMsg(d: import("../proto-gen/gyrii_pb").Delta): any {
+  return {
+    delta_id: Number(d.deltaId),
+    base_snapshot_id: Number(d.baseSnapshotId),
+    players: d.players.map((p) => protoPlayerRealtimeToJson(p)),
+    shot_events: d.shotEvents.map((e) => ({
+      player_id: bytesToUuidString(e.playerId),
+      weapon: weaponProtoToStr(e.weapon),
+      projectile_type: e.projectileType ?? 0,
+      position: [e.positionX, e.positionY, e.positionZ],
+      velocity: [e.velocityX, e.velocityY, e.velocityZ],
+    })),
+    grenade_inserts: d.grenadeInserts.map((g) => ({
+      rigid_body_id: Number(g.rigidBodyId),
+      position: [g.positionX, g.positionY, g.positionZ],
+      velocity: [g.velocityX, g.velocityY, g.velocityZ],
+      owner_id: bytesToUuidString(g.ownerId),
+      owner_color: [g.ownerColorR, g.ownerColorG, g.ownerColorB],
+    })),
+    grenade_deletes: d.grenadeDeletes.map((g) => ({
+      rigid_body_id: Number(g.rigidBodyId),
+    })),
+    grenade_updates: d.grenadeUpdates.map((g) => ({
+      rigid_body_id: Number(g.rigidBodyId),
+      position: [g.positionX, g.positionY, g.positionZ],
+      velocity: [g.velocityX, g.velocityY, g.velocityZ],
+    })),
+    kill_events: d.killEvents.map((k) => ({
+      killer_id: bytesToUuidString(k.killerId),
+      killer_name: k.killerName ?? "",
+      victim_id: bytesToUuidString(k.victimId),
+      victim_name: k.victimName ?? "",
+      weapon: k.weapon ?? "",
+      timestamp: Number(k.timestamp ?? 0),
+    })),
+    photon_beams: d.photonBeams.map((b) => ({
+      id: Number(b.id),
+      owner_id: bytesToUuidString(b.ownerId),
+      origin_x: b.originX,
+      origin_y: b.originY,
+      origin_z: b.originZ,
+      end_x: b.endX,
+      end_y: b.endY,
+      end_z: b.endZ,
+      remaining_ticks: b.remainingTicks ?? 0,
+    })),
+  };
+}
+
+function clearDeltaTracking(lobbyId?: string) {
+  if (lobbyId) {
+    const timer = gapTimersByLobby.get(lobbyId);
+    if (timer) clearTimeout(timer);
+    gapTimersByLobby.delete(lobbyId);
+    pendingDeltasByLobby.delete(lobbyId);
+    return;
+  }
+  for (const timer of gapTimersByLobby.values()) {
+    clearTimeout(timer);
+  }
+  gapTimersByLobby.clear();
+  pendingDeltasByLobby.clear();
+  lastAppliedDeltaIdByLobby.clear();
+}
+
+function playerFromPayload(
+  p: {
+    id: string;
+    name: string;
+    position: number[];
+    health: number;
+    kills: number;
+    deaths: number;
+    team: number;
+    color: number[];
+    design_id?: number;
+    secondary_color?: number[];
+    weapon: string;
+    secondary: string;
+    velocity: number[];
+    server_snapshot_id?: number;
+    is_alive: boolean;
+    grenade_count: number;
+    molotov_count: number;
+    last_shot_at?: number;
+    last_grenade_thrown_at?: number;
+    aim_x?: number;
+    aim_z?: number;
+  },
+  fallbackSnapshotId = 0,
+): Player {
   const id = canonicalPlayerId(p.id);
   const mainColor = {
     r: Math.round((p.color?.[0] ?? 0) * 255),
@@ -79,8 +325,11 @@ function playerFromPayload(p: {
     secondary: (p.secondary as Player["secondary"]) ?? "popupKnives",
     grenadeCount: p.grenade_count ?? 2,
     molotovCount: p.molotov_count ?? 1,
-    lastShotAt: p.last_shot_at,
-    lastGrenadeThrownAt: p.last_grenade_thrown_at,
+    lastShotAt: p.last_shot_at != null ? Number(p.last_shot_at) : undefined,
+    lastGrenadeThrownAt:
+      p.last_grenade_thrown_at != null
+        ? Number(p.last_grenade_thrown_at)
+        : undefined,
     aimDirection:
       p.aim_x != null && p.aim_z != null
         ? { x: p.aim_x, z: p.aim_z }
@@ -90,7 +339,7 @@ function playerFromPayload(p: {
       y: p.velocity?.[1] ?? 0,
       z: p.velocity?.[2] ?? 0,
     },
-    serverSnapshotId: p.server_snapshot_id ?? 0,
+    serverSnapshotId: Number(p.server_snapshot_id ?? fallbackSnapshotId) || 0,
     isAlive: p.is_alive ?? true,
   };
 }
@@ -114,6 +363,8 @@ function lobbyFromPayload(l: any, playerCount: number) {
     scoreLimit: l.score_limit ?? 25,
     flagLimit: l.flag_limit ?? 3,
     nextRoundStartsAtMs: l.next_round_starts_at_ms ?? undefined,
+    isCustomMap: l.is_custom_map ?? false,
+    mapJson: l.map_json,
   };
 }
 
@@ -136,6 +387,7 @@ function lobbySummaryToStore(l: any) {
     scoreLimit: l.score_limit ?? 25,
     flagLimit: l.flag_limit ?? 3,
     nextRoundStartsAtMs: l.next_round_starts_at_ms ?? undefined,
+    isCustomMap: l.is_custom_map ?? false,
   };
 }
 
@@ -143,15 +395,23 @@ function applyLobbyState(msg: any) {
   const store = useGyriiStore.getState();
   store.clearPlayers();
   const lobby = lobbyFromPayload(msg.lobby, msg.players?.length ?? 0);
+  const snapshotId = Number(msg.snapshot_id ?? 0) || 0;
+  const lastDeltaId = Number(msg.last_delta_id ?? 0) || 0;
+  clearDeltaTracking(lobby.id);
+  lastAppliedDeltaIdByLobby.set(lobby.id, lastDeltaId);
   store.setCurrentLobby(lobby);
   if (lobby.gameState !== "ended") {
     store.setRoundEndedBanner(null);
   }
-  const ourId = canonicalPlayerId(identity ?? "");
+  const ourId = canonicalPlayerId(transport.getIdentity() ?? "");
+  let didSetLocalPlayer = false;
+  let localPlayerIsAlive: boolean | undefined;
   for (const p of msg.players ?? []) {
-    const player = playerFromPayload(p);
+    const player = playerFromPayload(p, snapshotId);
     if (player.id === ourId) {
       store.setLocalPlayer(player);
+      didSetLocalPlayer = true;
+      localPlayerIsAlive = player.isAlive;
     } else {
       store.updatePlayer(player.id, player);
     }
@@ -234,7 +494,7 @@ function applyPlayerJoined(msg: any) {
   if (!p?.id) return;
   const profile = profileFromPayload(p);
   const id = profile.id!;
-  const ourId = canonicalPlayerId(identity ?? "");
+  const ourId = canonicalPlayerId(transport.getIdentity() ?? "");
   // Merge profile into existing player, or create minimal placeholder (realtime will fill in)
   const existing = id === ourId ? store.localPlayer : store.players.get(id);
   const merged: import("../store/gameStore").Player = {
@@ -320,8 +580,11 @@ function realtimeFromPayload(
     isAlive: p.is_alive ?? true,
     grenadeCount: p.grenade_count ?? 2,
     molotovCount: p.molotov_count ?? 1,
-    lastShotAt: p.last_shot_at,
-    lastGrenadeThrownAt: p.last_grenade_thrown_at,
+    lastShotAt: p.last_shot_at != null ? Number(p.last_shot_at) : undefined,
+    lastGrenadeThrownAt:
+      p.last_grenade_thrown_at != null
+        ? Number(p.last_grenade_thrown_at)
+        : undefined,
     aimDirection:
       p.aim_x != null && p.aim_z != null
         ? { x: p.aim_x, z: p.aim_z }
@@ -344,13 +607,59 @@ const DEFAULT_PROFILE: Partial<import("../store/gameStore").Player> = {
 
 function applyDelta(msg: any) {
   const store = useGyriiStore.getState();
-  const ourId = canonicalPlayerId(identity ?? "");
-  const deltaTick = Number(msg.tick ?? 0) || 0;
+  const lobbyId = String(store.currentLobby?.id ?? "");
+  if (!lobbyId) return;
+  const deltaId = Number(msg.delta_id ?? 0) || 0;
+  if (deltaId <= 0) {
+    applyCommittedDelta(msg);
+    return;
+  }
+
+  const pending = pendingDeltasByLobby.get(lobbyId) ?? new Map<number, any>();
+  pending.set(deltaId, msg);
+  pendingDeltasByLobby.set(lobbyId, pending);
+
+  let lastApplied = lastAppliedDeltaIdByLobby.get(lobbyId) ?? 0;
+  if (deltaId <= lastApplied) {
+    pending.delete(deltaId);
+    return;
+  }
+
+  while (pending.has(lastApplied + 1)) {
+    const next = pending.get(lastApplied + 1);
+    pending.delete(lastApplied + 1);
+    applyCommittedDelta(next);
+    lastApplied += 1;
+    lastAppliedDeltaIdByLobby.set(lobbyId, lastApplied);
+  }
+
+  const hasGap = pending.size > 0;
+  const existingTimer = gapTimersByLobby.get(lobbyId);
+  if (existingTimer) {
+    clearTimeout(existingTimer);
+    gapTimersByLobby.delete(lobbyId);
+  }
+  if (!hasGap) return;
+
+  const timer = setTimeout(() => {
+    const outstanding = pendingDeltasByLobby.get(lobbyId);
+    const stillHasGap = outstanding != null && outstanding.size > 0;
+    if (!stillHasGap) return;
+    // Missing delta(s) after short wait: ask server for authoritative snapshot resync.
+    gyriiClient.requestLobbyState();
+    pendingDeltasByLobby.set(lobbyId, new Map());
+  }, DELTA_GAP_TIMEOUT_MS);
+  gapTimersByLobby.set(lobbyId, timer);
+}
+
+function applyCommittedDelta(msg: any) {
+  const store = useGyriiStore.getState();
+  const ourId = canonicalPlayerId(transport.getIdentity() ?? "");
+  const deltaId = Number(msg.delta_id ?? 0) || 0;
+  const baseSnapshotId = Number(msg.base_snapshot_id ?? 0) || 0;
+  const authoritativeFrameId = deltaId > 0 ? deltaId : baseSnapshotId;
   for (const p of msg.players ?? []) {
-    const incomingSnapshotId = Math.max(
-      Number(p.server_snapshot_id ?? 0) || 0,
-      deltaTick,
-    );
+    const incomingSnapshotId = authoritativeFrameId;
     const id = canonicalPlayerId(p.id ?? "");
     if (!id) continue;
     const existing = id === ourId ? store.localPlayer : store.players.get(id);
@@ -358,7 +667,7 @@ function applyDelta(msg: any) {
     // Ignore stale or duplicate realtime payloads for this player.
     if (incomingSnapshotId <= existingSnapshotId) continue;
 
-    const realtime = realtimeFromPayload(p, deltaTick);
+    const realtime = realtimeFromPayload(p, authoritativeFrameId);
     const base =
       existing ??
       ({
@@ -386,7 +695,7 @@ function applyDelta(msg: any) {
 
   for (const e of msg.shot_events ?? []) {
     store.addPendingShotEvent({
-      playerId: e.player_id,
+      playerId: canonicalPlayerId(e.player_id ?? ""),
       weapon: (e.weapon ?? "smg") as import("../store/gameStore").WeaponType,
       projectileType: e.projectile_type ?? 0,
       position: {
@@ -476,224 +785,263 @@ function applyDelta(msg: any) {
   }
 }
 
-function sendAction(action: string, params: Record<string, unknown> = {}) {
-  if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  ws.send(JSON.stringify({ action, params }));
+/** Direct spawn action - call from anywhere to bypass hook/callback issues */
+export function requestSpawnAction(
+  weapon:
+    | "smg"
+    | "dualMachineGun"
+    | "chainGun"
+    | "photonRifle"
+    | "bazooka"
+    | "flamethrower" = "dualMachineGun",
+  secondary:
+    | "popupKnives"
+    | "bubbleShield"
+    | "selfDestructNuke" = "popupKnives",
+) {
+  gyriiClient.requestSpawn(weapon, secondary);
+}
+
+function setupMessageHandler() {
+  if (unregisterMessageHandler) return;
+  transport.onMessage((data) => messageRouter.dispatch(data));
+  unregisterMessageHandler = messageRouter.register(
+    ({ case: msgCase, value }) => {
+      switch (msgCase) {
+        case "init":
+          transport.setIdentityFromInit(
+            (value as { identity: Uint8Array }).identity,
+          );
+          clearDeltaTracking();
+          break;
+        case "ok":
+          break;
+        case "error":
+          console.warn(
+            "Gyrii server action error:",
+            (value as { error: string }).error,
+          );
+          break;
+        case "lobbyState": {
+          const ls = value as {
+            lobby?: import("../proto-gen/gyrii_pb").Lobby;
+            players?: import("../proto-gen/gyrii_pb").Player[];
+            snapshotId?: bigint;
+            lastDeltaId?: bigint;
+          };
+          const lobby = ls.lobby;
+          if (!lobby) break;
+          applyLobbyState({
+            lobby: protoLobbyToJson(lobby),
+            players: (ls.players ?? []).map(protoPlayerToJson),
+            snapshot_id: Number(ls.snapshotId ?? 0),
+            last_delta_id: Number(ls.lastDeltaId ?? 0),
+          });
+          break;
+        }
+        case "lobbyList":
+          applyLobbyList({
+            lobbies: (
+              (
+                value as {
+                  lobbies: import("../proto-gen/gyrii_pb").LobbySummary[];
+                }
+              ).lobbies ?? []
+            ).map(protoLobbySummaryToJson),
+          });
+          break;
+        case "delta":
+          applyDelta(
+            protoDeltaToMsg(value as import("../proto-gen/gyrii_pb").Delta),
+          );
+          break;
+        case "playerJoined": {
+          const p = (
+            value as { player?: import("../proto-gen/gyrii_pb").PlayerProfile }
+          ).player;
+          if (p) applyPlayerJoined({ player: protoProfileToJson(p) });
+          break;
+        }
+        case "playerLeft":
+          applyPlayerLeft({
+            player_id: bytesToUuidString(
+              (value as { playerId: Uint8Array }).playerId,
+            ),
+          });
+          break;
+        case "gameEnded": {
+          const ge = value as {
+            lobbyId?: bigint;
+            winnerTeam?: number;
+            winnerPlayerIdentity?: Uint8Array;
+            winnerPlayerName?: string;
+            nextMapId?: number;
+            countdownMs?: bigint;
+          };
+          applyGameEnded({
+            lobby_id: String(ge.lobbyId ?? ""),
+            winner_team: ge.winnerTeam ?? undefined,
+            winner_player_identity: ge.winnerPlayerIdentity
+              ? bytesToUuidString(ge.winnerPlayerIdentity)
+              : undefined,
+            winner_player_name: ge.winnerPlayerName ?? undefined,
+            next_map_id: mapIdProtoToStr(ge.nextMapId ?? 0),
+            countdown_ms: Number(ge.countdownMs ?? 5000),
+          });
+          break;
+        }
+        default:
+          break;
+      }
+    },
+  );
 }
 
 export function activateGyriiServer() {
-  isActive = true;
-  connect();
+  transport.setActive(true);
+  setupMessageHandler();
+  transport.connect(
+    (connecting, connected) => {
+      useGyriiStore.getState().setConnecting(connecting);
+      useGyriiStore.getState().setConnected(connected);
+      if (!connected) {
+        useGyriiStore
+          .getState()
+          .setConnectionError(connecting ? null : "WebSocket disconnected");
+        useGyriiStore.getState().setCurrentLobby(null);
+        useGyriiStore.getState().setPendingLeaveLobby(false);
+        useGyriiStore.getState().clearPlayers();
+        useGyriiStore.getState().setRoundEndedBanner(null);
+        clearDeltaTracking();
+      }
+    },
+    () => {
+      clearDeltaTracking();
+      const supabase = createClient();
+      supabase.auth.getSession().then(({ data }) => {
+        const accessToken = data.session?.access_token;
+        if (accessToken) gyriiClient.authenticate(accessToken);
+      });
+      gyriiClient.listLobbies();
+    },
+  );
 }
 
 export function deactivateGyriiServer() {
-  isActive = false;
-  if (ws) {
-    ws.close();
-    ws = null;
-  }
-  identity = null;
+  unregisterMessageHandler?.();
+  unregisterMessageHandler = null;
+  transport.disconnect();
   useGyriiStore.getState().setConnected(false);
   useGyriiStore.getState().setConnecting(false);
   useGyriiStore.getState().setConnectionError(null);
   useGyriiStore.getState().setCurrentLobby(null);
   useGyriiStore.getState().clearPlayers();
   useGyriiStore.getState().setRoundEndedBanner(null);
-}
-
-function connect() {
-  if (!isActive || ws || isConnecting) return;
-  isConnecting = true;
-  useGyriiStore.getState().setConnecting(true);
-  useGyriiStore.getState().setConnectionError(null);
-
-  const url = GYRII_SERVER_WS.replace(/^http/, "ws");
-  ws = new WebSocket(url);
-
-  ws.onopen = () => {
-    isConnecting = false;
-    useGyriiStore.getState().setConnected(true);
-    useGyriiStore.getState().setConnecting(false);
-    const supabase = createClient();
-    supabase.auth.getSession().then(({ data }) => {
-      const accessToken = data.session?.access_token;
-      if (accessToken) {
-        sendAction("authenticate", { accessToken });
-      }
-    });
-    sendAction("list_lobbies", {});
-  };
-
-  ws.onmessage = (event) => {
-    try {
-      const msg = JSON.parse(event.data);
-      if (msg.type === "init") {
-        identity = msg.identity ?? null;
-      } else if (msg.type === "lobby_state") {
-        applyLobbyState(msg);
-      } else if (msg.type === "lobby_list") {
-        applyLobbyList(msg);
-      } else if (msg.type === "delta") {
-        applyDelta(msg);
-      } else if (msg.type === "player_joined") {
-        applyPlayerJoined(msg);
-      } else if (msg.type === "player_left") {
-        applyPlayerLeft(msg);
-      } else if (msg.type === "game_ended") {
-        applyGameEnded(msg);
-      }
-    } catch (_) {}
-  };
-
-  ws.onclose = () => {
-    isConnecting = false;
-    ws = null;
-    useGyriiStore.getState().setConnected(false);
-    // Return to gyrii page (lobby list) when disconnected, same as leaving the game
-    useGyriiStore.getState().setCurrentLobby(null);
-    useGyriiStore.getState().setPendingLeaveLobby(false);
-    useGyriiStore.getState().clearPlayers();
-    useGyriiStore.getState().setRoundEndedBanner(null);
-    if (isActive) {
-      setTimeout(connect, 3000);
-    }
-  };
-
-  ws.onerror = () => {
-    useGyriiStore.getState().setConnectionError("WebSocket error");
-  };
+  clearDeltaTracking();
 }
 
 export function useGyriiServer() {
-  const [isConnecting, setIsConnecting] = useState(false);
+  const isConnecting = useGyriiStore((s) => s.isConnecting);
   const isConnected = useGyriiStore((s) => s.isConnected);
-
-  useEffect(() => {
-    if (!isActive) return;
-    connect();
-  }, []);
-
-  useEffect(() => {
-    setIsConnecting(useGyriiStore.getState().isConnecting);
-  }, [isConnected]);
 
   // Poll lobby list every 2s when connected and not in a lobby
   const currentLobby = useGyriiStore((s) => s.currentLobby);
   useEffect(() => {
     if (!isConnected || currentLobby) return;
-    sendAction("list_lobbies", {}); // Immediate fetch
-    const id = setInterval(() => sendAction("list_lobbies", {}), 2000);
+    gyriiClient.listLobbies();
+    const id = setInterval(() => gyriiClient.listLobbies(), 2000);
     return () => clearInterval(id);
   }, [isConnected, currentLobby]);
 
   const createLobby = useCallback(
-    async (
+    (
       name: string,
       hostPlayerName: string,
-      mapId: "Arena" | "Maze" | "Warehouse",
+      mapId: "Arena" | "Maze" | "Warehouse" | "Custom",
       mapPool: ("Arena" | "Maze" | "Warehouse")[],
       maxPlayers: number,
       gameMode: "FreeForAll" | "TeamDeathmatch" | "CaptureTheFlag",
       scoreLimit: number,
       flagLimit: number,
       password: string = "",
+      customMapJson?: string,
     ) => {
-      sendAction("create_lobby", {
+      gyriiClient.createLobby(
         name,
-        hostPlayerName: hostPlayerName.trim() || "Player",
-        mapId: { tag: mapId },
+        hostPlayerName,
+        mapId,
         mapPool,
-        gameMode: { tag: gameMode },
         maxPlayers,
+        gameMode,
         scoreLimit,
         flagLimit,
         password,
-      });
+        customMapJson,
+      );
     },
     [],
   );
 
   const joinLobby = useCallback(
-    async (lobbyId: number, playerName: string, password: string = "") => {
-      sendAction("join_lobby", {
-        lobbyId,
-        playerName,
-        password,
-      });
+    (lobbyId: number, playerName: string, password: string = "") => {
+      gyriiClient.joinLobby(lobbyId, playerName, password);
     },
     [],
   );
 
-  const leaveLobby = useCallback(async () => {
-    sendAction("leave_lobby", {});
+  const leaveLobby = useCallback(() => {
+    gyriiClient.leaveLobby();
     useGyriiStore.getState().setCurrentLobby(null);
     useGyriiStore.getState().clearPlayers();
+    clearDeltaTracking();
   }, []);
 
   const updateInput = useCallback(
-    async (
+    (
       directionX: number,
       directionZ: number,
       aimDirectionX: number,
       aimDirectionZ: number,
     ) => {
-      sendAction("update_input", {
-        inputX: directionX,
-        inputZ: directionZ,
-        aimX: aimDirectionX,
-        aimZ: aimDirectionZ,
-      });
+      gyriiClient.updateInput(
+        directionX,
+        directionZ,
+        aimDirectionX,
+        aimDirectionZ,
+      );
     },
     [],
   );
 
   const setShooting = useCallback(
-    async (isShooting: boolean, aimX: number, aimZ: number) => {
-      sendAction("set_shooting", { isShooting, aimX, aimZ });
+    (isShooting: boolean, aimX: number, aimZ: number) => {
+      gyriiClient.setShooting(isShooting, aimX, aimZ);
     },
     [],
   );
 
   const setMarbleConfig = useCallback(
-    async (config: import("../store/gameStore").MarbleConfig) => {
-      sendAction("set_marble_config", {
-        designId: config.designId,
-        mainR: config.mainColor.r / 255,
-        mainG: config.mainColor.g / 255,
-        mainB: config.mainColor.b / 255,
-        secR: config.secondaryColor.r / 255,
-        secG: config.secondaryColor.g / 255,
-        secB: config.secondaryColor.b / 255,
-      });
+    (config: import("../store/gameStore").MarbleConfig) => {
+      gyriiClient.setMarbleConfig(config);
     },
     [],
   );
 
-  const requestSpawn = useCallback(
-    async (weapon: string, secondary: string) => {
-      const weaponMap: Record<string, string> = {
-        smg: "Smg",
-        dualMachineGun: "DualMachineGun",
-        chainGun: "ChainGun",
-        photonRifle: "PhotonRifle",
-        bazooka: "Bazooka",
-        flamethrower: "Flamethrower",
-      };
-      const secondaryMap: Record<string, string> = {
-        popupKnives: "PopupKnives",
-        bubbleShield: "BubbleShield",
-        selfDestructNuke: "SelfDestructNuke",
-      };
-      sendAction("request_spawn", {
-        weapon: { tag: weaponMap[weapon] ?? "Smg" },
-        secondary: { tag: secondaryMap[secondary] ?? "PopupKnives" },
-      });
-    },
-    [],
-  );
+  const requestSpawn = useCallback((weapon: string, secondary: string) => {
+    gyriiClient.requestSpawn(
+      weapon as
+        | "smg"
+        | "dualMachineGun"
+        | "chainGun"
+        | "photonRifle"
+        | "bazooka"
+        | "flamethrower",
+      secondary as "popupKnives" | "bubbleShield" | "selfDestructNuke",
+    );
+  }, []);
 
   const refreshLobbies = useCallback(() => {
-    sendAction("list_lobbies", {});
+    gyriiClient.listLobbies();
   }, []);
 
   return {
@@ -705,16 +1053,16 @@ export function useGyriiServer() {
     leaveLobby,
     toggleReady: async () => {},
     startGame: async () => {
-      sendAction("start_game", {});
+      gyriiClient.startGame();
     },
     updateInput,
     setShooting,
     shoot: async () => {},
     throwGrenade: async (aimX: number, aimZ: number) => {
-      sendAction("throw_grenade", { aimX, aimZ });
+      gyriiClient.throwGrenade(aimX, aimZ);
     },
     throwMolotov: async (aimX: number, aimZ: number) => {
-      sendAction("throw_molotov", { aimX, aimZ });
+      gyriiClient.throwMolotov(aimX, aimZ);
     },
     useSecondary: async () => {},
     setLoadout: async () => {},

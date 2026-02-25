@@ -9,14 +9,17 @@ import {
   BULLET_SPEED,
   PROJECTILE_TTL_BULLET_SEC,
   PROJECTILE_TTL_ROCKET_SEC,
+  PROJECTILE_TTL_SHOTGUN_SEC,
 } from "../constants";
 import {
   PROJECTILE_TYPE_BULLET,
   PROJECTILE_TYPE_ROCKET,
+  PROJECTILE_TYPE_SHOTGUN,
   type PhotonBeamEntry,
 } from "../../store/gameStore";
 import {
   type WorldHandle,
+  castRay,
   createProjectileBody,
   getProjectilePosition,
   removeProjectileBody,
@@ -29,7 +32,8 @@ export type WeaponType =
   | "chainGun"
   | "photonRifle"
   | "bazooka"
-  | "flamethrower";
+  | "flamethrower"
+  | "shotgun";
 
 export interface WeaponConfig {
   type: WeaponType;
@@ -115,6 +119,16 @@ export const WEAPON_CONFIGS: Record<WeaponType, WeaponConfig> = {
     ammoCapacity: 100,
     reloadTime: 2,
   },
+  shotgun: {
+    type: "shotgun",
+    name: "Shotgun",
+    fireRate: 1.1,
+    damage: 102, // 6 pellets × 17, all hit = death
+    knockback: 1.2,
+    isHitscan: false,
+    ammoCapacity: 8,
+    reloadTime: 2.5,
+  },
 };
 
 /**
@@ -140,6 +154,7 @@ export class WeaponRenderer {
       velocity: BABYLON.Vector3;
       spawnTime: number;
       isRocket: boolean;
+      isShotgun: boolean;
     }
   > = new Map();
   private flameEffects: Map<string, BABYLON.ParticleSystem> = new Map();
@@ -247,20 +262,24 @@ export class WeaponRenderer {
     // Get a tracer from the pool
     const tracer = this.tracerPool.find((t) => !t.isVisible);
     if (tracer) {
-      // Calculate end point (raycast)
-      const ray = new BABYLON.Ray(origin, direction, 100);
-      const hit = this.scene.pickWithRay(
-        ray,
-        (mesh) =>
-          mesh.name !== "player" &&
-          mesh.name !== "gridGround" &&
-          !mesh.name.startsWith("weapon-") &&
-          !mesh.name.startsWith("muzzle") &&
-          !mesh.name.startsWith("debugAim-") &&
-          !mesh.name.startsWith("beam_"),
-      );
-
-      const endPoint = hit?.pickedPoint || origin.add(direction.scale(100));
+      // Calculate end point via Rapier raycast (no mesh picking)
+      const dir = direction.normalize();
+      const hitPoint =
+        this.physicsHandle &&
+        castRay(
+          this.physicsHandle,
+          origin.x,
+          origin.y,
+          origin.z,
+          dir.x,
+          dir.y,
+          dir.z,
+          100,
+        );
+      const endPoint =
+        hitPoint != null
+          ? new BABYLON.Vector3(hitPoint.x, hitPoint.y, hitPoint.z)
+          : origin.add(direction.scale(100));
 
       // Position and orient tracer
       const midPoint = BABYLON.Vector3.Center(origin, endPoint);
@@ -291,9 +310,12 @@ export class WeaponRenderer {
         config.type === "photonRifle" ? 200 : 50,
       );
 
-      // Callback for hit
-      if (hit?.pickedPoint && hitCallback) {
-        hitCallback(hit.pickedPoint, hit.pickedMesh || undefined);
+      // Callback for hit (hitMesh undefined - no mesh reference with Rapier)
+      if (hitPoint != null && hitCallback) {
+        hitCallback(
+          new BABYLON.Vector3(hitPoint.x, hitPoint.y, hitPoint.z),
+          undefined,
+        );
       }
     }
   }
@@ -301,14 +323,17 @@ export class WeaponRenderer {
   /**
    * Fire a projectile (single entry point for server events). Uses pool by projectileType.
    * Creates Rapier body for collision; mesh position is lerped from physics each frame.
+   * @param ownerId - Used to filter self-hit: own bullets don't register collision with self for 0.5s.
    */
   fireProjectile(
     position: { x: number; y: number; z: number },
     velocity: { x: number; y: number; z: number },
     projectileType: number,
+    ownerId?: string,
   ): string {
     const projectileId = `proj_${Date.now()}_${Math.random()}`;
     const isRocket = projectileType === PROJECTILE_TYPE_ROCKET;
+    const isShotgun = projectileType === PROJECTILE_TYPE_SHOTGUN;
     const pool = isRocket ? this.rocketPool : this.bulletPool;
     const mesh = pool.find((m) => !m.isVisible) ?? pool[pool.length - 1];
     mesh.position.set(position.x, position.y, position.z);
@@ -320,6 +345,7 @@ export class WeaponRenderer {
       velocity: vel,
       spawnTime: performance.now() / 1000,
       isRocket,
+      isShotgun,
     });
 
     if (this.physicsHandle) {
@@ -333,6 +359,7 @@ export class WeaponRenderer {
         velocity.y,
         velocity.z,
         isRocket,
+        ownerId,
       );
     }
 
@@ -375,6 +402,7 @@ export class WeaponRenderer {
       velocity,
       spawnTime: performance.now() / 1000,
       isRocket: false,
+      isShotgun: false,
     });
 
     createMuzzleFlash(this.scene, origin, dir);
@@ -535,7 +563,9 @@ export class WeaponRenderer {
       // TTL check (matches server)
       const ttl = entry.isRocket
         ? PROJECTILE_TTL_ROCKET_SEC
-        : PROJECTILE_TTL_BULLET_SEC;
+        : entry.isShotgun
+          ? PROJECTILE_TTL_SHOTGUN_SEC
+          : PROJECTILE_TTL_BULLET_SEC;
       if (now - entry.spawnTime >= ttl) {
         projectilesToRemove.push(id);
         return;

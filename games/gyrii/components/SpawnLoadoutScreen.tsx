@@ -3,11 +3,15 @@
 import { useState, useEffect } from "react";
 import { useGyriiStore } from "../store/gameStore";
 import { useGyriiConnection } from "../hooks/useGyriiConnection";
+import * as gyriiClient from "../services/gyriiClient";
 import type { WeaponType, SecondaryType } from "../store/gameStore";
+
+const USE_NEW_SERVER = process.env.NEXT_PUBLIC_GYRII_USE_NEW_SERVER === "true";
 
 const PRIMARY_OPTIONS: { value: WeaponType; label: string }[] = [
   { value: "dualMachineGun", label: "Machine Gun" },
   { value: "photonRifle", label: "Ray Gun" },
+  { value: "shotgun", label: "Shotgun" },
 ];
 
 export default function SpawnLoadoutScreen() {
@@ -18,6 +22,14 @@ export default function SpawnLoadoutScreen() {
   const [isSpawning, setIsSpawning] = useState(false);
   const { leaveLobby, requestSpawn } = useGyriiConnection();
   const { setCurrentLobby, setPendingLeaveLobby } = useGyriiStore();
+
+  const doSpawn = () => {
+    if (USE_NEW_SERVER) {
+      gyriiClient.requestSpawn(primary, secondary);
+    } else {
+      requestSpawn(primary, secondary);
+    }
+  };
 
   // When respawning, pre-fill with the loadout the player had when they died
   useEffect(() => {
@@ -35,15 +47,10 @@ export default function SpawnLoadoutScreen() {
     localPlayer?.secondary,
   ]);
 
-  const onSpawn = async () => {
+  const onSpawn = () => {
     setIsSpawning(true);
-    try {
-      await requestSpawn(primary, secondary);
-    } catch (e) {
-      console.error("Spawn failed:", e);
-    } finally {
-      setIsSpawning(false);
-    }
+    doSpawn();
+    setIsSpawning(false);
   };
 
   const onLeave = async () => {

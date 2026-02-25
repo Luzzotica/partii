@@ -34,11 +34,16 @@ pub struct GrenadeData {
 pub struct ProjectileData {
     pub owner_id: String,
     pub lobby_id: u64,
+    pub weapon_type: WeaponType,
     pub damage: f32,
     pub velocity_x: f32,
     pub velocity_y: f32,
     pub velocity_z: f32,
     pub expires_at_micros: u64,
+    /// Origin position for distance-based damage falloff.
+    pub origin_x: f32,
+    pub origin_y: f32,
+    pub origin_z: f32,
 }
 
 mod lobby;
@@ -47,10 +52,12 @@ mod spawn;
 
 pub use spawn::get_best_spawn_position;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct PendingRoundRestart {
     pub next_map_id: crate::state::MapId,
     pub starts_at_ms: u64,
+    /// When set, use this custom map JSON instead of built-in.
+    pub custom_map_json: Option<String>,
 }
 
 /// Vec3 for positions

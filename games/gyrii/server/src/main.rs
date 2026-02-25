@@ -3,8 +3,10 @@
 mod actions;
 mod combat;
 mod config;
+mod pb;
 mod collision_groups;
 mod constants;
+mod weapon_config;
 mod game_loop;
 mod map_parser;
 mod physics;
@@ -14,6 +16,7 @@ mod stats;
 mod state;
 mod sync;
 mod websocket;
+mod ws;
 
 use std::sync::Arc;
 use tokio::sync::RwLock;

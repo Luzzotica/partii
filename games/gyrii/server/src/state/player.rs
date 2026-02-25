@@ -13,6 +13,7 @@ pub enum WeaponType {
     PhotonRifle,
     Bazooka,
     Flamethrower,
+    Shotgun,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]

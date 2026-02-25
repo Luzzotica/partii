@@ -12,7 +12,6 @@ use crate::state::{
 use serde::Deserialize;
 use serde_json::Value;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
 
 #[derive(Deserialize)]
@@ -90,6 +89,7 @@ fn parse_weapon(s: &str) -> WeaponType {
         "PhotonRifle" => WeaponType::PhotonRifle,
         "Bazooka" => WeaponType::Bazooka,
         "Flamethrower" => WeaponType::Flamethrower,
+        "Shotgun" => WeaponType::Shotgun,
         _ => WeaponType::Smg,
     }
 }
@@ -107,10 +107,6 @@ pub async fn request_spawn(
     identity: &Identity,
     params: Value,
 ) -> ActionResult {
-    let now_micros = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_micros() as u64)
-        .unwrap_or(0);
     let p: RequestSpawnParams = serde_json::from_value(params).map_err(|e| e.to_string())?;
     let weapon = p
         .weapon
@@ -178,7 +174,8 @@ pub async fn request_spawn(
                         crate::collision_groups::GROUP_BULLET
                             | crate::collision_groups::GROUP_WALL
                             | crate::collision_groups::GROUP_FLOOR
-                            | crate::collision_groups::GROUP_GRENADE,
+                            | crate::collision_groups::GROUP_GRENADE
+                            | crate::collision_groups::GROUP_PLAYER,
                     ),
                 ))
                 .restitution(0.3);
@@ -202,7 +199,7 @@ pub async fn request_spawn(
         player.velocity_x = 0.0;
         player.velocity_y = 0.0;
         player.velocity_z = 0.0;
-        player.server_snapshot_id = now_micros;
+        player.server_snapshot_id = 0;
         player.input_x = 0.0;
         player.input_z = 0.0;
         player.aim_x = 0.0;
@@ -260,7 +257,8 @@ pub async fn request_spawn(
                     crate::collision_groups::GROUP_BULLET
                         | crate::collision_groups::GROUP_WALL
                         | crate::collision_groups::GROUP_FLOOR
-                        | crate::collision_groups::GROUP_GRENADE,
+                        | crate::collision_groups::GROUP_GRENADE
+                        | crate::collision_groups::GROUP_PLAYER,
                 ),
             ))
             .restitution(0.3);
@@ -302,7 +300,7 @@ pub async fn request_spawn(
         velocity_x: 0.0,
         velocity_y: 0.0,
         velocity_z: 0.0,
-        server_snapshot_id: now_micros,
+        server_snapshot_id: 0,
         input_x: 0.0,
         input_z: 0.0,
         aim_x: 0.0,

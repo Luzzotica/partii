@@ -7,6 +7,7 @@ import {
   HEALTH_SCALE,
   MAX_HEALTH,
 } from "../game/constants";
+import GameMinimap from "./GameMinimap";
 
 export default function HUD() {
   const {
@@ -23,7 +24,7 @@ export default function HUD() {
   const isPhotonRifle = localPlayer?.weapon === "photonRifle";
   const grenadeCooldownMicros = 1_000_000; // 1 second
   const nowMicros = Date.now() * 1000;
-  const lastGrenadeThrownAt = localPlayer?.lastGrenadeThrownAt ?? 0;
+  const lastGrenadeThrownAt = Number(localPlayer?.lastGrenadeThrownAt ?? 0);
   const elapsedMicros = nowMicros - lastGrenadeThrownAt;
   const grenadeCooldownRemaining = Math.max(
     0,
@@ -146,8 +147,13 @@ export default function HUD() {
         </div>
       )}
 
-      {/* Kill Feed - marble/neon/tron themed (newest at bottom) */}
+      {/* Minimap - bottom left corner */}
       <div className="absolute bottom-8 left-8">
+        <GameMinimap />
+      </div>
+
+      {/* Kill Feed - marble/neon/tron themed (newest at bottom), to the right of minimap */}
+      <div className="absolute bottom-8 left-[164px]">
         <div className="space-y-1.5">
           {[...killFeed].reverse().map((event, index) => (
             <div

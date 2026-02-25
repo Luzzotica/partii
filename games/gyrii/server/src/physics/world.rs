@@ -7,7 +7,7 @@ use rapier3d::pipeline::EventHandler;
 use rapier3d::prelude::{CollisionEvent, CollisionEventFlags};
 use rapier3d::prelude::*;
 
-use crate::collision_groups::{GROUP_BULLET, GROUP_FLOOR, GROUP_GRENADE, GROUP_PLAYER, GROUP_WALL};
+use crate::collision_groups::{GROUP_BULLET, GROUP_FLOOR, GROUP_GRENADE, GROUP_LAUNCHER_SENSOR, GROUP_PLAYER, GROUP_WALL};
 
 static DUMMY_HOOKS: () = ();
 
@@ -81,6 +81,8 @@ pub struct PhysicsWorldState {
     pub handle_to_body_id: HashMap<RigidBodyHandle, u64>,
     pub next_body_id: u64,
     event_collector: SensorCollisionCollector,
+    /// Launcher sensor body_id -> (force, dir_x, dir_y, dir_z)
+    pub launcher_impulses: HashMap<u64, (f32, f32, f32, f32)>,
 }
 
 impl PhysicsWorldState {
@@ -110,6 +112,7 @@ impl PhysicsWorldState {
                 body_is_sensor: HashMap::new(),
                 collisions: Mutex::new(Vec::new()),
             },
+            launcher_impulses: HashMap::new(),
         }
     }
 
@@ -212,6 +215,7 @@ impl PhysicsWorldState {
 
     /// Remove a body by our ID (e.g. on player leave)
     pub fn remove_body(&mut self, body_id: u64) {
+        self.launcher_impulses.remove(&body_id);
         if let Some(handle) = self.body_id_to_handle.remove(&body_id) {
             self.handle_to_body_id.remove(&handle);
             self.event_collector.body_is_sensor.remove(&body_id);

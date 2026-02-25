@@ -8,6 +8,7 @@ pub enum MapId {
     Arena,
     Maze,
     Warehouse,
+    Custom,
 }
 
 impl MapId {
@@ -16,6 +17,7 @@ impl MapId {
             MapId::Arena => "Arena",
             MapId::Maze => "Maze",
             MapId::Warehouse => "Warehouse",
+            MapId::Custom => "Custom",
         }
     }
 
@@ -24,6 +26,7 @@ impl MapId {
             MapId::Arena => "arena",
             MapId::Maze => "maze",
             MapId::Warehouse => "warehouse",
+            MapId::Custom => "custom",
         }
     }
 
@@ -32,6 +35,7 @@ impl MapId {
             "Arena" => Some(MapId::Arena),
             "Maze" => Some(MapId::Maze),
             "Warehouse" => Some(MapId::Warehouse),
+            "Custom" => Some(MapId::Custom),
             _ => None,
         }
     }
@@ -41,6 +45,7 @@ impl MapId {
             "arena" => Some(MapId::Arena),
             "maze" => Some(MapId::Maze),
             "warehouse" => Some(MapId::Warehouse),
+            "custom" => Some(MapId::Custom),
             _ => None,
         }
     }
@@ -83,6 +88,32 @@ pub struct Lobby {
     pub has_password: bool,
     /// When set, next round starts at this unix timestamp (ms).
     pub next_round_starts_at_ms: Option<u64>,
+    /// Next per-lobby full-state snapshot id to assign.
+    pub next_snapshot_id: u64,
+    /// Next per-lobby delta id to assign.
+    pub next_delta_id: u64,
+    /// Most recently emitted full-state snapshot id.
+    pub current_snapshot_id: u64,
+    /// Most recently emitted delta id.
+    pub current_delta_id: u64,
+    /// When set, lobby uses this custom map JSON (overrides map_id for loading).
+    pub custom_map_json: Option<String>,
+}
+
+impl Lobby {
+    pub fn allocate_snapshot_id(&mut self) -> u64 {
+        let id = self.next_snapshot_id;
+        self.next_snapshot_id = self.next_snapshot_id.saturating_add(1);
+        self.current_snapshot_id = id;
+        id
+    }
+
+    pub fn allocate_delta_id(&mut self) -> u64 {
+        let id = self.next_delta_id;
+        self.next_delta_id = self.next_delta_id.saturating_add(1);
+        self.current_delta_id = id;
+        id
+    }
 }
 
 #[derive(Clone, Debug)]

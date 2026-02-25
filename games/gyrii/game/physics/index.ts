@@ -12,6 +12,7 @@ export {
   createProjectileBody,
   removeProjectileBody,
   getProjectilePosition,
+  castRay,
   createThrowableBody,
   removeThrowableBody,
   getThrowablePosition,

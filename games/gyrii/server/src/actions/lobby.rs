@@ -3,7 +3,7 @@
 use crate::actions::ActionResult;
 use crate::map_parser::{get_builtin_map_json, parse_map_json};
 use crate::physics::{create_map_geometry, PhysicsWorldState};
-use crate::protocol::{GameEndedMessage, Identity};
+use crate::protocol::Identity;
 use crate::state::{
     GameMode, GameState, Lobby, LobbyPlayer, MapId, MapFlagLocation, MapSpawnPoint,
     PendingRoundRestart, ServerState,
@@ -93,6 +93,21 @@ pub async fn list_lobbies(state: Arc<RwLock<ServerState>>) -> ActionResult {
     Ok(None)
 }
 
+pub async fn request_lobby_state(
+    state: Arc<RwLock<ServerState>>,
+    identity: &Identity,
+) -> ActionResult {
+    let state = state.read().await;
+    let in_lobby = state
+        .lobby_players
+        .iter()
+        .any(|lp| lp.player_identity == *identity);
+    if !in_lobby {
+        return Err("Not in a lobby".to_string());
+    }
+    Ok(None)
+}
+
 pub async fn create_lobby(
     state: Arc<RwLock<ServerState>>,
     identity: &Identity,
@@ -133,15 +148,16 @@ pub async fn create_lobby(
     let password = p.password.unwrap_or_default();
     let has_password = !password.is_empty();
 
-    let json = if p
+    let (json, effective_map_id, custom_map_json) = if p
         .custom_map_json
         .as_ref()
         .map(|s| !s.is_empty())
         .unwrap_or(false)
     {
-        p.custom_map_json.unwrap()
+        let j = p.custom_map_json.unwrap();
+        (j.clone(), MapId::Custom, Some(j))
     } else {
-        get_builtin_map_json(map_id).to_string()
+        (get_builtin_map_json(map_id).to_string(), map_id, None)
     };
 
     let parsed = parse_map_json(&json)?;
@@ -166,7 +182,7 @@ pub async fn create_lobby(
         id: lobby_id,
         name: p.name.clone(),
         host_id: identity.clone(),
-        map_id,
+        map_id: effective_map_id,
         map_pool: parsed_pool,
         map_width: parsed.width,
         map_height: parsed.height,
@@ -178,6 +194,11 @@ pub async fn create_lobby(
         flag_limit: p.flag_limit.unwrap_or(3).clamp(1, 7),
         has_password,
         next_round_starts_at_ms: None,
+        next_snapshot_id: 1,
+        next_delta_id: 1,
+        current_snapshot_id: 0,
+        current_delta_id: 0,
+        custom_map_json,
     };
 
     let mut physics = PhysicsWorldState::new();
@@ -433,15 +454,20 @@ fn now_millis() -> u64 {
         .unwrap_or(0)
 }
 
-fn pick_next_map_from_pool(lobby: &Lobby) -> MapId {
-    if lobby.map_pool.is_empty() {
-        return lobby.map_id;
+fn pick_next_map_from_pool(lobby: &Lobby) -> (MapId, Option<String>) {
+    if lobby.custom_map_json.is_some() {
+        return (MapId::Custom, lobby.custom_map_json.clone());
     }
-    let seed = now_millis()
-        .wrapping_add(lobby.id.wrapping_mul(7919))
-        .wrapping_add(lobby.score_limit as u64);
-    let idx = (seed as usize) % lobby.map_pool.len();
-    lobby.map_pool[idx]
+    let next = if lobby.map_pool.is_empty() {
+        lobby.map_id
+    } else {
+        let seed = now_millis()
+            .wrapping_add(lobby.id.wrapping_mul(7919))
+            .wrapping_add(lobby.score_limit as u64);
+        let idx = (seed as usize) % lobby.map_pool.len();
+        lobby.map_pool[idx]
+    };
+    (next, None)
 }
 
 pub fn end_round_and_schedule(
@@ -449,13 +475,14 @@ pub fn end_round_and_schedule(
     lobby_id: u64,
     winner_hint: Option<(Option<i32>, Option<String>, Option<String>)>,
     countdown_ms: u64,
-) -> Option<GameEndedMessage> {
-    let (game_mode, next_map_id) = {
+) -> Option<Vec<u8>> {
+    let (game_mode, next_map_id, custom_map_json) = {
         let lobby = state.lobbies.get(&lobby_id)?;
         if lobby.game_state == GameState::Ended {
             return None;
         }
-        (lobby.game_mode, pick_next_map_from_pool(lobby))
+        let (next_id, custom) = pick_next_map_from_pool(lobby);
+        (lobby.game_mode, next_id, custom)
     };
 
     let (winner_team, winner_player_identity, winner_player_name) = if let Some(hint) = winner_hint
@@ -531,6 +558,7 @@ pub fn end_round_and_schedule(
         PendingRoundRestart {
             next_map_id,
             starts_at_ms,
+            custom_map_json,
         },
     );
 
@@ -567,8 +595,10 @@ fn restart_lobby_round(state: &mut ServerState, lobby_id: u64) -> bool {
         Some(s) => s,
         None => return false,
     };
-    let map_id = schedule.next_map_id;
-    let map_json = get_builtin_map_json(map_id);
+    let map_json = schedule
+        .custom_map_json
+        .as_deref()
+        .unwrap_or_else(|| get_builtin_map_json(schedule.next_map_id));
     let parsed = match parse_map_json(map_json) {
         Ok(m) => m,
         Err(err) => {
@@ -652,7 +682,8 @@ fn restart_lobby_round(state: &mut ServerState, lobby_id: u64) -> bool {
     }
 
     if let Some(lobby) = state.lobbies.get_mut(&lobby_id) {
-        lobby.map_id = map_id;
+        lobby.map_id = schedule.next_map_id;
+        lobby.custom_map_json = schedule.custom_map_json;
         lobby.map_width = parsed.width;
         lobby.map_height = parsed.height;
         lobby.game_state = GameState::InProgress;
