@@ -7,7 +7,8 @@ use rapier3d::pipeline::EventHandler;
 use rapier3d::prelude::{CollisionEvent, CollisionEventFlags};
 use rapier3d::prelude::*;
 
-use crate::collision_groups::{GROUP_BULLET, GROUP_FLOOR, GROUP_GRENADE, GROUP_LAUNCHER_SENSOR, GROUP_PLAYER, GROUP_WALL};
+use crate::collision_groups::{GROUP_FLAG, GROUP_FLOOR, GROUP_GRENADE, GROUP_PLAYER, GROUP_WALL};
+use crate::constants::PHYSICS_TICK_DT;
 
 static DUMMY_HOOKS: () = ();
 
@@ -88,7 +89,7 @@ pub struct PhysicsWorldState {
 impl PhysicsWorldState {
     pub fn new() -> Self {
         let mut integration_params = IntegrationParameters::default();
-        integration_params.dt = 1.0 / 60.0;
+        integration_params.dt = PHYSICS_TICK_DT;
         integration_params.num_solver_iterations = std::num::NonZeroUsize::new(4).unwrap();
 
         Self {
@@ -211,6 +212,23 @@ impl PhysicsWorldState {
             .lock()
             .map(|mut v| std::mem::take(&mut *v))
             .unwrap_or_default()
+    }
+
+    /// Insert a dropped flag body (small dynamic sphere). Returns body_id.
+    pub fn insert_flag_body(&mut self, body_id: u64, x: f32, y: f32, z: f32) {
+        use rapier3d::geometry::InteractionGroups;
+        use rapier3d::geometry::Group;
+        let rb = RigidBodyBuilder::dynamic()
+            .translation(vector![x, y, z])
+            .linear_damping(2.0)
+            .ccd_enabled(false);
+        let collider = ColliderBuilder::ball(0.25)
+            .collision_groups(InteractionGroups::new(
+                Group::from_bits_truncate(GROUP_FLAG),
+                Group::from_bits_truncate(GROUP_FLOOR | GROUP_WALL | GROUP_PLAYER),
+            ))
+            .restitution(0.2);
+        self.insert_body(body_id, rb, collider);
     }
 
     /// Remove a body by our ID (e.g. on player leave)

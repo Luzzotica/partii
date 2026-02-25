@@ -2,11 +2,15 @@
  * Client-side Rapier physics: same world as server (floor, boundary, interior walls),
  * dynamic bodies for all players and throwables. Step each frame; reconcile on server state.
  * Rapier is loaded asynchronously; call initRapier() before createWorldFromMap.
+ *
+ * Timer: Real elapsed time (deltaTime) is accumulated in physicsAccumulator. Physics steps
+ * run at fixed PHYSICS_TICK_DT (1/60 s). Player input is applied once per physics step.
  */
 
 import {
   PLAYER_ACCEL,
-  PLAYER_INPUT_TICK_DT,
+  PLAYER_DAMPING,
+  PHYSICS_TICK_DT,
   GRAVITY,
   PLAYER_BALL_RADIUS,
 } from "../constants";
@@ -68,7 +72,7 @@ export type WorldHandle = {
   colliderToProjectileId: Map<number, string>;
   /** Projectile id -> owner + spawn time (for self-hit grace period). */
   projectileMeta: Map<string, { ownerId: string; spawnTime: number }>;
-  lastInputTime: number;
+  /** Accumulated time for fixed-step physics; consumes real elapsed time. */
   physicsAccumulator: number;
 };
 
@@ -278,7 +282,6 @@ export function createWorldFromMap(mapData: MapData): WorldHandle {
     projectileBodies: new Map(),
     colliderToProjectileId: new Map(),
     projectileMeta: new Map(),
-    lastInputTime: 0,
     physicsAccumulator: 0,
   };
 }
@@ -379,63 +382,72 @@ export function applyImpulseToPlayer(
 }
 
 /**
- * Apply input for local player with catch-up (FPS-independent).
- * When elapsed >= dt, applies multiple ticks to catch up to real time.
- * Returns number of ticks applied.
+ * Apply one fixed timestep of player input. Matches server apply_input formula.
+ * Called internally by step() before each physics step when input is provided.
  */
-export function applyInput(
+function applyInputOneTick(
   handle: WorldHandle,
   playerId: string,
   inputX: number,
   inputZ: number,
-  now: number,
-): number {
+  dt: number,
+): void {
   const body = handle.playerBodies.get(playerId);
-  if (!body) return 0;
-  const dt = PLAYER_INPUT_TICK_DT;
-  const elapsed = now - handle.lastInputTime;
-  if (elapsed < dt) return 0;
-  const ticks = Math.min(Math.floor(elapsed / dt), 10);
-  handle.lastInputTime = now;
-  let v = body.linvel();
-  for (let i = 0; i < ticks; i++) {
-    const vx = v.x + inputX * PLAYER_ACCEL * dt;
-    const vz = v.z + inputZ * PLAYER_ACCEL * dt;
-    body.setLinvel({ x: vx, y: v.y, z: vz }, true);
-    v = body.linvel();
-  }
-  return ticks;
+  if (!body) return;
+  const { x: vx, y: vy, z: vz } = body.linvel();
+  let nvx = vx + inputX * PLAYER_ACCEL * dt;
+  let nvz = vz + inputZ * PLAYER_ACCEL * dt;
+  nvx *= PLAYER_DAMPING;
+  nvz *= PLAYER_DAMPING;
+  body.setLinvel({ x: nvx, y: vy, z: nvz }, true);
 }
-
-/** Server physics timestep (1/60 s); must match server ticks_per_second for sync. */
-const PHYSICS_DT = 1 / 60;
 
 /** Max steps per frame to maintain 60Hz simulation at low FPS (e.g. 10fps needs 6 steps). */
 const MAX_STEPS_PER_FRAME = 15;
 
+/** Options for step(); input is applied once per physics tick when provided. */
+export interface StepOptions {
+  /** Own bullets won't register as "hit" when colliding with self for BULLET_SELF_HIT_GRACE_SEC. */
+  localPlayerId?: string;
+  /** Apply this input before each physics step (fixed timestep, matches server). */
+  input?: { playerId: string; inputX: number; inputZ: number };
+}
+
 /**
- * Step physics by actual elapsed time so client and server simulate at the same rate.
- * Rapier defaults to dt=1/60 per step; at 120fps we'd simulate 2x real time without this.
- * We use fixed timestep accumulation: add dt, step once per PHYSICS_DT, carry remainder.
- * @param localPlayerId - If provided, own bullets won't register as "hit" when colliding with self for BULLET_SELF_HIT_GRACE_SEC.
+ * Step physics by accumulated real elapsed time. Uses fixed PHYSICS_TICK_DT per step
+ * so client and server simulate identically. Input is applied once per physics tick
+ * when provided.
  */
-/** Projectile ids that collided this step (to remove from WeaponRenderer). */
 const projectileCollisionsThisStep = new Set<string>();
 
 export function step(
   handle: WorldHandle,
   dt: number,
-  localPlayerId?: string,
+  options?: StepOptions | string,
 ): string[] {
+  const localPlayerId =
+    typeof options === "string" ? options : options?.localPlayerId;
+  const input =
+    typeof options === "object" && options?.input ? options.input : undefined;
+
   projectileCollisionsThisStep.clear();
   handle.physicsAccumulator += dt;
-  handle.world.timestep = PHYSICS_DT;
+  handle.world.timestep = PHYSICS_TICK_DT;
   const nowSec = performance.now() / 1000;
   let steps = 0;
   while (
-    handle.physicsAccumulator >= PHYSICS_DT &&
+    handle.physicsAccumulator >= PHYSICS_TICK_DT &&
     steps < MAX_STEPS_PER_FRAME
   ) {
+    if (input) {
+      applyInputOneTick(
+        handle,
+        input.playerId,
+        input.inputX,
+        input.inputZ,
+        PHYSICS_TICK_DT,
+      );
+    }
     handle.world.step(handle.eventQueue);
     handle.eventQueue.drainCollisionEvents((h1, h2, started) => {
       if (!started) return;
@@ -460,11 +472,11 @@ export function step(
       if (projId1) projectileCollisionsThisStep.add(projId1);
       if (projId2) projectileCollisionsThisStep.add(projId2);
     });
-    handle.physicsAccumulator -= PHYSICS_DT;
+    handle.physicsAccumulator -= PHYSICS_TICK_DT;
     steps++;
   }
-  if (handle.physicsAccumulator > PHYSICS_DT * 2) {
-    handle.physicsAccumulator = PHYSICS_DT;
+  if (handle.physicsAccumulator > PHYSICS_TICK_DT * 2) {
+    handle.physicsAccumulator = PHYSICS_TICK_DT;
   }
   return Array.from(projectileCollisionsThisStep);
 }

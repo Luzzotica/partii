@@ -146,9 +146,16 @@ async fn build_lobby_state_for_requester(
         .filter(|p| p.lobby_id == lobby_id)
         .cloned()
         .collect();
+    let flags: Vec<_> = state_guard
+        .flags
+        .values()
+        .filter(|f| f.lobby_id == lobby_id)
+        .cloned()
+        .collect();
     Some(sync::build_lobby_state(
         &lobby_payload,
         &players,
+        &flags,
         snapshot_id,
         last_delta_id,
     ))
@@ -173,9 +180,16 @@ async fn build_lobby_state_broadcast(
         .filter(|p| p.lobby_id == lobby_id)
         .cloned()
         .collect();
+    let flags: Vec<_> = state_guard
+        .flags
+        .values()
+        .filter(|f| f.lobby_id == lobby_id)
+        .cloned()
+        .collect();
     let bytes = sync::build_lobby_state(
         &lobby_payload,
         &players,
+        &flags,
         snapshot_id,
         last_delta_id,
     );

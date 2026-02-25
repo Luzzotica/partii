@@ -11,9 +11,11 @@ import {
   PLAYER_BALL_RADIUS,
 } from "../game/constants";
 import {
+  createDashPoofEffect,
   createDeathDecal,
   createDeathExplosion,
   createExplosion,
+  createHammerPopEffect,
 } from "../game/effects/ParticleEffects";
 import { getWeaponDisplayConfig } from "../game/weapons/weaponDisplayConstants";
 import HUD from "./HUD";
@@ -57,9 +59,12 @@ export default function GyriiGame() {
         namePlane?: any;
         nameTexture?: any;
         lastDisplayName?: string;
+        /** CTF: flag mesh on top when carrying */
+        flagMesh?: any;
       }
     >
   >(new Map());
+  const flagMeshesRef = useRef<Map<string, any>>(new Map());
   const { gameState, setGameState, selectedWeapon, localPlayer } =
     useGyriiStore();
   const roundEndedBanner = useGyriiStore((s) => s.roundEndedBanner);
@@ -70,11 +75,13 @@ export default function GyriiGame() {
     setMarbleConfig,
     throwGrenade,
     throwMolotov,
+    useSecondary,
   } = useGyriiConnection();
-  const updateInputIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
-    null,
-  );
-  const frameCountRef = useRef(0);
+  const lastSentInputRef = useRef<{ inputX: number; inputZ: number }>({
+    inputX: 0,
+    inputZ: 0,
+  });
+  const aimRef = useRef<{ x: number; z: number }>({ x: 0, z: -1 });
   const [isLoading, setIsLoading] = useState(true);
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [bannerNowMs, setBannerNowMs] = useState(Date.now());
@@ -318,7 +325,6 @@ export default function GyriiGame() {
           getPlayerPosition,
           getPlayerLinvel,
           applyImpulseToPlayer,
-          applyInput,
           step,
           destroyWorld,
         } = await import("../game/physics");
@@ -402,12 +408,67 @@ export default function GyriiGame() {
             namePlane?: any;
             nameTexture?: any;
             lastDisplayName?: string;
+            flagMesh?: any;
           }
         >();
         playerMeshesRef.current = playerMeshes;
 
         const { createMarbleMaterial } =
           await import("../game/marble/MarbleMaterials");
+
+        const FLAG_TEAM_COLORS: [number, number, number][] = [
+          [0.88, 0.25, 0.25],
+          [0.25, 0.44, 0.94],
+          [0.2, 0.75, 0.38],
+          [0.88, 0.85, 0.19],
+        ];
+        const createFlagMesh = (
+          scene: any,
+          parentNode: any,
+          team: number,
+          name: string,
+        ) => {
+          const group = new BABYLON.TransformNode(`flag-${name}`, scene);
+          group.parent = parentNode;
+          group.position.y = 0.8;
+          const [r, g, b] =
+            FLAG_TEAM_COLORS[Math.min(team, FLAG_TEAM_COLORS.length - 1)] ??
+            FLAG_TEAM_COLORS[0];
+          const pole = BABYLON.MeshBuilder.CreateCylinder(
+            `flagPole-${name}`,
+            { height: 0.5, diameter: 0.08 },
+            scene,
+          );
+          pole.parent = group;
+          pole.position.y = 0.25;
+          const poleMat = new BABYLON.StandardMaterial(
+            `flagPoleMat-${name}`,
+            scene,
+          );
+          poleMat.diffuseColor = new BABYLON.Color3(0.4, 0.35, 0.3);
+          pole.material = poleMat;
+          pole.isPickable = false;
+          const cloth = BABYLON.MeshBuilder.CreatePlane(
+            `flagCloth-${name}`,
+            { width: 0.4, height: 0.25 },
+            scene,
+          );
+          cloth.parent = group;
+          cloth.position.set(0.2, 0.4, 0);
+          const clothMat = new BABYLON.StandardMaterial(
+            `flagClothMat-${name}`,
+            scene,
+          );
+          clothMat.diffuseColor = new BABYLON.Color3(r, g, b);
+          clothMat.emissiveColor = new BABYLON.Color3(
+            r * 0.3,
+            g * 0.3,
+            b * 0.3,
+          );
+          cloth.material = clothMat;
+          cloth.isPickable = false;
+          return group;
+        };
 
         // Track previous alive state per player so we only trigger death effects on transition
         const lastAliveByPlayerId = new Map<string, boolean>();
@@ -420,6 +481,7 @@ export default function GyriiGame() {
             if (!currentIds.has(id)) {
               removePlayerBody(physicsHandle, id);
               const entry = playerMeshes.get(id)!;
+              if (entry.flagMesh) entry.flagMesh.dispose();
               if (entry.weaponMesh) entry.weaponMesh.dispose(); // muzzleNode is child, disposed with weapon
               entry.debugAimLine?.dispose();
               if (entry.namePlane) {
@@ -774,6 +836,23 @@ export default function GyriiGame() {
             entry.rootNode.setEnabled(true);
             lastAliveByPlayerId.set(id, true);
 
+            const heldTeam = player.heldFlagTeam;
+            if (heldTeam != null) {
+              if (!entry.flagMesh) {
+                entry.flagMesh = createFlagMesh(
+                  scene,
+                  entry.rootNode,
+                  heldTeam,
+                  id.slice(-12),
+                );
+              }
+            } else {
+              if (entry.flagMesh) {
+                entry.flagMesh.dispose();
+                entry.flagMesh = undefined;
+              }
+            }
+
             const isLocal = localPlayer
               ? idForKey(localPlayer.id) === id
               : false;
@@ -1041,10 +1120,26 @@ export default function GyriiGame() {
         };
         window.addEventListener("resize", handleResize);
 
-        // Input handling
+        // Input handling: send only on press/release (instant, no polling)
         const inputMap: { [key: string]: boolean } = {};
+        const sendInputIfChanged = () => {
+          if (useGyriiStore.getState().gameState === "paused") return;
+          if (!useGyriiStore.getState().localPlayer) return;
+          let inputX = 0,
+            inputZ = 0;
+          if (inputMap["w"] || inputMap["arrowup"]) inputZ = 1;
+          if (inputMap["s"] || inputMap["arrowdown"]) inputZ = -1;
+          if (inputMap["a"] || inputMap["arrowleft"]) inputX = -1;
+          if (inputMap["d"] || inputMap["arrowright"]) inputX = 1;
+          const last = lastSentInputRef.current;
+          if (last.inputX !== inputX || last.inputZ !== inputZ) {
+            last.inputX = inputX;
+            last.inputZ = inputZ;
+            const aim = aimRef.current;
+            updateInput(inputX, inputZ, aim.x, aim.z);
+          }
+        };
         const handleKeyDown = (e: KeyboardEvent) => {
-          // Handle Escape key for pause
           if (e.key === "Escape") {
             e.preventDefault();
             const currentState = useGyriiStore.getState().gameState;
@@ -1055,10 +1150,21 @@ export default function GyriiGame() {
             }
             return;
           }
+          if (e.key === " ") {
+            e.preventDefault();
+            const lp = useGyriiStore.getState().localPlayer;
+            if (lp?.isAlive && useSecondary) {
+              useSecondary();
+            }
+            return;
+          }
           inputMap[e.key.toLowerCase()] = true;
+          sendInputIfChanged();
         };
         const handleKeyUp = (e: KeyboardEvent) => {
+          if (e.key === " ") e.preventDefault();
           inputMap[e.key.toLowerCase()] = false;
+          sendInputIfChanged();
         };
         window.addEventListener("keydown", handleKeyDown);
         window.addEventListener("keyup", handleKeyUp);
@@ -1096,36 +1202,12 @@ export default function GyriiGame() {
         let lastShotAtRef = 0;
         const lastShotAtPerPlayer = new Map<string, number>();
 
-        // Send input to server and apply to client physics at fixed rate (independent of FPS)
-        const INPUT_INTERVAL_MS = 16;
-        updateInputIntervalRef.current = setInterval(() => {
-          if (useGyriiStore.getState().gameState === "paused") return;
-          let inputX = 0,
-            inputZ = 0;
-          if (inputMap["w"] || inputMap["arrowup"]) inputZ = 1;
-          if (inputMap["s"] || inputMap["arrowdown"]) inputZ = -1;
-          if (inputMap["a"] || inputMap["arrowleft"]) inputX = -1;
-          if (inputMap["d"] || inputMap["arrowright"]) inputX = 1;
-          const store = useGyriiStore.getState();
-          if (!store.localPlayer) return;
-
-          updateInput(inputX, inputZ, aimDirection.x, aimDirection.z);
-          // Keep server in sync with shooting state + aim while holding fire
-          if (shootRef.isShooting) {
-            setShooting(true, aimDirection.x, aimDirection.z);
-          }
-        }, INPUT_INTERVAL_MS);
-
         // Game loop (physics + input with catch-up in render loop; setInterval starves when main thread is busy)
         let lastFrameTime = performance.now();
 
         scene.onBeforeRenderObservable.add(() => {
           const currentState = useGyriiStore.getState().gameState;
           if (currentState === "paused") return;
-
-          // #region agent log
-          const t0 = performance.now();
-          // #endregion
 
           const currentTime = performance.now();
           const deltaTime = (currentTime - lastFrameTime) / 1000;
@@ -1155,34 +1237,23 @@ export default function GyriiGame() {
             }
           }
 
-          // Apply input with catch-up, then step physics (both run in render loop to avoid setInterval starvation)
-          // #region agent log
-          const t1 = performance.now();
-          // #endregion
+          // Fixed-step physics: input applied once per physics tick (matches server)
           let inputX = 0,
             inputZ = 0;
           if (inputMap["w"] || inputMap["arrowup"]) inputZ = 1;
           if (inputMap["s"] || inputMap["arrowdown"]) inputZ = -1;
           if (inputMap["a"] || inputMap["arrowleft"]) inputX = -1;
           if (inputMap["d"] || inputMap["arrowright"]) inputX = 1;
-          const nowSec = currentTime / 1000;
-          if (localPlayer) {
-            applyInput(
-              physicsHandle,
-              idForKey(localPlayer.id),
-              inputX,
-              inputZ,
-              nowSec,
-            );
-          }
-          const projectileCollisions = step(
-            physicsHandle,
-            deltaTime,
-            localPlayer ? idForKey(localPlayer.id) : undefined,
-          );
-          // #region agent log
-          const t2 = performance.now();
-          // #endregion
+          const projectileCollisions = step(physicsHandle, deltaTime, {
+            localPlayerId: localPlayer ? idForKey(localPlayer.id) : undefined,
+            input: localPlayer
+              ? {
+                  playerId: idForKey(localPlayer.id),
+                  inputX,
+                  inputZ,
+                }
+              : undefined,
+          });
 
           const localPhysicsPos = localId
             ? getPlayerPosition(physicsHandle, localId)
@@ -1218,6 +1289,7 @@ export default function GyriiGame() {
               aimDirection.x = dx * invLen;
               aimDirection.y = 0;
               aimDirection.z = dz * invLen;
+              aimRef.current = { x: aimDirection.x, z: aimDirection.z };
             }
           }
 
@@ -1227,6 +1299,11 @@ export default function GyriiGame() {
               : undefined;
           shootRef.aimX = aimDirection.x;
           shootRef.aimZ = aimDirection.z;
+
+          // Send aim updates to server while shooting so direction tracks live mouse
+          if (shootRef.isShooting) {
+            shootRef.setShooting(true, aimDirection.x, aimDirection.z);
+          }
 
           // Register aim-from-pointer so grenade/molotov use same aim as gun (computed at click position)
           shootRef.getAimFromPointerEvent = (e: MouseEvent | PointerEvent) => {
@@ -1275,6 +1352,38 @@ export default function GyriiGame() {
             localRenderPos,
           );
 
+          // Sync CTF flag meshes (at-base and dropped)
+          const { flags: flagsMap, currentLobby: lobby } =
+            useGyriiStore.getState();
+          const lobbyId = lobby?.id ?? "";
+          const isCTF = lobby?.gameMode === "captureTheFlag";
+          const flagMeshes = flagMeshesRef.current;
+          if (isCTF && lobbyId) {
+            const seen = new Set<string>();
+            for (const [key, f] of flagsMap) {
+              if (!key.startsWith(`${lobbyId}:`)) continue;
+              if (f.state === "carried") continue;
+              seen.add(key);
+              let flagMesh = flagMeshes.get(key);
+              if (!flagMesh) {
+                flagMesh = createFlagMesh(scene, scene, f.team, key);
+                flagMeshes.set(key, flagMesh);
+              }
+              flagMesh.position.set(f.position.x, f.position.y, f.position.z);
+              flagMesh.setEnabled(true);
+            }
+            for (const key of flagMeshes.keys()) {
+              if (!seen.has(key) && key.startsWith(`${lobbyId}:`)) {
+                const m = flagMeshes.get(key);
+                if (m) m.dispose();
+                flagMeshes.delete(key);
+              }
+            }
+          } else {
+            for (const m of flagMeshes.values()) m.dispose();
+            flagMeshes.clear();
+          }
+
           // 1) Drain pending shot events from server (Projectile table inserts) — bullets/rockets
           const pendingShots = useGyriiStore.getState().takePendingShotEvents();
           for (const ev of pendingShots) {
@@ -1316,6 +1425,29 @@ export default function GyriiGame() {
                 new BABYLON.Vector3(pos.x, pos.y, pos.z),
                 2.5,
               );
+            }
+          }
+
+          // 1c) Drain pending secondary effect events — spawn hammer/dash visuals
+          const secondaryEvents = store.takePendingSecondaryEffectEvents();
+          for (const ev of secondaryEvents) {
+            const pos = new BABYLON.Vector3(
+              ev.position.x,
+              ev.position.y,
+              ev.position.z,
+            );
+            const player = players.get(ev.playerId);
+            const playerColor = player?.color
+              ? new BABYLON.Color3(
+                  player.color.r / 255,
+                  player.color.g / 255,
+                  player.color.b / 255,
+                )
+              : undefined;
+            if (ev.secondaryType === "popupHammers") {
+              createHammerPopEffect(scene, pos, playerColor);
+            } else if (ev.secondaryType === "dash") {
+              createDashPoofEffect(scene, pos, ev.direction);
             }
           }
 
@@ -1454,46 +1586,9 @@ export default function GyriiGame() {
               Math.min(1, deltaTime * 8),
             );
           }
-
-          // #region agent log
-          const t3 = performance.now();
-          frameCountRef.current++;
-          if (frameCountRef.current % 60 === 0) {
-            const fps = deltaTime > 0 ? 1 / deltaTime : 0;
-            fetch(
-              "http://127.0.0.1:7247/ingest/59a503ab-d1b6-4f2a-aa9a-a2ee2d892623",
-              {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  location: "Game.tsx:frameTiming",
-                  message: "Frame timing",
-                  data: {
-                    totalMs: t3 - t0,
-                    prePhysicsMs: t1 - t0,
-                    physicsMs: t2 - t1,
-                    postPhysicsMs: t3 - t2,
-                    renderMs: renderTimeRef.current,
-                    deltaMs: deltaTime * 1000,
-                    fps: Math.round(fps),
-                    frameCount: frameCountRef.current,
-                  },
-                  timestamp: Date.now(),
-                  hypothesisId: "H1",
-                }),
-              },
-            ).catch(() => {});
-          }
-          // #endregion
         });
 
-        // Start render loop (measure render time; physics runs in separate 60Hz interval)
-        const renderTimeRef = { current: 0 };
-        engine.runRenderLoop(() => {
-          const tRenderStart = performance.now();
-          scene.render();
-          renderTimeRef.current = performance.now() - tRenderStart;
-        });
+        engine.runRenderLoop(() => scene.render());
 
         setIsLoading(false);
         setGameState("playing");
@@ -1501,10 +1596,6 @@ export default function GyriiGame() {
         // Cleanup function
         return () => {
           mounted = false;
-          if (updateInputIntervalRef.current) {
-            clearInterval(updateInputIntervalRef.current);
-            updateInputIntervalRef.current = null;
-          }
           window.removeEventListener("resize", handleResize);
           window.removeEventListener("keydown", handleKeyDown);
           window.removeEventListener("keyup", handleKeyUp);

@@ -5,15 +5,22 @@ use rapier3d::prelude::*;
 use crate::actions::ActionResult;
 use crate::collision_groups::{GROUP_BULLET, GROUP_FLOOR, GROUP_GRENADE, GROUP_PLAYER, GROUP_WALL};
 use crate::constants::{
-    GRENADE_COOLDOWN_MICROS, GRENADE_FUSE_SEC, GRENADE_RESTITUTION, GRENADE_THROW_SPEED,
-    GRENADE_THROWER_IMPULSE, HEALTH_SCALE,
+    DASH_ABILITY_COOLDOWN_MICROS, GRENADE_COOLDOWN_MICROS, GRENADE_FUSE_SEC, GRENADE_RESTITUTION,
+    GRENADE_THROW_SPEED, GRENADE_THROWER_IMPULSE, POPUP_HAMMERS_ABILITY_COOLDOWN_MICROS,
 };
 use crate::protocol::Identity;
-use crate::state::{GrenadeData, ServerState, Vec3};
+use crate::state::{GrenadeData, SecondaryType, ServerState, Vec3};
 use serde::Deserialize;
 use serde_json::Value;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+
+fn now_micros() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_micros() as i64)
+        .unwrap_or(0)
+}
 
 pub async fn shoot(_state: Arc<RwLock<ServerState>>, _identity: &Identity) -> ActionResult {
     Ok(None) // Stub
@@ -53,11 +60,11 @@ pub async fn throw_grenade(
         if player.grenades <= 0 {
             return Err("No grenades".to_string());
         }
-        let now_micros = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_micros() as i64)
-            .unwrap_or(0);
-        if now_micros - player.last_grenade_thrown_at < GRENADE_COOLDOWN_MICROS {
+        let now = now_micros();
+        if now < player.secondary_forced_cooldown_until_micros {
+            return Err("In secondary cooldown".to_string());
+        }
+        if now - player.last_grenade_thrown_at < GRENADE_COOLDOWN_MICROS {
             return Err("Grenade on cooldown".to_string());
         }
         let lobby_id = player.lobby_id;
@@ -86,10 +93,7 @@ pub async fn throw_grenade(
         .physics_worlds
         .get_mut(&lobby_id)
         .ok_or("Physics world not found")?;
-    let now_micros = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_micros() as i64)
-        .unwrap_or(0);
+    let now_micros = now_micros();
     let s = GRENADE_THROW_SPEED;
     let vx = ax * s;
     let vy = s;
@@ -148,8 +152,29 @@ pub async fn throw_molotov(
 }
 
 pub async fn use_secondary(
-    _state: Arc<RwLock<ServerState>>,
-    _identity: &Identity,
+    state: Arc<RwLock<ServerState>>,
+    identity: &Identity,
 ) -> ActionResult {
-    Ok(None) // Stub
+    let secondary = {
+        let state = state.read().await;
+        let player = state.players.get(identity).ok_or("Player not found")?;
+        if !player.is_alive {
+            return Err("Player is dead".to_string());
+        }
+        let now = now_micros();
+        if now < player.secondary_forced_cooldown_until_micros {
+            return Err("In secondary cooldown".to_string());
+        }
+        let cooldown_micros = match player.secondary {
+            SecondaryType::PopupHammers => POPUP_HAMMERS_ABILITY_COOLDOWN_MICROS,
+            SecondaryType::Dash => DASH_ABILITY_COOLDOWN_MICROS,
+            _ => return Err("Secondary not implemented".to_string()),
+        };
+        if now - player.last_secondary_used_at < cooldown_micros {
+            return Err("Secondary on cooldown".to_string());
+        }
+        player.secondary
+    };
+    state.write().await.pending_secondary_actions.push((identity.clone(), secondary));
+    Ok(None)
 }

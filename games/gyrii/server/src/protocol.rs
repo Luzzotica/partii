@@ -33,3 +33,12 @@ pub struct KillEventPayload {
     pub weapon: String,
     pub timestamp: u64,
 }
+
+/// Secondary ability effect (hammers pop, dash poof) - broadcast for all players to render
+#[derive(Debug, Clone)]
+pub struct SecondaryEffectPayload {
+    pub player_id: String,
+    pub secondary_type: crate::state::SecondaryType,
+    pub position: [f32; 3],
+    pub direction: [f32; 2],
+}

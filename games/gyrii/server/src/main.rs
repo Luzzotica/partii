@@ -2,6 +2,7 @@
 
 mod actions;
 mod combat;
+mod ctf;
 mod config;
 mod pb;
 mod collision_groups;

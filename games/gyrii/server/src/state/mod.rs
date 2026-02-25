@@ -46,10 +46,12 @@ pub struct ProjectileData {
     pub origin_z: f32,
 }
 
+mod flag;
 mod lobby;
 mod player;
 mod spawn;
 
+pub use flag::{FlagData, FlagState};
 pub use spawn::get_best_spawn_position;
 
 #[derive(Clone, Debug)]
@@ -87,8 +89,11 @@ impl Default for ServerState {
             projectiles: HashMap::new(),
             grenades: HashMap::new(),
             photon_beams: HashMap::new(),
+            flags: HashMap::new(),
             grenade_inserts_sent: std::collections::HashSet::new(),
             grenade_deletes_this_tick: Vec::new(),
+            secondary_effect_events_this_tick: Vec::new(),
+            pending_secondary_actions: Vec::new(),
             identity_user_ids: HashMap::new(),
             ongoing_matches: HashMap::new(),
             stats_flush_tx: None,
@@ -110,11 +115,17 @@ pub struct ServerState {
     pub physics_worlds: HashMap<u64, crate::physics::PhysicsWorldState>,
     pub projectiles: HashMap<u64, ProjectileData>,
     pub grenades: HashMap<u64, GrenadeData>,
+    /// CTF flags: key (lobby_id, team) -> FlagData
+    pub flags: HashMap<(u64, i32), FlagData>,
     pub photon_beams: HashMap<u64, PhotonBeamData>,
     /// Grenade rigid_body_ids we've already sent an insert for (so we send updates, not re-insert)
     pub grenade_inserts_sent: std::collections::HashSet<u64>,
     /// (rigid_body_id, lobby_id) for grenades removed this tick (for delta grenade_deletes)
     pub grenade_deletes_this_tick: Vec<(u64, u64)>,
+    /// (lobby_id, payload) for secondary ability effects this tick (hammers, dash)
+    pub secondary_effect_events_this_tick: Vec<(u64, crate::protocol::SecondaryEffectPayload)>,
+    /// (identity, secondary_type) - drained each tick by game loop
+    pub pending_secondary_actions: Vec<(String, crate::state::SecondaryType)>,
     /// Socket identity -> authenticated Supabase user id (UUID as string).
     pub identity_user_ids: HashMap<String, String>,
     /// Active in-memory stats trackers keyed by lobby id.

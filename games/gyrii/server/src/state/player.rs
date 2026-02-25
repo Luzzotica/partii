@@ -22,6 +22,8 @@ pub enum SecondaryType {
     PopupKnives,
     BubbleShield,
     SelfDestructNuke,
+    PopupHammers,
+    Dash,
 }
 
 #[derive(Clone, Debug)]
@@ -72,6 +74,12 @@ pub struct Player {
     pub last_impulse_time: i64,
     /// When photon rifle charge started (micros); None when not holding.
     pub photon_rifle_charge_started_at: Option<i64>,
+    /// CTF: team of flag being carried (None = not carrying).
+    pub held_flag_team: Option<i32>,
+    /// When PopupHammers used: micros until shooting/grenade allowed again. 0 = not in cooldown.
+    pub secondary_forced_cooldown_until_micros: i64,
+    /// When any secondary ability was last used (micros); for ability cooldown.
+    pub last_secondary_used_at: i64,
 }
 
 impl Player {

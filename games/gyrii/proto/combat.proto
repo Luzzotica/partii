@@ -1,0 +1,83 @@
+syntax = "proto3";
+
+package gyrii;
+
+import "common.proto";
+
+// Shot event
+message ShotEvent {
+  bytes player_id = 1;
+  WeaponType weapon = 2;
+  uint32 projectile_type = 3;
+  float position_x = 4;
+  float position_y = 5;
+  float position_z = 6;
+  float velocity_x = 7;
+  float velocity_y = 8;
+  float velocity_z = 9;
+}
+
+// Grenade insert
+message GrenadeInsert {
+  uint64 rigid_body_id = 1;
+  float position_x = 2;
+  float position_y = 3;
+  float position_z = 4;
+  float velocity_x = 5;
+  float velocity_y = 6;
+  float velocity_z = 7;
+  bytes owner_id = 8;
+  float owner_color_r = 9;
+  float owner_color_g = 10;
+  float owner_color_b = 11;
+}
+
+// Grenade delete
+message GrenadeDelete {
+  uint64 rigid_body_id = 1;
+}
+
+// Grenade update
+message GrenadeUpdate {
+  uint64 rigid_body_id = 1;
+  float position_x = 2;
+  float position_y = 3;
+  float position_z = 4;
+  float velocity_x = 5;
+  float velocity_y = 6;
+  float velocity_z = 7;
+}
+
+// Kill event (weapon is damage source: "bullet", "photon", "grenade", etc.)
+message KillEvent {
+  bytes killer_id = 1;
+  string killer_name = 2;
+  bytes victim_id = 3;
+  string victim_name = 4;
+  string weapon = 5;
+  uint64 timestamp = 6;
+}
+
+// Photon beam
+message PhotonBeam {
+  uint64 id = 1;
+  bytes owner_id = 2;
+  float origin_x = 3;
+  float origin_y = 4;
+  float origin_z = 5;
+  float end_x = 6;
+  float end_y = 7;
+  float end_z = 8;
+  int32 remaining_ticks = 9;
+}
+
+// Secondary ability effect (hammers pop, dash poof) - broadcast for all players to render
+message SecondaryEffectEvent {
+  bytes player_id = 1;
+  SecondaryType secondary_type = 2;
+  float position_x = 3;
+  float position_y = 4;
+  float position_z = 5;
+  float direction_x = 6;
+  float direction_z = 7;
+}

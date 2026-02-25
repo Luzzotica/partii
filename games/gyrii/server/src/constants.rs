@@ -9,10 +9,14 @@ pub const BEAM_DURATION_TICKS: i32 = 60;
 pub const BEAM_HALF_WIDTH: f32 = 0.3;
 pub const PHOTON_RAY_MAX_DISTANCE: f32 = 2000.0;
 
+/// Fixed timestep for physics and player input. Must match client PHYSICS_TICK_DT.
+/// Server game loop runs at 1/TICK_DT Hz (60 Hz).
+pub const PHYSICS_TICK_DT: f32 = 1.0 / 60.0;
+
 /// Player acceleration and damping.
-pub const PLAYER_ACCEL: f32 = 10.2; // 12.0 * 0.85 (15% slower)
+/// Scaled for PHYSICS_TICK_DT: 10.2 * (0.05 / (1/60)) = 30.6 to preserve speed from dt=0.05 era.
+pub const PLAYER_ACCEL: f32 = 30.6;
 pub const PLAYER_DAMPING: f32 = 0.96;
-pub const PLAYER_INPUT_TICK_DT: f32 = 0.05;
 
 /// Grenade constants.
 pub const GRENADE_FUSE_SEC: u64 = 5;
@@ -27,3 +31,16 @@ pub const PLAYER_MASS: f32 = 1.0;
 
 /// Below this Y position, player dies (fell through floor hole / pit).
 pub const FALL_DEATH_Y_THRESHOLD: f32 = -10.0;
+
+/// Popup Hammers secondary ability.
+/// Forced cooldown = ability cooldown: no shoot/grenade/secondary for this duration.
+pub const POPUP_HAMMERS_COOLDOWN_MICROS: i64 = 800_000; // 0.8s
+pub const POPUP_HAMMERS_ABILITY_COOLDOWN_MICROS: i64 = 800_000; // same as forced
+pub const POPUP_HAMMERS_RADIUS: f32 = 1.3;
+pub const POPUP_HAMMERS_DAMAGE: f32 = 60.0;
+
+/// Dash secondary ability.
+/// Forced cooldown = ability cooldown: no shoot/grenade/secondary for this duration.
+pub const DASH_IMPULSE: f32 = 25.0;
+pub const DASH_COOLDOWN_MICROS: i64 = 800_000; // 0.8s
+pub const DASH_ABILITY_COOLDOWN_MICROS: i64 = 800_000; // same as forced

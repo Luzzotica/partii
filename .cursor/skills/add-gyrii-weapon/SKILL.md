@@ -9,8 +9,8 @@ When adding a weapon, touch these locations in order. Use the shotgun implementa
 
 ## Checklist (all required)
 
-- [ ] Proto enum
-- [ ] Server: state, combat, actions, ws decode, sync
+- [ ] Proto enum (common.proto)
+- [ ] Server: state, weapon_config, weapon handler, actions, ws decode, sync
 - [ ] Regenerate proto (buf generate)
 - [ ] Client: store, constants, WeaponRenderer, WeaponHandler, SpawnLoadoutScreen
 - [ ] Client: useGyriiServer, gyriiClient, weaponDisplayConstants
@@ -21,7 +21,7 @@ When adding a weapon, touch these locations in order. Use the shotgun implementa
 
 ## 1. Proto
 
-**File:** `games/gyrii/proto/gyrii.proto`
+**File:** `games/gyrii/proto/common.proto`
 
 Add to `WeaponType` enum (use next available number):
 
@@ -51,20 +51,53 @@ Add variant to `WeaponType` enum:
 Shotgun,
 ```
 
-### 3.2 Combat
+### 3.2 Weapon Config
 
-**File:** `games/gyrii/server/src/combat.rs`
+**File:** `games/gyrii/server/src/weapon_config.rs`
 
-- Add `muzzle_offset_local(WeaponType::Shotgun)` case
-- Add `weapon_str(WeaponType::Shotgun)` case
-- Add `weapon_damage(WeaponType::Shotgun)` value
-- Add `weapon_fire_rate_micros(WeaponType::Shotgun)` value (micros, e.g. 900_000)
+Add config in `weapon_config()`:
 
-For **projectile weapons** (bullets/rockets): implement firing in `try_fire_player` or a dedicated `try_fire_*` and return `Vec<ShotEventPayload>`.
+```rust
+static SHOTGUN: WeaponConfig = WeaponConfig {
+    name: "shotgun",
+    damage: 27,
+    fire_rate_ms: 900,
+    muzzle_offset: (-0.38, 0.125, -0.7),
+    photon: None,
+    projectile: Some(SHOTGUN_PROJECTILE),  // or BULLET_PROJECTILE for single-projectile
+};
+// In match:
+Shotgun => &SHOTGUN,
+```
 
-For **hitscan** (photon rifle): add branch before bullet path; call dedicated handler, return `Vec::new()`.
+For pellet weapons, define a `ProjectileConfig` with `pellets: Some(6)`.
 
-### 3.3 Actions
+### 3.3 Weapon Handler (critical)
+
+Weapon fire logic lives in **`games/gyrii/server/src/combat/weapons/`**.
+
+**For single-projectile weapons** (SMG, ChainGun, Bazooka, Flamethrower): add the weapon to `weapon_config` only. The `bullet.rs` handler already supports all projectile weapons via config.
+
+**For custom firing logic** (shotgun, photon rifle): create a new handler file and register it.
+
+**File:** `games/gyrii/server/src/combat/weapons/shotgun.rs` (or `my_weapon.rs`)
+
+```rust
+// Copy from shotgun.rs: try_fire(state, lobby_id, identity) -> Vec<ShotEventPayload>
+pub fn try_fire(state: &mut ServerState, lobby_id: u64, identity: &str) -> Vec<ShotEventPayload> { ... }
+```
+
+**File:** `games/gyrii/server/src/combat/weapons/mod.rs`
+
+Add to the `match weapon` dispatch:
+
+```rust
+WeaponType::Shotgun => shotgun::try_fire(state, lobby_id, identity),
+```
+
+For **beam/hitscan** weapons (like photon rifle): create `photon_rifle.rs`-style handler that returns `Vec::new()` (no shot events; damage is applied per-tick elsewhere).
+
+### 3.4 Actions
 
 **File:** `games/gyrii/server/src/actions/player.rs`
 
@@ -74,7 +107,7 @@ Add to `parse_weapon`:
 "Shotgun" => WeaponType::Shotgun,
 ```
 
-### 3.4 WS Client Decode
+### 3.5 WS Client Decode
 
 **File:** `games/gyrii/server/src/ws/client_decode.rs`
 
@@ -84,7 +117,7 @@ Add to `weapon_to_pascal`:
 Ok(WeaponType::WeaponShotgun) => "Shotgun",
 ```
 
-### 3.5 Sync
+### 3.6 Sync
 
 **File:** `games/gyrii/server/src/sync.rs`
 
@@ -202,17 +235,27 @@ export const PROJECTILE_TTL_SHOTGUN_SEC = 0.5;
 
 ## 5. Special Cases
 
+### Single-projectile weapons (SMG, ChainGun, Bazooka, Flamethrower)
+
+- Add config to `weapon_config.rs` only. The `bullet.rs` handler covers all such weapons.
+- No new handler file needed.
+
 ### Projectile weapon with multiple pellets (shotgun)
 
-- Server: create `try_fire_shotgun` that spawns N projectiles, returns `Vec<ShotEventPayload>` with N events
-- Game loop: `for ev in try_fire_player(...) { all_shot_events.push((lobby_id, ev)); }`
+- Create `combat/weapons/shotgun.rs` with `try_fire` that spawns N projectiles, returns `Vec<ShotEventPayload>` with N events
+- Register in `combat/weapons/mod.rs`
 - Client: `onShotFired` no-op; pellets come from server `shot_events`
+
+### Beam/hitscan weapons (photon rifle)
+
+- Create `combat/weapons/photon_rifle.rs` that spawns a beam, returns `Vec::new()`
+- Damage is applied per-tick in `combat::process_photon_beam_damage` (extend if new beam type)
 
 ### Damage falloff
 
-- Add `origin_x, origin_y, origin_z` to `ProjectileData` when inserting
-- In `process_projectile_collisions`, compute distance from origin and apply S-curve multiplier to damage
-- Add `BULLET_FALLOFF_RANGE` and `BULLET_FALLOFF_K` constants; set range to 0 to disable
+- `ProjectileData` already has `origin_x, origin_y, origin_z`
+- `process_projectile_collisions` applies S-curve multiplier via `ProjectileConfig.falloff_range` and `falloff_k`
+- Set `falloff_range: 0` to disable
 
 ### Custom weapon model
 

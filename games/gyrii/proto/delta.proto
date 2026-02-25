@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package gyrii;
+
+import "player.proto";
+import "combat.proto";
+import "ctf.proto";
+
+// Server -> Client: incremental update (each tick)
+message Delta {
+  uint64 tick = 1;
+  uint64 delta_id = 2;
+  uint64 base_snapshot_id = 3;
+  repeated PlayerRealtime players = 4;
+  repeated ShotEvent shot_events = 5;
+  repeated GrenadeInsert grenade_inserts = 6;
+  repeated GrenadeDelete grenade_deletes = 7;
+  repeated GrenadeUpdate grenade_updates = 8;
+  repeated KillEvent kill_events = 9;
+  repeated PhotonBeam photon_beams = 10;
+  repeated FlagState flags = 11;
+  repeated SecondaryEffectEvent secondary_effect_events = 12;
+}

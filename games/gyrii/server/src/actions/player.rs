@@ -3,7 +3,7 @@
 use rapier3d::prelude::*;
 
 use crate::actions::{ActionResult, BroadcastPlayerJoined};
-use crate::constants::{MAX_HEALTH, PLAYER_ACCEL, PLAYER_DAMPING, PLAYER_INPUT_TICK_DT};
+use crate::constants::MAX_HEALTH;
 use crate::protocol::Identity;
 use crate::state::{
     get_best_spawn_position, GameMode, LobbyPlayer, Player, ServerState, Vec3, WeaponType,
@@ -98,6 +98,8 @@ fn parse_secondary(s: &str) -> SecondaryType {
     match s {
         "BubbleShield" => SecondaryType::BubbleShield,
         "SelfDestructNuke" => SecondaryType::SelfDestructNuke,
+        "PopupHammers" => SecondaryType::PopupHammers,
+        "Dash" => SecondaryType::Dash,
         _ => SecondaryType::PopupKnives,
     }
 }
@@ -313,6 +315,9 @@ pub async fn request_spawn(
         last_impulse_z: 0.0,
         last_impulse_time: 0,
         photon_rifle_charge_started_at: None,
+        held_flag_team: None,
+        secondary_forced_cooldown_until_micros: 0,
+        last_secondary_used_at: 0,
     };
 
     let lobby_id = player.lobby_id;
@@ -353,25 +358,7 @@ pub async fn update_input(
     player.aim_x = aim_x;
     player.aim_z = aim_z;
 
-    if player.is_alive {
-        player.velocity_x += ix * PLAYER_ACCEL * PLAYER_INPUT_TICK_DT;
-        player.velocity_z += iz * PLAYER_ACCEL * PLAYER_INPUT_TICK_DT;
-        player.velocity_x *= PLAYER_DAMPING;
-        player.velocity_z *= PLAYER_DAMPING;
-
-        let rigid_body_id = player.rigid_body_id;
-        let lobby_id = player.lobby_id;
-        let (vx, vy, vz) = (player.velocity_x, player.velocity_y, player.velocity_z);
-
-        if rigid_body_id > 0 {
-            if let Some(physics) = state.physics_worlds.get_mut(&lobby_id) {
-                physics.set_linvel(rigid_body_id, vx, vy, vz);
-            }
-        } else {
-            player.position_x += player.velocity_x * PLAYER_INPUT_TICK_DT;
-            player.position_z += player.velocity_z * PLAYER_INPUT_TICK_DT;
-        }
-    }
+    // Velocity is applied in game loop each tick; we just store input state
 
     Ok(None)
 }

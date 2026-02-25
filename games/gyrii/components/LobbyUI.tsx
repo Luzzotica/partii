@@ -288,6 +288,12 @@ export default function LobbyUI() {
           </span>
         </h1>
         <p className="text-center text-gray-400 mb-2">Neon Ball Shooter</p>
+        <div className="text-center mb-4">
+          <div className="inline-block bg-black/30 backdrop-blur-sm rounded-lg px-4 py-2 text-xs text-gray-400">
+            WASD - Move | Mouse - Aim | LMB - Shoot | RMB - Grenade | Space -
+            Secondary
+          </div>
+        </div>
         <p className="text-center mb-4">
           <Link
             href="/arcade/gyrii/maps"

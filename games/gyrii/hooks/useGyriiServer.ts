@@ -7,19 +7,25 @@
 import { useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { canonicalPlayerId, useGyriiStore } from "../store/gameStore";
-import type { Player } from "../store/gameStore";
+import type { FlagStateEntry, Player } from "../store/gameStore";
 import {
   GameMode,
   GameState,
   MapId,
-  type Player as ProtoPlayer,
-  type PlayerRealtime as ProtoPlayerRealtime,
-  type PlayerProfile as ProtoPlayerProfile,
-  type Lobby as ProtoLobby,
-  type LobbySummary as ProtoLobbySummary,
   WeaponType as ProtoWeaponType,
   SecondaryType as ProtoSecondaryType,
-} from "../proto-gen/gyrii_pb";
+} from "../proto-gen/common_pb";
+import type {
+  Player as ProtoPlayer,
+  PlayerRealtime as ProtoPlayerRealtime,
+  PlayerProfile as ProtoPlayerProfile,
+} from "../proto-gen/player_pb";
+import type {
+  Lobby as ProtoLobby,
+  LobbySummary as ProtoLobbySummary,
+} from "../proto-gen/lobby_pb";
+import type { FlagState as ProtoFlagState } from "../proto-gen/ctf_pb";
+import type { Delta as ProtoDelta } from "../proto-gen/delta_pb";
 import * as transport from "../services/gyriiTransport";
 import * as gyriiClient from "../services/gyriiClient";
 import * as messageRouter from "../services/gyriiMessageRouter";
@@ -57,6 +63,8 @@ function secondaryProtoToStr(n: number): string {
     [ProtoSecondaryType.SECONDARY_POPUP_KNIVES]: "popupKnives",
     [ProtoSecondaryType.SECONDARY_BUBBLE_SHIELD]: "bubbleShield",
     [ProtoSecondaryType.SECONDARY_SELF_DESTRUCT_NUKE]: "selfDestructNuke",
+    [ProtoSecondaryType.SECONDARY_POPUP_HAMMERS]: "popupHammers",
+    [ProtoSecondaryType.SECONDARY_DASH]: "dash",
   };
   return m[n] ?? "popupKnives";
 }
@@ -115,6 +123,9 @@ function protoPlayerToJson(
     last_grenade_thrown_at: p.lastGrenadeThrownAt,
     aim_x: p.aimX,
     aim_z: p.aimZ,
+    held_flag_team: p.heldFlagTeam,
+    secondary_forced_cooldown_until_micros:
+      p.secondaryForcedCooldownUntilMicros,
   } as any;
 }
 
@@ -139,6 +150,11 @@ function protoPlayerRealtimeToJson(
     last_grenade_thrown_at: p.lastGrenadeThrownAt,
     aim_x: p.aimX,
     aim_z: p.aimZ,
+    held_flag_team: p.heldFlagTeam,
+    secondary_forced_cooldown_until_micros:
+      p.secondaryForcedCooldownUntilMicros != null
+        ? Number(p.secondaryForcedCooldownUntilMicros)
+        : undefined,
   } as any;
 }
 
@@ -194,7 +210,19 @@ function protoLobbySummaryToJson(l: ProtoLobbySummary): any {
   };
 }
 
-function protoDeltaToMsg(d: import("../proto-gen/gyrii_pb").Delta): any {
+function protoFlagToJson(f: ProtoFlagState): FlagStateEntry {
+  const state =
+    f.state === 0 ? "atBase" : f.state === 1 ? "carried" : "dropped";
+  return {
+    team: f.team,
+    state,
+    position: { x: f.positionX, y: f.positionY, z: f.positionZ },
+    carrierId: f.carrierId ? bytesToUuidString(f.carrierId) : undefined,
+    rigidBodyId: f.rigidBodyId != null ? Number(f.rigidBodyId) : undefined,
+  };
+}
+
+function protoDeltaToMsg(d: ProtoDelta): any {
   return {
     delta_id: Number(d.deltaId),
     base_snapshot_id: Number(d.baseSnapshotId),
@@ -229,6 +257,7 @@ function protoDeltaToMsg(d: import("../proto-gen/gyrii_pb").Delta): any {
       weapon: k.weapon ?? "",
       timestamp: Number(k.timestamp ?? 0),
     })),
+    flags: (d.flags ?? []).map((f) => protoFlagToJson(f)),
     photon_beams: d.photonBeams.map((b) => ({
       id: Number(b.id),
       owner_id: bytesToUuidString(b.ownerId),
@@ -239,6 +268,15 @@ function protoDeltaToMsg(d: import("../proto-gen/gyrii_pb").Delta): any {
       end_y: b.endY,
       end_z: b.endZ,
       remaining_ticks: b.remainingTicks ?? 0,
+    })),
+    secondary_effect_events: (d.secondaryEffectEvents ?? []).map((e) => ({
+      player_id: bytesToUuidString(e.playerId),
+      secondary_type: secondaryProtoToStr(e.secondaryType),
+      position_x: e.positionX,
+      position_y: e.positionY,
+      position_z: e.positionZ,
+      direction_x: e.directionX,
+      direction_z: e.directionZ,
     })),
   };
 }
@@ -282,6 +320,8 @@ function playerFromPayload(
     last_grenade_thrown_at?: number;
     aim_x?: number;
     aim_z?: number;
+    held_flag_team?: number;
+    secondary_forced_cooldown_until_micros?: number;
   },
   fallbackSnapshotId = 0,
 ): Player {
@@ -341,6 +381,15 @@ function playerFromPayload(
     },
     serverSnapshotId: Number(p.server_snapshot_id ?? fallbackSnapshotId) || 0,
     isAlive: p.is_alive ?? true,
+    heldFlagTeam:
+      p.held_flag_team != null && p.held_flag_team !== 0
+        ? p.held_flag_team
+        : undefined,
+    secondaryForcedCooldownUntilMicros:
+      p.secondary_forced_cooldown_until_micros != null &&
+      p.secondary_forced_cooldown_until_micros > 0
+        ? Number(p.secondary_forced_cooldown_until_micros)
+        : undefined,
   };
 }
 
@@ -394,6 +443,7 @@ function lobbySummaryToStore(l: any) {
 function applyLobbyState(msg: any) {
   const store = useGyriiStore.getState();
   store.clearPlayers();
+  store.clearFlags();
   const lobby = lobbyFromPayload(msg.lobby, msg.players?.length ?? 0);
   const snapshotId = Number(msg.snapshot_id ?? 0) || 0;
   const lastDeltaId = Number(msg.last_delta_id ?? 0) || 0;
@@ -403,6 +453,14 @@ function applyLobbyState(msg: any) {
   if (lobby.gameState !== "ended") {
     store.setRoundEndedBanner(null);
   }
+  const flagsMap = new Map<
+    string,
+    import("../store/gameStore").FlagStateEntry
+  >();
+  for (const f of msg.flags ?? []) {
+    flagsMap.set(`${lobby.id}:${f.team}`, f);
+  }
+  store.setFlags(flagsMap);
   const ourId = canonicalPlayerId(transport.getIdentity() ?? "");
   let didSetLocalPlayer = false;
   let localPlayerIsAlive: boolean | undefined;
@@ -548,6 +606,8 @@ function realtimeFromPayload(
     last_grenade_thrown_at?: number;
     aim_x?: number;
     aim_z?: number;
+    held_flag_team?: number;
+    secondary_forced_cooldown_until_micros?: number;
   },
   fallbackSnapshotId = 0,
 ): Partial<import("../store/gameStore").Player> {
@@ -588,6 +648,15 @@ function realtimeFromPayload(
     aimDirection:
       p.aim_x != null && p.aim_z != null
         ? { x: p.aim_x, z: p.aim_z }
+        : undefined,
+    heldFlagTeam:
+      p.held_flag_team != null && p.held_flag_team !== 0
+        ? p.held_flag_team
+        : undefined,
+    secondaryForcedCooldownUntilMicros:
+      p.secondary_forced_cooldown_until_micros != null &&
+      p.secondary_forced_cooldown_until_micros > 0
+        ? Number(p.secondary_forced_cooldown_until_micros)
         : undefined,
   };
 }
@@ -751,6 +820,31 @@ function applyCommittedDelta(msg: any) {
       },
     });
   }
+  for (const e of msg.secondary_effect_events ?? []) {
+    store.addPendingSecondaryEffectEvent({
+      playerId: canonicalPlayerId(e.player_id ?? ""),
+      secondaryType: (e.secondary_type ??
+        "popupKnives") as import("../store/gameStore").SecondaryType,
+      position: {
+        x: e.position_x ?? 0,
+        y: e.position_y ?? 0.5,
+        z: e.position_z ?? 0,
+      },
+      direction: {
+        x: e.direction_x ?? 0,
+        z: e.direction_z ?? 0,
+      },
+    });
+  }
+  const lobbyId = String(store.currentLobby?.id ?? "");
+  if (lobbyId && Array.isArray(msg.flags)) {
+    const flagsMap = new Map(store.flags);
+    for (const f of msg.flags) {
+      flagsMap.set(`${lobbyId}:${f.team}`, f);
+    }
+    store.setFlags(flagsMap);
+  }
+
   for (const k of msg.kill_events ?? []) {
     store.addKillEvent({
       killerId: k.killer_id ?? "",
@@ -824,8 +918,9 @@ function setupMessageHandler() {
           break;
         case "lobbyState": {
           const ls = value as {
-            lobby?: import("../proto-gen/gyrii_pb").Lobby;
-            players?: import("../proto-gen/gyrii_pb").Player[];
+            lobby?: ProtoLobby;
+            players?: ProtoPlayer[];
+            flags?: ProtoFlagState[];
             snapshotId?: bigint;
             lastDeltaId?: bigint;
           };
@@ -834,6 +929,7 @@ function setupMessageHandler() {
           applyLobbyState({
             lobby: protoLobbyToJson(lobby),
             players: (ls.players ?? []).map(protoPlayerToJson),
+            flags: (ls.flags ?? []).map(protoFlagToJson),
             snapshot_id: Number(ls.snapshotId ?? 0),
             last_delta_id: Number(ls.lastDeltaId ?? 0),
           });
@@ -844,21 +940,17 @@ function setupMessageHandler() {
             lobbies: (
               (
                 value as {
-                  lobbies: import("../proto-gen/gyrii_pb").LobbySummary[];
+                  lobbies: ProtoLobbySummary[];
                 }
               ).lobbies ?? []
             ).map(protoLobbySummaryToJson),
           });
           break;
         case "delta":
-          applyDelta(
-            protoDeltaToMsg(value as import("../proto-gen/gyrii_pb").Delta),
-          );
+          applyDelta(protoDeltaToMsg(value as ProtoDelta));
           break;
         case "playerJoined": {
-          const p = (
-            value as { player?: import("../proto-gen/gyrii_pb").PlayerProfile }
-          ).player;
+          const p = (value as { player?: ProtoPlayerProfile }).player;
           if (p) applyPlayerJoined({ player: protoProfileToJson(p) });
           break;
         }
@@ -1064,7 +1156,9 @@ export function useGyriiServer() {
     throwMolotov: async (aimX: number, aimZ: number) => {
       gyriiClient.throwMolotov(aimX, aimZ);
     },
-    useSecondary: async () => {},
+    useSecondary: async () => {
+      gyriiClient.useSecondary();
+    },
     setLoadout: async () => {},
     requestSpawn,
   };

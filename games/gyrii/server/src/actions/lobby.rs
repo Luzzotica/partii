@@ -5,8 +5,8 @@ use crate::map_parser::{get_builtin_map_json, parse_map_json};
 use crate::physics::{create_map_geometry, PhysicsWorldState};
 use crate::protocol::Identity;
 use crate::state::{
-    GameMode, GameState, Lobby, LobbyPlayer, MapId, MapFlagLocation, MapSpawnPoint,
-    PendingRoundRestart, ServerState,
+    FlagData, FlagState, GameMode, GameState, Lobby, LobbyPlayer, MapId, MapFlagLocation,
+    MapSpawnPoint, PendingRoundRestart, ServerState,
 };
 use crate::stats;
 use serde::Deserialize;
@@ -84,6 +84,36 @@ fn parse_game_mode(s: &str) -> Result<GameMode, String> {
         "TeamDeathmatch" => Ok(GameMode::TeamDeathmatch),
         "CaptureTheFlag" => Ok(GameMode::CaptureTheFlag),
         _ => Err(format!("Unknown game mode: {}", s)),
+    }
+}
+
+fn init_flags_for_lobby(state: &mut ServerState, lobby_id: u64) {
+    let is_ctf = state
+        .lobbies
+        .get(&lobby_id)
+        .map(|l| l.game_mode == GameMode::CaptureTheFlag)
+        .unwrap_or(false);
+    if !is_ctf {
+        return;
+    }
+    for fl in state
+        .flag_locations
+        .iter()
+        .filter(|f| f.lobby_id == lobby_id)
+    {
+        let key = (lobby_id, fl.team);
+        state.flags.insert(
+            key,
+            FlagData {
+                lobby_id,
+                team: fl.team,
+                state: FlagState::AtBase {
+                    position_x: fl.position_x,
+                    position_y: 0.5,
+                    position_z: fl.position_z,
+                },
+            },
+        );
     }
 }
 
@@ -199,6 +229,7 @@ pub async fn create_lobby(
         current_snapshot_id: 0,
         current_delta_id: 0,
         custom_map_json,
+        team_flag_captures: HashMap::new(),
     };
 
     let mut physics = PhysicsWorldState::new();
@@ -291,23 +322,39 @@ pub async fn join_lobby(
         return Err("Game already in progress".to_string());
     }
 
-    let team0 = state
-        .lobby_players
-        .iter()
-        .filter(|lp| lp.lobby_id == p.lobby_id && lp.team == 0)
-        .count();
-    let team1 = state
-        .lobby_players
-        .iter()
-        .filter(|lp| lp.lobby_id == p.lobby_id && lp.team == 1)
-        .count();
-
     let team = if lobby.game_mode == GameMode::FreeForAll {
         player_count as i32
-    } else if team0 <= team1 {
-        0
+    } else if lobby.game_mode == GameMode::CaptureTheFlag {
+        let mut counts = [0usize; 4];
+        for lp in state
+            .lobby_players
+            .iter()
+            .filter(|lp| lp.lobby_id == p.lobby_id && (0..4).contains(&lp.team))
+        {
+            counts[lp.team as usize] += 1;
+        }
+        counts
+            .iter()
+            .enumerate()
+            .min_by_key(|(_, &c)| c)
+            .map(|(t, _)| t as i32)
+            .unwrap_or(0)
     } else {
-        1
+        let team0 = state
+            .lobby_players
+            .iter()
+            .filter(|lp| lp.lobby_id == p.lobby_id && lp.team == 0)
+            .count();
+        let team1 = state
+            .lobby_players
+            .iter()
+            .filter(|lp| lp.lobby_id == p.lobby_id && lp.team == 1)
+            .count();
+        if team0 <= team1 {
+            0
+        } else {
+            1
+        }
     };
 
     let lp_id = state.next_lobby_player_id;
@@ -422,7 +469,9 @@ pub async fn start_game(state: Arc<RwLock<ServerState>>, identity: &Identity) ->
     }
 
     lobby.game_state = GameState::InProgress;
+    lobby.team_flag_captures.clear();
     stats::start_match_tracking(&mut state, lp.lobby_id);
+    init_flags_for_lobby(&mut state, lp.lobby_id);
     tracing::info!("Game started in lobby {}", lp.lobby_id);
     Ok(None)
 }
@@ -654,6 +703,18 @@ fn restart_lobby_round(state: &mut ServerState, lobby_id: u64) -> bool {
         .grenade_deletes_this_tick
         .retain(|(_, lid)| *lid != lobby_id);
     state.photon_beams.retain(|_, b| b.lobby_id != lobby_id);
+    state
+        .pending_secondary_actions
+        .retain(|(id, _)| state.players.get(id).map_or(true, |p| p.lobby_id != lobby_id));
+
+    state
+        .flags
+        .retain(|(lid, _), _| *lid != lobby_id);
+
+    if let Some(lobby) = state.lobbies.get_mut(&lobby_id) {
+        lobby.team_flag_captures.clear();
+    }
+    init_flags_for_lobby(state, lobby_id);
 
     for p in state.players.values_mut().filter(|p| p.lobby_id == lobby_id) {
         p.rigid_body_id = 0;
@@ -677,6 +738,9 @@ fn restart_lobby_round(state: &mut ServerState, lobby_id: u64) -> bool {
         p.last_impulse_z = 0.0;
         p.last_impulse_time = 0;
         p.photon_rifle_charge_started_at = None;
+        p.held_flag_team = None;
+        p.secondary_forced_cooldown_until_micros = 0;
+        p.last_secondary_used_at = 0;
         p.grenades = 2;
         p.molotovs = 1;
     }

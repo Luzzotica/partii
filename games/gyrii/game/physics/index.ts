@@ -7,7 +7,6 @@ export {
   getPlayerPosition,
   getPlayerLinvel,
   applyImpulseToPlayer,
-  applyInput,
   step,
   createProjectileBody,
   removeProjectileBody,
@@ -19,7 +18,7 @@ export {
   setThrowableState,
   destroyWorld,
 } from "./ClientPhysics";
-export type { WorldHandle } from "./ClientPhysics";
+export type { WorldHandle, StepOptions } from "./ClientPhysics";
 export {
   GROUP_BULLET,
   GROUP_PLAYER,

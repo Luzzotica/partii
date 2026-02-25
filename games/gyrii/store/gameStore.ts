@@ -16,7 +16,12 @@ export type WeaponType =
   | "bazooka"
   | "flamethrower"
   | "shotgun";
-export type SecondaryType = "popupKnives" | "bubbleShield" | "selfDestructNuke";
+export type SecondaryType =
+  | "popupKnives"
+  | "bubbleShield"
+  | "selfDestructNuke"
+  | "popupHammers"
+  | "dash";
 
 export type MarbleDesignId = 0 | 1 | 2 | 3 | 4;
 
@@ -61,6 +66,19 @@ export interface Player {
   lastGrenadeThrownAt?: number;
   /** Server-synced alive state; when false, show respawn loadout screen. */
   isAlive?: boolean;
+  /** CTF: team of flag being carried (undefined = not carrying). */
+  heldFlagTeam?: number;
+  /** When PopupHammers used: micros until shooting/grenade allowed again. */
+  secondaryForcedCooldownUntilMicros?: number;
+}
+
+/** CTF flag state from server. Key: "lobbyId:team" */
+export interface FlagStateEntry {
+  team: number;
+  state: "atBase" | "carried" | "dropped";
+  position: { x: number; y: number; z: number };
+  carrierId?: string;
+  rigidBodyId?: number;
 }
 
 /** Projectile type: which pool and behavior. Must match server PROJECTILE_TYPE_*. */
@@ -97,6 +115,14 @@ export interface PendingGrenadeUpdateEvent {
   rigidBodyId: number;
   position: { x: number; y: number; z: number };
   velocity: { x: number; y: number; z: number };
+}
+
+/** Event pushed when server confirms secondary ability use (hammers, dash); game loop plays effect. */
+export interface PendingSecondaryEffectEvent {
+  playerId: string;
+  secondaryType: SecondaryType;
+  position: { x: number; y: number; z: number };
+  direction: { x: number; z: number };
 }
 
 export interface Lobby {
@@ -211,6 +237,11 @@ interface GyriiStore {
   addKillEvent: (event: KillEvent) => void;
   clearKillFeed: () => void;
 
+  /** CTF flags: key "lobbyId:team" */
+  flags: Map<string, FlagStateEntry>;
+  setFlags: (flags: Map<string, FlagStateEntry>) => void;
+  clearFlags: () => void;
+
   // Active photon beams (server table sync); key = beam id string
   photonBeams: Map<string, PhotonBeamEntry>;
   setPhotonBeam: (beam: PhotonBeamEntry) => void;
@@ -227,6 +258,7 @@ interface GyriiStore {
   pendingGrenadeInserts: PendingGrenadeInsertEvent[];
   pendingGrenadeDeletes: PendingGrenadeDeleteEvent[];
   pendingGrenadeUpdates: PendingGrenadeUpdateEvent[];
+  pendingSecondaryEffectEvents: PendingSecondaryEffectEvent[];
 
   // Input state
   inputDirection: { x: number; z: number };
@@ -270,6 +302,8 @@ interface GyriiStore {
     deletes: PendingGrenadeDeleteEvent[];
     updates: PendingGrenadeUpdateEvent[];
   };
+  addPendingSecondaryEffectEvent: (event: PendingSecondaryEffectEvent) => void;
+  takePendingSecondaryEffectEvents: () => PendingSecondaryEffectEvent[];
 
   // Reset
   reset: () => void;
@@ -287,12 +321,14 @@ const initialState = {
   pendingLeaveLobby: false,
   roundEndedBanner: null,
   killFeed: [],
+  flags: new Map<string, FlagStateEntry>(),
   photonBeams: new Map<string, PhotonBeamEntry>(),
   playersInBeamHighlight: new Set<string>(),
   pendingShotEvents: [] as PendingShotEvent[],
   pendingGrenadeInserts: [] as PendingGrenadeInsertEvent[],
   pendingGrenadeDeletes: [] as PendingGrenadeDeleteEvent[],
   pendingGrenadeUpdates: [] as PendingGrenadeUpdateEvent[],
+  pendingSecondaryEffectEvents: [] as PendingSecondaryEffectEvent[],
   inputDirection: { x: 0, z: 0 },
   aimDirection: { x: 0, z: 1 },
   mousePosition: { x: 0, y: 0 },
@@ -379,6 +415,9 @@ export const useGyriiStore = create<GyriiStore>((set, get) => ({
   },
   clearKillFeed: () => set({ killFeed: [] }),
 
+  setFlags: (flags) => set({ flags }),
+  clearFlags: () => set({ flags: new Map() }),
+
   setPhotonBeam: (beam) =>
     set((s) => {
       const next = new Map(s.photonBeams);
@@ -450,6 +489,20 @@ export const useGyriiStore = create<GyriiStore>((set, get) => ({
       };
     });
     return { inserts, deletes, updates };
+  },
+  addPendingSecondaryEffectEvent: (event) =>
+    set((s) => ({
+      pendingSecondaryEffectEvents: [...s.pendingSecondaryEffectEvents, event],
+    })),
+  takePendingSecondaryEffectEvents: () => {
+    const events: PendingSecondaryEffectEvent[] = [];
+    useGyriiStore.setState((s) => {
+      events.push(...s.pendingSecondaryEffectEvents);
+      return {
+        pendingSecondaryEffectEvents: [] as PendingSecondaryEffectEvent[],
+      };
+    });
+    return events;
   },
 
   reset: () => set(initialState),

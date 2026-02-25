@@ -4,10 +4,12 @@ export const PLAYER_BALL_RADIUS = 0.5;
 /** Gravity (m/s²); must match server physics world. */
 export const GRAVITY = -9.81;
 
+/** Fixed timestep for physics and player input. Must match server PHYSICS_TICK_DT. */
+export const PHYSICS_TICK_DT = 1 / 60;
+
 /** Player movement; must match server constants.rs. */
-export const PLAYER_ACCEL = 10.2; // 12.0 * 0.85 (15% slower)
+export const PLAYER_ACCEL = 30.6; // 10.2 * (0.05 / (1/60)) for same speed with PHYSICS_TICK_DT
 export const PLAYER_DAMPING = 0.96;
-export const PLAYER_INPUT_TICK_DT = 0.05;
 
 /**
  * Bullet speed in world units/sec (client applies this for visuals; server uses same value)
@@ -84,6 +86,12 @@ export const PHOTON_BEAM_DURATION_TICKS = 60;
 
 /** Cooldown after photon rifle fire before next charge can start (ms); must match server. */
 export const PHOTON_RIFLE_RECHARGE_MS = 2000;
+
+/** Popup Hammers cooldown in microseconds (0.8s); must match server. */
+export const POPUP_HAMMERS_COOLDOWN_MICROS = 800_000;
+
+/** Dash cooldown in microseconds (0.8s); must match server DASH_COOLDOWN_MICROS. */
+export const DASH_COOLDOWN_MICROS = 800_000;
 
 /** Health stored as tenths on server (1000 = 100.0 displayed). Must match server HEALTH_SCALE/MAX_HEALTH. */
 export const HEALTH_SCALE = 10;

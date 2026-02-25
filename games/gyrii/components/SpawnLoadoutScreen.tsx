@@ -14,11 +14,16 @@ const PRIMARY_OPTIONS: { value: WeaponType; label: string }[] = [
   { value: "shotgun", label: "Shotgun" },
 ];
 
+const SECONDARY_OPTIONS: { value: SecondaryType; label: string }[] = [
+  { value: "popupHammers", label: "Popup Hammers" },
+  { value: "dash", label: "Dash" },
+];
+
 export default function SpawnLoadoutScreen() {
   const localPlayer = useGyriiStore((s) => s.localPlayer);
 
   const [primary, setPrimary] = useState<WeaponType>("dualMachineGun");
-  const [secondary, setSecondary] = useState<SecondaryType>("popupKnives");
+  const [secondary, setSecondary] = useState<SecondaryType>("popupHammers");
   const [isSpawning, setIsSpawning] = useState(false);
   const { leaveLobby, requestSpawn } = useGyriiConnection();
   const { setCurrentLobby, setPendingLeaveLobby } = useGyriiStore();
@@ -38,7 +43,7 @@ export default function SpawnLoadoutScreen() {
       setSecondary(localPlayer.secondary);
     } else {
       setPrimary("dualMachineGun");
-      setSecondary("popupKnives");
+      setSecondary("popupHammers");
     }
   }, [
     localPlayer?.id,
@@ -83,6 +88,28 @@ export default function SpawnLoadoutScreen() {
                   className={`px-4 py-2 rounded-lg font-medium transition-all ${
                     primary === opt.value
                       ? "bg-cyan-500 text-white"
+                      : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-pink-400 mb-2">
+              Secondary ability
+            </label>
+            <div className="flex gap-2 flex-wrap">
+              {SECONDARY_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setSecondary(opt.value)}
+                  className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                    secondary === opt.value
+                      ? "bg-pink-500 text-white"
                       : "bg-gray-700 text-gray-300 hover:bg-gray-600"
                   }`}
                 >

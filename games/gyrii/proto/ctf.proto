@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package gyrii;
+
+enum FlagStateEnum {
+  FLAG_STATE_AT_BASE = 0;
+  FLAG_STATE_CARRIED = 1;
+  FLAG_STATE_DROPPED = 2;
+}
+
+message FlagState {
+  int32 team = 1;
+  FlagStateEnum state = 2;
+  float position_x = 3;
+  float position_y = 4;
+  float position_z = 5;
+  optional bytes carrier_id = 6;
+  optional uint64 rigid_body_id = 7;
+}

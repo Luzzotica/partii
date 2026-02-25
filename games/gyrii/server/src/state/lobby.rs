@@ -1,6 +1,7 @@
 //! Lobby state types
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -98,6 +99,8 @@ pub struct Lobby {
     pub current_delta_id: u64,
     /// When set, lobby uses this custom map JSON (overrides map_id for loading).
     pub custom_map_json: Option<String>,
+    /// CTF: team -> flag captures this round.
+    pub team_flag_captures: HashMap<i32, i32>,
 }
 
 impl Lobby {

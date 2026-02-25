@@ -1,0 +1,83 @@
+syntax = "proto3";
+
+package gyrii;
+
+import "common.proto";
+
+// Full player payload (profile + realtime) - synced on join / lobby_state
+message Player {
+  bytes id = 1;  // 16-byte UUID
+  string name = 2;
+  float position_x = 3;
+  float position_y = 4;
+  float position_z = 5;
+  int32 health = 6;
+  int32 kills = 7;
+  int32 deaths = 8;
+  int32 team = 9;
+  float color_r = 10;
+  float color_g = 11;
+  float color_b = 12;
+  uint32 design_id = 13;
+  float secondary_color_r = 14;
+  float secondary_color_g = 15;
+  float secondary_color_b = 16;
+  WeaponType weapon = 17;
+  SecondaryType secondary = 18;
+  float velocity_x = 19;
+  float velocity_y = 20;
+  float velocity_z = 21;
+  uint64 server_snapshot_id = 22;
+  bool is_alive = 23;
+  int32 grenade_count = 24;
+  int32 molotov_count = 25;
+  optional int64 last_shot_at = 26;
+  optional int64 last_grenade_thrown_at = 27;
+  float aim_x = 28;
+  float aim_z = 29;
+  optional int32 held_flag_team = 30;
+  optional int64 secondary_forced_cooldown_until_micros = 31;
+}
+
+// Profile (appearance) - synced on join and when a new player spawns
+message PlayerProfile {
+  bytes id = 1;
+  string name = 2;
+  int32 team = 3;
+  float color_r = 4;
+  float color_g = 5;
+  float color_b = 6;
+  uint32 design_id = 7;
+  float secondary_color_r = 8;
+  float secondary_color_g = 9;
+  float secondary_color_b = 10;
+  WeaponType weapon = 11;
+  SecondaryType secondary = 12;
+}
+
+// Realtime data - sent every tick in delta
+message PlayerRealtime {
+  bytes id = 1;
+  int32 team = 2;
+  WeaponType weapon = 3;
+  SecondaryType secondary = 4;
+  float position_x = 5;
+  float position_y = 6;
+  float position_z = 7;
+  int32 health = 8;
+  int32 kills = 9;
+  int32 deaths = 10;
+  float velocity_x = 11;
+  float velocity_y = 12;
+  float velocity_z = 13;
+  uint64 server_snapshot_id = 14;
+  bool is_alive = 15;
+  int32 grenade_count = 16;
+  int32 molotov_count = 17;
+  optional int64 last_shot_at = 18;
+  optional int64 last_grenade_thrown_at = 19;
+  float aim_x = 20;
+  float aim_z = 21;
+  optional int32 held_flag_team = 22;
+  optional int64 secondary_forced_cooldown_until_micros = 23;
+}

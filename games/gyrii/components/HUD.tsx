@@ -6,6 +6,8 @@ import {
   PHOTON_RIFLE_RECHARGE_MS,
   HEALTH_SCALE,
   MAX_HEALTH,
+  POPUP_HAMMERS_COOLDOWN_MICROS,
+  DASH_COOLDOWN_MICROS,
 } from "../game/constants";
 import GameMinimap from "./GameMinimap";
 
@@ -24,6 +26,37 @@ export default function HUD() {
   const isPhotonRifle = localPlayer?.weapon === "photonRifle";
   const grenadeCooldownMicros = 1_000_000; // 1 second
   const nowMicros = Date.now() * 1000;
+
+  const secondaryForcedCooldownUntilMicros = Number(
+    localPlayer?.secondaryForcedCooldownUntilMicros ?? 0,
+  );
+  const secondaryCooldownDurationMicros =
+    localPlayer?.secondary === "popupHammers"
+      ? POPUP_HAMMERS_COOLDOWN_MICROS
+      : localPlayer?.secondary === "dash"
+        ? DASH_COOLDOWN_MICROS
+        : POPUP_HAMMERS_COOLDOWN_MICROS;
+  const isSecondaryOnCooldown =
+    (localPlayer?.secondary === "popupHammers" ||
+      localPlayer?.secondary === "dash") &&
+    secondaryForcedCooldownUntilMicros > 0 &&
+    nowMicros < secondaryForcedCooldownUntilMicros;
+  const secondaryCooldownRemaining = isSecondaryOnCooldown
+    ? Math.max(0, (secondaryForcedCooldownUntilMicros - nowMicros) / 1000)
+    : 0;
+  const secondaryCooldownProgress =
+    isSecondaryOnCooldown && secondaryCooldownDurationMicros > 0
+      ? Math.min(
+          1,
+          Math.max(
+            0,
+            (nowMicros -
+              (secondaryForcedCooldownUntilMicros -
+                secondaryCooldownDurationMicros)) /
+              secondaryCooldownDurationMicros,
+          ),
+        )
+      : 1;
   const lastGrenadeThrownAt = Number(localPlayer?.lastGrenadeThrownAt ?? 0);
   const elapsedMicros = nowMicros - lastGrenadeThrownAt;
   const grenadeCooldownRemaining = Math.max(
@@ -41,14 +74,16 @@ export default function HUD() {
     performance.now() < photonRifleRechargeUntil;
 
   useEffect(() => {
-    if (!isRecharging && !isGrenadeOnCooldown) return;
-    const id = setInterval(() => setNow(performance.now()), 50);
+    if (!isRecharging && !isGrenadeOnCooldown && !isSecondaryOnCooldown) return;
+    const id = setInterval(() => setNow(performance.now()), 16);
     return () => clearInterval(id);
   }, [
     isRecharging,
     isGrenadeOnCooldown,
+    isSecondaryOnCooldown,
     photonRifleRechargeUntil,
     lastGrenadeThrownAt,
+    secondaryForcedCooldownUntilMicros,
   ]);
 
   if (!localPlayer) return null;
@@ -117,29 +152,67 @@ export default function HUD() {
                 </div>
               )}
             </div>
+            <div className="flex flex-col items-end gap-1">
+              <div className="flex items-center gap-1">
+                <span className="text-xs text-pink-400">
+                  {localPlayer.secondary === "popupHammers"
+                    ? "Hammers"
+                    : localPlayer.secondary === "dash"
+                      ? "Dash"
+                      : localPlayer.secondary}
+                </span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Weapon charge (e.g. photon rifle) or recharge cooldown - centered */}
-      {(weaponChargeProgress > 0 || (isPhotonRifle && isRecharging)) && (
+      {/* Weapon charge, photon rifle recharge, or secondary cooldown - centered (reused bar) */}
+      {(weaponChargeProgress > 0 ||
+        (isPhotonRifle && isRecharging) ||
+        isSecondaryOnCooldown) && (
         <div className="absolute left-1/2 bottom-8 -translate-x-1/2 pointer-events-auto">
-          <div className="bg-black/50 backdrop-blur-sm rounded-lg p-2 border border-cyan-500/30">
-            <div className="text-xs text-cyan-400 mb-1">
-              {isRecharging ? "RECHARGE" : "CHARGE"}
+          <div
+            className={`backdrop-blur-sm rounded-lg p-2 border ${
+              isSecondaryOnCooldown
+                ? "bg-black/50 border-pink-500/30"
+                : "bg-black/50 border-cyan-500/30"
+            }`}
+          >
+            <div
+              className={`text-xs mb-1 ${
+                isSecondaryOnCooldown ? "text-pink-400" : "text-cyan-400"
+              }`}
+            >
+              {isSecondaryOnCooldown
+                ? "SECONDARY"
+                : isRecharging
+                  ? "RECHARGE"
+                  : "CHARGE"}
             </div>
             <div className="w-32 h-2 bg-gray-800 rounded-full overflow-hidden">
               <div
                 className={`h-full transition-all duration-75 ${
-                  isRecharging ? "bg-cyan-500/60" : "bg-cyan-500"
+                  isSecondaryOnCooldown
+                    ? "bg-pink-500/70"
+                    : isRecharging
+                      ? "bg-cyan-500/60"
+                      : "bg-cyan-500"
                 }`}
                 style={{
                   width: `${
-                    isRecharging
-                      ? Math.min(100, Math.max(0, rechargeProgress * 100))
-                      : Math.min(100, weaponChargeProgress * 100)
+                    isSecondaryOnCooldown
+                      ? Math.min(
+                          100,
+                          Math.max(0, secondaryCooldownProgress * 100),
+                        )
+                      : isRecharging
+                        ? Math.min(100, Math.max(0, rechargeProgress * 100))
+                        : Math.min(100, weaponChargeProgress * 100)
                   }%`,
-                  boxShadow: "0 0 8px #00ffff",
+                  boxShadow: isSecondaryOnCooldown
+                    ? "0 0 8px #ff69b4"
+                    : "0 0 8px #00ffff",
                 }}
               />
             </div>
@@ -273,16 +346,6 @@ export default function HUD() {
           <div className="absolute top-1/2 left-1/2 w-1 h-1 rounded-full bg-cyan-400 -translate-x-1/2 -translate-y-1/2" />
         </div>
       </div>
-
-      {/* Controls hint - hidden for now; can be moved to settings or help menu */}
-      {false && (
-        <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2">
-          <div className="bg-black/30 backdrop-blur-sm rounded-lg px-4 py-2 text-xs text-gray-400">
-            WASD - Move | Mouse - Aim | LMB - Shoot | RMB - Grenade | Q -
-            Secondary
-          </div>
-        </div>
-      )}
     </div>
   );
 }

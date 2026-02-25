@@ -45,6 +45,8 @@ fn secondary_to_pascal(v: i32) -> &'static str {
         Ok(SecondaryType::SecondaryPopupKnives) => "PopupKnives",
         Ok(SecondaryType::SecondaryBubbleShield) => "BubbleShield",
         Ok(SecondaryType::SecondarySelfDestructNuke) => "SelfDestructNuke",
+        Ok(SecondaryType::SecondaryPopupHammers) => "PopupHammers",
+        Ok(SecondaryType::SecondaryDash) => "Dash",
         _ => "PopupKnives",
     }
 }

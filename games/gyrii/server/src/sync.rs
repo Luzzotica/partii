@@ -1,12 +1,16 @@
 //! Build protobuf payloads for client sync
 
 use crate::pb::gyrii::{
-    server_message, Delta, GameEnded, GrenadeDelete, GrenadeInsert, GrenadeUpdate, KillEvent,
-    Lobby, LobbyList, LobbyState, LobbySummary, PhotonBeam, Player, PlayerJoined, PlayerLeft,
-    PlayerProfile, PlayerRealtime, ServerMessage, ShotEvent,
+    server_message, Delta, FlagState as FlagStateProto, GameEnded, GrenadeDelete,
+    GrenadeInsert, GrenadeUpdate, KillEvent, Lobby, LobbyList, LobbyState, LobbySummary, PhotonBeam,
+    Player, PlayerJoined, PlayerLeft, PlayerProfile, PlayerRealtime, SecondaryEffectEvent,
+    ServerMessage, ShotEvent,
 };
-use crate::protocol::{KillEventPayload, ShotEventPayload};
-use crate::state::{GameMode, GameState, GrenadeData, Lobby as StateLobby, PhotonBeamData, Player as StatePlayer};
+use crate::protocol::{KillEventPayload, SecondaryEffectPayload, ShotEventPayload};
+use crate::state::{
+    FlagData, GameMode, GameState, GrenadeData, Lobby as StateLobby, PhotonBeamData,
+    Player as StatePlayer,
+};
 use crate::state::{MapId, SecondaryType, WeaponType};
 use uuid::Uuid;
 
@@ -36,6 +40,8 @@ fn secondary_to_proto(s: SecondaryType) -> i32 {
         SecondaryType::PopupKnives => P::SecondaryPopupKnives,
         SecondaryType::BubbleShield => P::SecondaryBubbleShield,
         SecondaryType::SelfDestructNuke => P::SecondarySelfDestructNuke,
+        SecondaryType::PopupHammers => P::SecondaryPopupHammers,
+        SecondaryType::Dash => P::SecondaryDash,
     };
     v as i32
 }
@@ -111,6 +117,12 @@ fn player_to_proto(p: &StatePlayer) -> Player {
         },
         aim_x: p.aim_x,
         aim_z: p.aim_z,
+        held_flag_team: p.held_flag_team,
+        secondary_forced_cooldown_until_micros: if p.secondary_forced_cooldown_until_micros > 0 {
+            Some(p.secondary_forced_cooldown_until_micros)
+        } else {
+            None
+        },
     }
 }
 
@@ -162,6 +174,53 @@ fn player_to_realtime_proto(p: &StatePlayer) -> PlayerRealtime {
         },
         aim_x: p.aim_x,
         aim_z: p.aim_z,
+        held_flag_team: p.held_flag_team,
+        secondary_forced_cooldown_until_micros: if p.secondary_forced_cooldown_until_micros > 0 {
+            Some(p.secondary_forced_cooldown_until_micros)
+        } else {
+            None
+        },
+    }
+}
+
+fn flag_to_proto(f: &FlagData) -> FlagStateProto {
+    let (state_enum, position_x, position_y, position_z, carrier_id, rigid_body_id) =
+        match &f.state {
+            crate::state::FlagState::AtBase {
+                position_x,
+                position_y,
+                position_z,
+            } => (0, *position_x, *position_y, *position_z, None, None),
+            crate::state::FlagState::Carried { carrier_id } => (
+                1,
+                0.0,
+                0.0,
+                0.0,
+                Some(identity_to_bytes(carrier_id)),
+                None,
+            ),
+            crate::state::FlagState::Dropped {
+                rigid_body_id,
+                position_x,
+                position_y,
+                position_z,
+            } => (
+                2,
+                *position_x,
+                *position_y,
+                *position_z,
+                None,
+                Some(*rigid_body_id),
+            ),
+        };
+    FlagStateProto {
+        team: f.team,
+        state: state_enum,
+        position_x,
+        position_y,
+        position_z,
+        carrier_id,
+        rigid_body_id,
     }
 }
 
@@ -218,6 +277,7 @@ pub fn build_player_left(player_id: &str) -> Vec<u8> {
 pub fn build_lobby_state(
     lobby: &StateLobby,
     players: &[StatePlayer],
+    flags: &[FlagData],
     snapshot_id: u64,
     last_delta_id: u64,
 ) -> Vec<u8> {
@@ -242,6 +302,7 @@ pub fn build_lobby_state(
             last_delta_id,
             lobby: Some(lobby_proto),
             players: players.iter().map(player_to_proto).collect(),
+            flags: flags.iter().map(flag_to_proto).collect(),
         })),
     };
     encode_server_message(msg)
@@ -362,6 +423,18 @@ fn weapon_str_to_proto(s: &str) -> i32 {
     v as i32
 }
 
+fn secondary_effect_to_proto(p: &SecondaryEffectPayload) -> SecondaryEffectEvent {
+    SecondaryEffectEvent {
+        player_id: identity_to_bytes(&p.player_id),
+        secondary_type: secondary_to_proto(p.secondary_type) as i32,
+        position_x: p.position[0],
+        position_y: p.position[1],
+        position_z: p.position[2],
+        direction_x: p.direction[0],
+        direction_z: p.direction[1],
+    }
+}
+
 pub fn build_delta(
     tick: u64,
     delta_id: u64,
@@ -373,6 +446,8 @@ pub fn build_delta(
     grenade_updates: &[GrenadeUpdate],
     kill_events: &[KillEventPayload],
     photon_beams: &[PhotonBeam],
+    flags: &[FlagData],
+    secondary_effect_events: &[SecondaryEffectPayload],
 ) -> Vec<u8> {
     let delta = Delta {
         tick,
@@ -408,6 +483,11 @@ pub fn build_delta(
             })
             .collect(),
         photon_beams: photon_beams.to_vec(),
+        flags: flags.iter().map(flag_to_proto).collect(),
+        secondary_effect_events: secondary_effect_events
+            .iter()
+            .map(secondary_effect_to_proto)
+            .collect(),
     };
     let msg = ServerMessage {
         message: Some(server_message::Message::Delta(delta)),

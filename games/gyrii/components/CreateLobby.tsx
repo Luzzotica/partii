@@ -37,7 +37,11 @@ const GAME_MODES: { id: GameModeId; name: string; description: string }[] = [
     description: "Capture the enemy flag",
   },
 ];
-const ENABLED_GAME_MODES: GameModeId[] = ["freeForAll"];
+const ENABLED_GAME_MODES: GameModeId[] = [
+  "freeForAll",
+  "teamDeathmatch",
+  "captureTheFlag",
+];
 
 const MAPS: { id: string; name: string; description: string }[] = [
   { id: "arena", name: "Arena", description: "Open arena with corner pillars" },

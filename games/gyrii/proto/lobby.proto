@@ -1,0 +1,76 @@
+syntax = "proto3";
+
+package gyrii;
+
+import "common.proto";
+import "player.proto";
+import "ctf.proto";
+
+// Lobby payload (full)
+message Lobby {
+  uint64 id = 1;
+  string name = 2;
+  bytes host_id = 3;  // 16-byte UUID
+  MapId map_id = 4;
+  repeated MapId map_pool = 5;
+  uint32 max_players = 6;
+  GameMode game_mode = 7;
+  GameState game_state = 8;
+  int32 score_limit = 9;
+  int32 flag_limit = 10;
+  optional uint64 next_round_starts_at_ms = 11;
+  bool is_custom_map = 12;
+  optional string map_json = 13;
+}
+
+// Server -> Client: full lobby state (on join)
+message LobbyState {
+  uint64 snapshot_id = 1;
+  uint64 last_delta_id = 2;
+  Lobby lobby = 3;
+  repeated Player players = 4;
+  repeated FlagState flags = 5;
+}
+
+// Lobby summary for list
+message LobbySummary {
+  uint64 id = 1;
+  string name = 2;
+  bytes host_id = 3;
+  MapId map_id = 4;
+  repeated MapId map_pool = 5;
+  uint32 max_players = 6;
+  uint32 player_count = 7;
+  GameMode game_mode = 8;
+  GameState game_state = 9;
+  bool has_password = 10;
+  int32 score_limit = 11;
+  int32 flag_limit = 12;
+  optional uint64 next_round_starts_at_ms = 13;
+  bool is_custom_map = 14;
+}
+
+// Server -> Client: list of available lobbies
+message LobbyList {
+  repeated LobbySummary lobbies = 1;
+}
+
+// Sent when a new player spawns (broadcast to lobby)
+message PlayerJoined {
+  PlayerProfile player = 1;
+}
+
+// Sent when a player leaves a lobby (broadcast to lobby)
+message PlayerLeft {
+  bytes player_id = 1;  // 16-byte UUID
+}
+
+// Game ended
+message GameEnded {
+  uint64 lobby_id = 1;
+  optional int32 winner_team = 2;
+  optional bytes winner_player_identity = 3;
+  optional string winner_player_name = 4;
+  MapId next_map_id = 5;
+  uint64 countdown_ms = 6;
+}

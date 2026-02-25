@@ -394,6 +394,117 @@ export function createFireEffect(
   return system;
 }
 
+/**
+ * Hammers pop out radially from player - neon burst with elongated particles.
+ */
+export function createHammerPopEffect(
+  scene: BABYLON.Scene,
+  position: BABYLON.Vector3,
+  playerColor?: BABYLON.Color3,
+): BABYLON.ParticleSystem[] {
+  const systems: BABYLON.ParticleSystem[] = [];
+  const color = playerColor ?? new BABYLON.Color3(0.8, 0.6, 0.2);
+  const color4 = new BABYLON.Color4(color.r, color.g, color.b, 1);
+
+  const system = new BABYLON.ParticleSystem("hammerPop", 80, scene);
+  system.particleTexture = createParticleTexture(scene, "hammerPop");
+  system.emitter = position.clone();
+  system.minEmitBox = new BABYLON.Vector3(-0.3, -0.3, -0.3);
+  system.maxEmitBox = new BABYLON.Vector3(0.3, 0.3, 0.3);
+
+  system.color1 = color4;
+  system.color2 = NEON_COLORS[Math.floor(Math.random() * NEON_COLORS.length)];
+  system.colorDead = new BABYLON.Color4(
+    color.r * 0.3,
+    color.g * 0.3,
+    color.b * 0.3,
+    0,
+  );
+
+  system.minSize = 0.15;
+  system.maxSize = 0.4;
+  system.minScaleX = 2;
+  system.maxScaleX = 4;
+  system.minScaleY = 0.3;
+  system.maxScaleY = 0.6;
+
+  system.minLifeTime = 0.2;
+  system.maxLifeTime = 0.5;
+
+  system.emitRate = 0;
+  system.manualEmitCount = 60;
+
+  system.minEmitPower = 3;
+  system.maxEmitPower = 8;
+
+  system.direction1 = new BABYLON.Vector3(-1, -0.5, -1);
+  system.direction2 = new BABYLON.Vector3(1, 0.5, 1);
+
+  system.gravity = new BABYLON.Vector3(0, -2, 0);
+  system.blendMode = BABYLON.ParticleSystem.BLENDMODE_ADD;
+
+  system.start();
+  systems.push(system);
+
+  setTimeout(() => {
+    systems.forEach((s) => {
+      s.stop();
+      setTimeout(() => s.dispose(), 500);
+    });
+  }, 600);
+
+  return systems;
+}
+
+/**
+ * Small neon poof for dash - compact burst, cyan/magenta.
+ */
+export function createDashPoofEffect(
+  scene: BABYLON.Scene,
+  position: BABYLON.Vector3,
+  direction?: { x: number; z: number },
+): BABYLON.ParticleSystem {
+  const system = new BABYLON.ParticleSystem("dashPoof", 40, scene);
+  system.particleTexture = createParticleTexture(scene, "dashPoof");
+
+  system.emitter = position.clone();
+  system.minEmitBox = new BABYLON.Vector3(-0.2, -0.2, -0.2);
+  system.maxEmitBox = new BABYLON.Vector3(0.2, 0.2, 0.2);
+
+  system.color1 = new BABYLON.Color4(0, 1, 1, 1);
+  system.color2 = new BABYLON.Color4(1, 0, 1, 1);
+  system.colorDead = new BABYLON.Color4(0.3, 0.5, 0.8, 0);
+
+  system.minSize = 0.1;
+  system.maxSize = 0.25;
+
+  system.minLifeTime = 0.15;
+  system.maxLifeTime = 0.35;
+
+  system.emitRate = 0;
+  system.manualEmitCount = 35;
+
+  const dx = direction?.x ?? 0;
+  const dz = direction?.z ?? 0;
+  const bias = Math.abs(dx) + Math.abs(dz) > 0.01 ? 1.5 : 0;
+  system.minEmitPower = 0.5;
+  system.maxEmitPower = 1.5;
+  system.direction1 = new BABYLON.Vector3(-1 - dx * bias, 0.2, -1 - dz * bias);
+  system.direction2 = new BABYLON.Vector3(1 + dx * bias, 0.8, 1 + dz * bias);
+
+  system.gravity = new BABYLON.Vector3(0, -0.5, 0);
+  system.blendMode = BABYLON.ParticleSystem.BLENDMODE_ADD;
+
+  system.start();
+
+  setTimeout(() => {
+    system.stop();
+    setTimeout(() => system.dispose(), 400);
+  }, 500);
+
+  return system;
+}
+
 /** Unique id for death decal names */
 let deathDecalCounter = 0;
 

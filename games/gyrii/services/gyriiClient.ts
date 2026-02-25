@@ -4,8 +4,8 @@
  */
 
 import { create, toBinary } from "@bufbuild/protobuf";
+import { ClientMessageSchema } from "../proto-gen/gyrii_pb";
 import {
-  ClientMessageSchema,
   AuthenticateSchema,
   ListLobbiesSchema,
   CreateLobbySchema,
@@ -25,11 +25,13 @@ import {
   ThrowGrenadeSchema,
   ThrowMolotovSchema,
   UseSecondarySchema,
+} from "../proto-gen/actions_pb";
+import {
   GameMode,
   MapId,
   WeaponType,
   SecondaryType,
-} from "../proto-gen/gyrii_pb";
+} from "../proto-gen/common_pb";
 import * as transport from "./gyriiTransport";
 
 function weaponToProto(
@@ -55,12 +57,19 @@ function weaponToProto(
 }
 
 function secondaryToProto(
-  s: "popupKnives" | "bubbleShield" | "selfDestructNuke",
+  s:
+    | "popupKnives"
+    | "bubbleShield"
+    | "selfDestructNuke"
+    | "popupHammers"
+    | "dash",
 ): SecondaryType {
   const m: Record<string, SecondaryType> = {
     popupKnives: SecondaryType.SECONDARY_POPUP_KNIVES,
     bubbleShield: SecondaryType.SECONDARY_BUBBLE_SHIELD,
     selfDestructNuke: SecondaryType.SECONDARY_SELF_DESTRUCT_NUKE,
+    popupHammers: SecondaryType.SECONDARY_POPUP_HAMMERS,
+    dash: SecondaryType.SECONDARY_DASH,
   };
   return m[s] ?? SecondaryType.SECONDARY_POPUP_KNIVES;
 }
@@ -245,7 +254,9 @@ export function requestSpawn(
   secondary:
     | "popupKnives"
     | "bubbleShield"
-    | "selfDestructNuke" = "popupKnives",
+    | "selfDestructNuke"
+    | "popupHammers"
+    | "dash" = "popupKnives",
 ): void {
   send(
     create(ClientMessageSchema, {
@@ -308,7 +319,12 @@ export function setLoadout(
     | "photonRifle"
     | "bazooka"
     | "flamethrower",
-  secondary: "popupKnives" | "bubbleShield" | "selfDestructNuke",
+  secondary:
+    | "popupKnives"
+    | "bubbleShield"
+    | "selfDestructNuke"
+    | "popupHammers"
+    | "dash",
 ): void {
   send(
     create(ClientMessageSchema, {
@@ -374,6 +390,17 @@ export function throwMolotov(aimX: number, aimZ: number): void {
       message: {
         case: "throwMolotov",
         value: create(ThrowMolotovSchema, { aimX, aimZ }),
+      },
+    }),
+  );
+}
+
+export function useSecondary(): void {
+  send(
+    create(ClientMessageSchema, {
+      message: {
+        case: "useSecondary",
+        value: create(UseSecondarySchema, {}),
       },
     }),
   );

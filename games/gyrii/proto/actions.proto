@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+package gyrii;
+
+import "common.proto";
+
+message Authenticate { string access_token = 1; }
+message ListLobbies {}
+message CreateLobby {
+  string name = 1;
+  string host_player_name = 2;
+  MapId map_id = 3;
+  repeated MapId map_pool = 4;
+  GameMode game_mode = 5;
+  uint32 max_players = 6;
+  int32 score_limit = 7;
+  int32 flag_limit = 8;
+  string password = 9;
+  optional string custom_map_json = 10;
+}
+message JoinLobby {
+  uint64 lobby_id = 1;
+  string player_name = 2;
+  string password = 3;
+}
+message RequestLobbyState {}
+message LeaveLobby {}
+message SetReady { bool ready = 1; }
+message StartGame {}
+message EndGame { uint64 lobby_id = 1; }
+message RequestSpawn {
+  WeaponType weapon = 1;
+  SecondaryType secondary = 2;
+}
+message UpdateInput {
+  float input_x = 1;
+  float input_z = 2;
+  float aim_x = 3;
+  float aim_z = 4;
+}
+message SetShooting {
+  bool is_shooting = 1;
+  float aim_x = 2;
+  float aim_z = 3;
+}
+message SetLoadout {
+  WeaponType weapon = 1;
+  SecondaryType secondary = 2;
+}
+message SetMarbleConfig {
+  uint32 design_id = 1;
+  float main_r = 2;
+  float main_g = 3;
+  float main_b = 4;
+  float sec_r = 5;
+  float sec_g = 6;
+  float sec_b = 7;
+}
+message Shoot {}
+message DetonateRocket {}
+message ThrowGrenade { float aim_x = 1; float aim_z = 2; }
+message ThrowMolotov { float aim_x = 1; float aim_z = 2; }
+message UseSecondary {}
