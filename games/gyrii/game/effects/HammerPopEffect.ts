@@ -39,9 +39,10 @@ function applyColorToHierarchy(
   if (node instanceof BABYLON.Mesh && node.material) {
     try {
       const orig = node.material;
-      const mat = orig.clone(
-        `hammer-mat-${node.name}-${Math.random().toString(36).slice(2)}`,
-      ) as BABYLON.PBRMaterial | BABYLON.StandardMaterial;
+      const id = (Math.random() as number).toString(36).slice(2);
+      const mat = orig.clone(`hammer-mat-${node.name}-${id}`) as
+        | BABYLON.PBRMaterial
+        | BABYLON.StandardMaterial;
       node.material = mat;
       if ("albedoColor" in mat) {
         (mat as BABYLON.PBRMaterial).albedoColor = color;
