@@ -295,6 +295,7 @@ pub fn build_lobby_state(
         next_round_starts_at_ms: lobby.next_round_starts_at_ms,
         is_custom_map: lobby.custom_map_json.is_some(),
         map_json: lobby.custom_map_json.clone(),
+        team_count: lobby.num_teams,
     };
     let msg = ServerMessage {
         message: Some(server_message::Message::LobbyState(LobbyState {
@@ -326,6 +327,7 @@ pub fn build_lobby_list(lobbies: &[(StateLobby, u32)]) -> Vec<u8> {
             flag_limit: lobby.flag_limit,
             next_round_starts_at_ms: lobby.next_round_starts_at_ms,
             is_custom_map: lobby.custom_map_json.is_some(),
+            team_count: lobby.num_teams,
         })
         .collect();
     let msg = ServerMessage {

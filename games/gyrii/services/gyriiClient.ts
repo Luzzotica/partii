@@ -146,6 +146,7 @@ export function createLobby(
   flagLimit: number,
   password = "",
   customMapJson?: string,
+  teamCount = 2,
 ): void {
   send(
     create(ClientMessageSchema, {
@@ -162,6 +163,7 @@ export function createLobby(
           flagLimit,
           password,
           customMapJson: customMapJson || undefined,
+          teamCount: Math.min(4, Math.max(2, teamCount)),
         }),
       },
     }),

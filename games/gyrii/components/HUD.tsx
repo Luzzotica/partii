@@ -8,6 +8,8 @@ import {
   MAX_HEALTH,
   POPUP_HAMMERS_COOLDOWN_MICROS,
   DASH_COOLDOWN_MICROS,
+  TEAM_COLORS,
+  teamColorToHex,
 } from "../game/constants";
 import GameMinimap from "./GameMinimap";
 
@@ -275,29 +277,103 @@ export default function HUD() {
               <div className="text-xs text-gray-400 mb-2">
                 FLAGS · First to {currentLobby?.flagLimit ?? 3} to win
               </div>
-              <div className="space-y-1">
-                {Array.from(players.values())
-                  .concat(localPlayer ? [localPlayer] : [])
-                  .filter((p) => p)
-                  .sort((a, b) => (b.flagCaptures ?? 0) - (a.flagCaptures ?? 0))
-                  .slice(0, 5)
-                  .map((p, i) => (
-                    <div key={p.id} className="flex justify-between text-sm">
-                      <span
-                        className={
-                          p.id === localPlayer?.id
-                            ? "text-cyan-400 font-bold"
-                            : "text-gray-300"
-                        }
-                      >
-                        {i + 1}. {p.name}
-                      </span>
-                      <span className="text-pink-400">
-                        {p.flagCaptures ?? 0} flags
-                      </span>
-                    </div>
-                  ))}
+              {(() => {
+                const allP = Array.from(players.values()).concat(
+                  localPlayer ? [localPlayer] : [],
+                );
+                const teamScores = new Map<number, number>();
+                for (const p of allP.filter(Boolean)) {
+                  const t = p.team ?? 0;
+                  teamScores.set(
+                    t,
+                    (teamScores.get(t) ?? 0) + (p.flagCaptures ?? 0),
+                  );
+                }
+                const sorted = [...teamScores.entries()].sort(
+                  (a, b) => b[1] - a[1],
+                );
+                return (
+                  <div className="space-y-1">
+                    {sorted.map(([team, score]) => {
+                      const c =
+                        TEAM_COLORS[Math.min(team, TEAM_COLORS.length - 1)] ??
+                        TEAM_COLORS[0];
+                      const hex = teamColorToHex(c);
+                      const isLocal =
+                        localPlayer && (localPlayer.team ?? 0) === team;
+                      return (
+                        <div
+                          key={team}
+                          className="flex justify-between text-sm items-center"
+                        >
+                          <span
+                            className={isLocal ? "font-bold" : ""}
+                            style={{ color: hex }}
+                          >
+                            Team {team + 1}
+                          </span>
+                          <span
+                            className="text-pink-400"
+                            style={isLocal ? { color: hex } : undefined}
+                          >
+                            {score} flags
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </>
+          ) : currentLobby?.gameMode === "teamDeathmatch" ? (
+            <>
+              <div className="text-xs text-gray-400 mb-2">
+                KILLS · First to {currentLobby?.scoreLimit ?? 25} to win
               </div>
+              {(() => {
+                const allP = Array.from(players.values()).concat(
+                  localPlayer ? [localPlayer] : [],
+                );
+                const teamScores = new Map<number, number>();
+                for (const p of allP.filter(Boolean)) {
+                  const t = p.team ?? 0;
+                  teamScores.set(t, (teamScores.get(t) ?? 0) + p.kills);
+                }
+                const sorted = [...teamScores.entries()].sort(
+                  (a, b) => b[1] - a[1],
+                );
+                return (
+                  <div className="space-y-1">
+                    {sorted.map(([team, kills]) => {
+                      const c =
+                        TEAM_COLORS[Math.min(team, TEAM_COLORS.length - 1)] ??
+                        TEAM_COLORS[0];
+                      const hex = teamColorToHex(c);
+                      const isLocal =
+                        localPlayer && (localPlayer.team ?? 0) === team;
+                      return (
+                        <div
+                          key={team}
+                          className="flex justify-between text-sm items-center"
+                        >
+                          <span
+                            className={isLocal ? "font-bold" : ""}
+                            style={{ color: hex }}
+                          >
+                            Team {team + 1}
+                          </span>
+                          <span
+                            className="text-cyan-400"
+                            style={isLocal ? { color: hex } : undefined}
+                          >
+                            {kills}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
             </>
           ) : (
             <>
@@ -309,7 +385,7 @@ export default function HUD() {
                   .concat(localPlayer ? [localPlayer] : [])
                   .filter((p) => p)
                   .sort((a, b) => b.kills - a.kills)
-                  .slice(0, 3)
+                  .slice(0, 5)
                   .map((p, i) => (
                     <div
                       key={p.id}

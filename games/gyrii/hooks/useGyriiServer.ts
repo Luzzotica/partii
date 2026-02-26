@@ -188,6 +188,7 @@ function protoLobbyToJson(l: ProtoLobby): any {
     next_round_starts_at_ms: l.nextRoundStartsAtMs,
     is_custom_map: l.isCustomMap ?? false,
     map_json: l.mapJson,
+    num_teams: l.teamCount ?? 2,
   };
 }
 
@@ -207,6 +208,7 @@ function protoLobbySummaryToJson(l: ProtoLobbySummary): any {
     flag_limit: l.flagLimit,
     next_round_starts_at_ms: l.nextRoundStartsAtMs,
     is_custom_map: l.isCustomMap ?? false,
+    num_teams: l.teamCount ?? 2,
   };
 }
 
@@ -414,6 +416,7 @@ function lobbyFromPayload(l: any, playerCount: number) {
     nextRoundStartsAtMs: l.next_round_starts_at_ms ?? undefined,
     isCustomMap: l.is_custom_map ?? false,
     mapJson: l.map_json,
+    numTeams: Math.min(4, Math.max(2, l.num_teams ?? 2)),
   };
 }
 
@@ -437,6 +440,7 @@ function lobbySummaryToStore(l: any) {
     flagLimit: l.flag_limit ?? 3,
     nextRoundStartsAtMs: l.next_round_starts_at_ms ?? undefined,
     isCustomMap: l.is_custom_map ?? false,
+    numTeams: Math.min(4, Math.max(2, l.num_teams ?? 2)),
   };
 }
 
@@ -1057,6 +1061,7 @@ export function useGyriiServer() {
       flagLimit: number,
       password: string = "",
       customMapJson?: string,
+      teamCount: number = 2,
     ) => {
       gyriiClient.createLobby(
         name,
@@ -1069,6 +1074,7 @@ export function useGyriiServer() {
         flagLimit,
         password,
         customMapJson,
+        teamCount,
       );
     },
     [],

@@ -78,6 +78,15 @@ pub async fn build_action_responses(
                         }
                     }
                 }
+                "start_game" => {
+                    if let Some(lobby_id) = get_identity_lobby_id(state, identity).await {
+                        if let Some((_, bytes)) =
+                            build_lobby_state_broadcast(state, lobby_id).await
+                        {
+                            responses.push((ResponseTarget::BroadcastToLobby(lobby_id), bytes));
+                        }
+                    }
+                }
                 "leave_lobby" => {
                     let lobby_id_before = registry.read().await.get_lobby(identity);
                     if let Some(lobby_id) = lobby_id_before {

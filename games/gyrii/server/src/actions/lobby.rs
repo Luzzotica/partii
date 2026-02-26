@@ -38,6 +38,8 @@ struct CreateLobbyParams {
     custom_map_json: Option<String>,
     #[serde(rename = "mapPool")]
     map_pool: Option<Vec<String>>,
+    #[serde(rename = "teamCount")]
+    team_count: Option<i32>,
 }
 
 #[derive(Deserialize)]
@@ -88,19 +90,38 @@ fn parse_game_mode(s: &str) -> Result<GameMode, String> {
 }
 
 fn init_flags_for_lobby(state: &mut ServerState, lobby_id: u64) {
-    let is_ctf = state
+    tracing::info!("[CTF] init_flags_for_lobby ENTRY lobby_id={}", lobby_id);
+    let (is_ctf, num_teams) = state
         .lobbies
         .get(&lobby_id)
-        .map(|l| l.game_mode == GameMode::CaptureTheFlag)
-        .unwrap_or(false);
+        .map(|l| (l.game_mode == GameMode::CaptureTheFlag, l.num_teams))
+        .unwrap_or((false, 2));
+    tracing::info!("[CTF] init_flags_for_lobby is_ctf={} num_teams={}", is_ctf, num_teams);
     if !is_ctf {
+        tracing::info!("[CTF] init_flags_for_lobby EARLY RETURN (not CTF)");
         return;
     }
-    for fl in state
+    let lobby_flags: Vec<_> = state
         .flag_locations
         .iter()
         .filter(|f| f.lobby_id == lobby_id)
+        .collect();
+    let uses_zero_indexed = lobby_flags.iter().any(|f| f.team == 0);
+    let team_ok = |team: i32| -> bool {
+        if uses_zero_indexed {
+            team >= 0 && team < num_teams
+        } else {
+            team >= 1 && team <= num_teams
+        }
+    };
+    let flag_locs: Vec<_> = lobby_flags
+        .iter()
+        .filter(|f| team_ok(f.team))
+        .collect();
+    tracing::info!("[CTF] init_flags_for_lobby found {} flag_locations for lobby", flag_locs.len());
+    for fl in lobby_flags.iter().filter(|f| team_ok(f.team))
     {
+        tracing::info!("[CTF] init_flags_for_lobby INSERTING flag lobby={} team={} pos=({},{},{})", lobby_id, fl.team, fl.position_x, 0.5, fl.position_z);
         let key = (lobby_id, fl.team);
         state.flags.insert(
             key,
@@ -109,12 +130,13 @@ fn init_flags_for_lobby(state: &mut ServerState, lobby_id: u64) {
                 team: fl.team,
                 state: FlagState::AtBase {
                     position_x: fl.position_x,
-                    position_y: 0.5,
+                    position_y: 0.0,
                     position_z: fl.position_z,
                 },
             },
         );
     }
+    tracing::info!("[CTF] init_flags_for_lobby DONE inserted {} flags for lobby={}", state.flags.iter().filter(|((lid, _), _)| *lid == lobby_id).count(), lobby_id);
 }
 
 pub async fn list_lobbies(state: Arc<RwLock<ServerState>>) -> ActionResult {
@@ -177,6 +199,10 @@ pub async fn create_lobby(
     let game_mode = parse_game_mode(game_mode_str)?;
     let password = p.password.unwrap_or_default();
     let has_password = !password.is_empty();
+    let num_teams = p
+        .team_count
+        .unwrap_or(2)
+        .clamp(2, 4);
 
     let (json, effective_map_id, custom_map_json) = if p
         .custom_map_json
@@ -230,6 +256,7 @@ pub async fn create_lobby(
         current_delta_id: 0,
         custom_map_json,
         team_flag_captures: HashMap::new(),
+        num_teams,
     };
 
     let mut physics = PhysicsWorldState::new();
@@ -243,20 +270,36 @@ pub async fn create_lobby(
     }
 
     for (x, z, team) in &parsed.spawn_points {
-        state.spawn_points.push(MapSpawnPoint {
-            lobby_id,
-            position_x: *x,
-            position_z: *z,
-            team: team.unwrap_or(-1),
-        });
+        let t = team.unwrap_or(-1);
+        if t < 0 || t < num_teams {
+            state.spawn_points.push(MapSpawnPoint {
+                lobby_id,
+                position_x: *x,
+                position_z: *z,
+                team: t,
+            });
+        }
     }
+    // Maps can use 0-indexed teams (0,1,2,3) or 1-indexed (1,2,3,4 from MapEditor).
+    let uses_zero_indexed = parsed.flag_locations.iter().any(|(_, _, t)| *t == 0);
+    let team_ok = |team: i32| -> bool {
+        if uses_zero_indexed {
+            team >= 0 && team < num_teams
+        } else {
+            team >= 1 && team <= num_teams
+        }
+    };
+    tracing::info!("[CTF] create_lobby: parsed {} flag_locations, num_teams={}, lobby_id={}", parsed.flag_locations.len(), num_teams, lobby_id);
     for (x, z, team) in &parsed.flag_locations {
-        state.flag_locations.push(MapFlagLocation {
-            lobby_id,
-            position_x: *x,
-            position_z: *z,
-            team: *team,
-        });
+        if team_ok(*team) {
+            tracing::info!("[CTF] create_lobby: pushing flag_location lobby={} team={} pos=({},{})", lobby_id, team, x, z);
+            state.flag_locations.push(MapFlagLocation {
+                lobby_id,
+                position_x: *x,
+                position_z: *z,
+                team: *team,
+            });
+        }
     }
 
     let lp_id = state.next_lobby_player_id;
@@ -322,14 +365,32 @@ pub async fn join_lobby(
         return Err("Game already in progress".to_string());
     }
 
+    let num_teams = lobby.num_teams.clamp(2, 4);
     let team = if lobby.game_mode == GameMode::FreeForAll {
         player_count as i32
     } else if lobby.game_mode == GameMode::CaptureTheFlag {
-        let mut counts = [0usize; 4];
+        let mut counts: Vec<usize> = (0..num_teams).map(|_| 0).collect();
         for lp in state
             .lobby_players
             .iter()
-            .filter(|lp| lp.lobby_id == p.lobby_id && (0..4).contains(&lp.team))
+            .filter(|lp| lp.lobby_id == p.lobby_id && (0..num_teams).contains(&lp.team))
+        {
+            if (0..num_teams).contains(&lp.team) {
+                counts[lp.team as usize] += 1;
+            }
+        }
+        counts
+            .iter()
+            .enumerate()
+            .min_by_key(|(_, &c)| c)
+            .map(|(t, _)| t as i32)
+            .unwrap_or(0)
+    } else {
+        let mut counts: Vec<usize> = (0..num_teams).map(|_| 0).collect();
+        for lp in state
+            .lobby_players
+            .iter()
+            .filter(|lp| lp.lobby_id == p.lobby_id && (0..num_teams).contains(&lp.team))
         {
             counts[lp.team as usize] += 1;
         }
@@ -339,22 +400,6 @@ pub async fn join_lobby(
             .min_by_key(|(_, &c)| c)
             .map(|(t, _)| t as i32)
             .unwrap_or(0)
-    } else {
-        let team0 = state
-            .lobby_players
-            .iter()
-            .filter(|lp| lp.lobby_id == p.lobby_id && lp.team == 0)
-            .count();
-        let team1 = state
-            .lobby_players
-            .iter()
-            .filter(|lp| lp.lobby_id == p.lobby_id && lp.team == 1)
-            .count();
-        if team0 <= team1 {
-            0
-        } else {
-            1
-        }
     };
 
     let lp_id = state.next_lobby_player_id;
@@ -468,9 +513,11 @@ pub async fn start_game(state: Arc<RwLock<ServerState>>, identity: &Identity) ->
         return Err("Only host can start the game".to_string());
     }
 
+    let game_mode = lobby.game_mode;
     lobby.game_state = GameState::InProgress;
     lobby.team_flag_captures.clear();
     stats::start_match_tracking(&mut state, lp.lobby_id);
+    tracing::info!("[CTF] start_game: calling init_flags_for_lobby lobby_id={} game_mode={:?}", lp.lobby_id, game_mode);
     init_flags_for_lobby(&mut state, lp.lobby_id);
     tracing::info!("Game started in lobby {}", lp.lobby_id);
     Ok(None)
@@ -660,23 +707,34 @@ fn restart_lobby_round(state: &mut ServerState, lobby_id: u64) -> bool {
     create_map_geometry(&mut physics, lobby_id, &parsed);
     state.physics_worlds.insert(lobby_id, physics);
 
+    let num_teams = state
+        .lobbies
+        .get(&lobby_id)
+        .map(|l| l.num_teams.clamp(2, 4))
+        .unwrap_or(2);
+
     state.spawn_points.retain(|s| s.lobby_id != lobby_id);
     state.flag_locations.retain(|f| f.lobby_id != lobby_id);
     for (x, z, team) in &parsed.spawn_points {
-        state.spawn_points.push(MapSpawnPoint {
-            lobby_id,
-            position_x: *x,
-            position_z: *z,
-            team: team.unwrap_or(-1),
-        });
+        let t = team.unwrap_or(-1);
+        if t < 0 || t < num_teams {
+            state.spawn_points.push(MapSpawnPoint {
+                lobby_id,
+                position_x: *x,
+                position_z: *z,
+                team: t,
+            });
+        }
     }
     for (x, z, team) in &parsed.flag_locations {
-        state.flag_locations.push(MapFlagLocation {
-            lobby_id,
-            position_x: *x,
-            position_z: *z,
-            team: *team,
-        });
+        if *team < num_teams {
+            state.flag_locations.push(MapFlagLocation {
+                lobby_id,
+                position_x: *x,
+                position_z: *z,
+                team: *team,
+            });
+        }
     }
 
     let projectile_ids: Vec<u64> = state

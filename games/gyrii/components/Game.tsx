@@ -408,6 +408,7 @@ export default function GyriiGame() {
             namePlane?: any;
             nameTexture?: any;
             lastDisplayName?: string;
+            lastTeam?: number;
             flagMesh?: any;
           }
         >();
@@ -422,25 +423,28 @@ export default function GyriiGame() {
           [0.2, 0.75, 0.38],
           [0.88, 0.85, 0.19],
         ];
+        const { TEAM_COLORS: TEAM_COLORS_255, teamColorToHex } =
+          await import("../game/constants");
         const createFlagMesh = (
           scene: any,
-          parentNode: any,
+          _parentNode: any,
           team: number,
           name: string,
         ) => {
           const group = new BABYLON.TransformNode(`flag-${name}`, scene);
-          group.parent = parentNode;
-          group.position.y = 0.8;
+          // Node is already in scene via constructor; avoid setting parent explicitly
+          // (can cause "isEnabled is not a function" when parent is scene)
+          group.position.y = 1.6; // 2x scale
           const [r, g, b] =
             FLAG_TEAM_COLORS[Math.min(team, FLAG_TEAM_COLORS.length - 1)] ??
             FLAG_TEAM_COLORS[0];
           const pole = BABYLON.MeshBuilder.CreateCylinder(
             `flagPole-${name}`,
-            { height: 0.5, diameter: 0.08 },
+            { height: 1.0, diameter: 0.16 },
             scene,
           );
           pole.parent = group;
-          pole.position.y = 0.25;
+          pole.position.y = 0.5;
           const poleMat = new BABYLON.StandardMaterial(
             `flagPoleMat-${name}`,
             scene,
@@ -450,11 +454,11 @@ export default function GyriiGame() {
           pole.isPickable = false;
           const cloth = BABYLON.MeshBuilder.CreatePlane(
             `flagCloth-${name}`,
-            { width: 0.4, height: 0.25 },
+            { width: 0.8, height: 0.5 },
             scene,
           );
           cloth.parent = group;
-          cloth.position.set(0.2, 0.4, 0);
+          cloth.position.set(0.4, 0.8, 0);
           const clothMat = new BABYLON.StandardMaterial(
             `flagClothMat-${name}`,
             scene,
@@ -475,6 +479,10 @@ export default function GyriiGame() {
 
         // Create/delete meshes when the set of players in the store changes (avoids race conditions)
         const ensurePlayerMeshes = (allPlayers: Map<string, Player>) => {
+          const lobby = useGyriiStore.getState().currentLobby;
+          const isTeamMode =
+            lobby?.gameMode === "teamDeathmatch" ||
+            lobby?.gameMode === "captureTheFlag";
           const currentIds = new Set(allPlayers.keys());
           // Remove meshes and physics bodies for players that left
           for (const id of playerMeshes.keys()) {
@@ -511,10 +519,20 @@ export default function GyriiGame() {
             );
             mesh.isPickable = false;
             mesh.position.y = player.position?.y ?? PLAYER_BALL_RADIUS;
-            const config = player.marbleConfig ?? {
+            const teamColor = isTeamMode
+              ? (TEAM_COLORS_255[
+                  Math.min(player.team ?? 0, TEAM_COLORS_255.length - 1)
+                ] ?? TEAM_COLORS_255[0])
+              : null;
+            const baseConfig = player.marbleConfig ?? {
               designId: 0 as const,
               mainColor: player.color,
               secondaryColor: player.secondaryColor ?? player.color,
+            };
+            const config = {
+              ...baseConfig,
+              mainColor: teamColor ?? baseConfig.mainColor,
+              secondaryColor: baseConfig.secondaryColor ?? baseConfig.mainColor,
             };
             const material = createMarbleMaterial(
               BABYLON,
@@ -555,6 +573,8 @@ export default function GyriiGame() {
             nameMat.alpha = 1;
             namePlane.material = nameMat;
             const displayName = player.name || "Player";
+            const nameColor =
+              isTeamMode && teamColor ? teamColorToHex(teamColor) : "#ffffff";
             const ctx = nameTexture.getContext() as CanvasRenderingContext2D;
             ctx.clearRect(0, 0, 256, 64);
             ctx.textAlign = "center";
@@ -563,7 +583,7 @@ export default function GyriiGame() {
               128,
               44,
               "bold 36px sans-serif",
-              "#ffffff",
+              nameColor,
               "transparent",
               true,
             );
@@ -595,6 +615,7 @@ export default function GyriiGame() {
               namePlane,
               nameTexture,
               lastDisplayName: displayName,
+              lastTeam: isTeamMode ? player.team : undefined,
             });
             if (player.isAlive) {
               createPlayerBody(
@@ -777,6 +798,10 @@ export default function GyriiGame() {
           localAim?: { x: number; z: number },
           localRenderPos?: { x: number; y: number; z: number },
         ) => {
+          const lobby = useGyriiStore.getState().currentLobby;
+          const isTeamMode =
+            lobby?.gameMode === "teamDeathmatch" ||
+            lobby?.gameMode === "captureTheFlag";
           const allPlayers = new Map<string, Player>();
           if (localPlayer)
             allPlayers.set(idForKey(localPlayer.id), localPlayer);
@@ -799,8 +824,15 @@ export default function GyriiGame() {
                   player.position.y ?? PLAYER_BALL_RADIUS,
                   player.position.z,
                 );
+                const deathTeamColor = isTeamMode
+                  ? (TEAM_COLORS_255[
+                      Math.min(player.team ?? 0, TEAM_COLORS_255.length - 1)
+                    ] ?? TEAM_COLORS_255[0])
+                  : null;
                 const mainColor =
-                  player.marbleConfig?.mainColor ?? player.color;
+                  deathTeamColor ??
+                  player.marbleConfig?.mainColor ??
+                  player.color;
                 const color3 = new BABYLON.Color3(
                   mainColor.r / 255,
                   mainColor.g / 255,
@@ -1010,10 +1042,20 @@ export default function GyriiGame() {
               entry.mesh.rotate(axis, -deltaAngle, BABYLON.Space.WORLD);
             }
 
-            const config = player.marbleConfig ?? {
+            const syncTeamColor = isTeamMode
+              ? (TEAM_COLORS_255[
+                  Math.min(player.team ?? 0, TEAM_COLORS_255.length - 1)
+                ] ?? TEAM_COLORS_255[0])
+              : null;
+            const baseConfig = player.marbleConfig ?? {
               designId: 0 as const,
               mainColor: player.color,
               secondaryColor: player.secondaryColor ?? player.color,
+            };
+            const config = {
+              ...baseConfig,
+              mainColor: syncTeamColor ?? baseConfig.mainColor,
+              secondaryColor: baseConfig.secondaryColor ?? baseConfig.mainColor,
             };
             // Recreate material when designId changes (shader is baked at creation)
             if (config.designId !== (entry.lastDesignId ?? -1)) {
@@ -1029,13 +1071,23 @@ export default function GyriiGame() {
               entry.material = newMat;
               entry.lastDesignId = config.designId;
             }
-            // Update name label when player name changes
+            // Update name label when player name or team/mode changes
             const displayName = player.name || "Player";
+            const nameColor =
+              isTeamMode && syncTeamColor
+                ? teamColorToHex(syncTeamColor)
+                : "#ffffff";
+            const teamChanged =
+              isTeamMode && (entry.lastTeam ?? -1) !== (player.team ?? -1);
+            const switchedFromTeamMode = !isTeamMode && entry.lastTeam != null;
             if (
               entry.nameTexture &&
-              displayName !== (entry.lastDisplayName ?? "")
+              (displayName !== (entry.lastDisplayName ?? "") ||
+                teamChanged ||
+                switchedFromTeamMode)
             ) {
               entry.lastDisplayName = displayName;
+              entry.lastTeam = isTeamMode ? player.team : undefined;
               const ctx = entry.nameTexture.getContext();
               ctx.clearRect(0, 0, 256, 64);
               ctx.textAlign = "center";
@@ -1044,7 +1096,7 @@ export default function GyriiGame() {
                 128,
                 44,
                 "bold 36px sans-serif",
-                "#ffffff",
+                nameColor,
                 "transparent",
                 true,
               );
@@ -1359,17 +1411,55 @@ export default function GyriiGame() {
           const isCTF = lobby?.gameMode === "captureTheFlag";
           const flagMeshes = flagMeshesRef.current;
           if (isCTF && lobbyId) {
+            // Use server flags if present; fallback to map flagLocations when store is empty
+            const flagsToRender: Array<{
+              key: string;
+              team: number;
+              position: { x: number; y: number; z: number };
+            }> = [];
+            const serverFlags = Array.from(flagsMap.entries()).filter(
+              ([key, f]) =>
+                key.startsWith(`${lobbyId}:`) && f.state !== "carried",
+            );
+            const numTeams = lobby?.numTeams ?? 2;
+            // Maps can use 0-indexed (0,1,2,3) or 1-indexed (1,2,3,4 from MapEditor)
+            const sources =
+              serverFlags.length > 0
+                ? serverFlags.map(([, f]) => f.team)
+                : (mapData?.flagLocations ?? []).map((fl) => fl.team);
+            const usesZeroIndexed = sources.some((t) => t === 0);
+            const teamInRange = (team: number) =>
+              usesZeroIndexed
+                ? team >= 0 && team < numTeams
+                : team >= 1 && team <= numTeams;
+            if (serverFlags.length > 0) {
+              for (const [key, f] of serverFlags) {
+                if (teamInRange(f.team))
+                  flagsToRender.push({
+                    key,
+                    team: f.team,
+                    position: f.position,
+                  });
+              }
+            } else if (mapData?.flagLocations?.length) {
+              for (const fl of mapData.flagLocations) {
+                if (teamInRange(fl.team))
+                  flagsToRender.push({
+                    key: `${lobbyId}:${fl.team}`,
+                    team: fl.team,
+                    position: { x: fl.x, y: 0.5, z: fl.y },
+                  });
+              }
+            }
             const seen = new Set<string>();
-            for (const [key, f] of flagsMap) {
-              if (!key.startsWith(`${lobbyId}:`)) continue;
-              if (f.state === "carried") continue;
+            for (const { key, team, position } of flagsToRender) {
               seen.add(key);
               let flagMesh = flagMeshes.get(key);
               if (!flagMesh) {
-                flagMesh = createFlagMesh(scene, scene, f.team, key);
+                flagMesh = createFlagMesh(scene, scene, team, key);
                 flagMeshes.set(key, flagMesh);
               }
-              flagMesh.position.set(f.position.x, f.position.y, f.position.z);
+              flagMesh.position.set(position.x, position.y, position.z);
               flagMesh.setEnabled(true);
             }
             for (const key of flagMeshes.keys()) {

@@ -96,3 +96,15 @@ export const DASH_COOLDOWN_MICROS = 800_000;
 /** Health stored as tenths on server (1000 = 100.0 displayed). Must match server HEALTH_SCALE/MAX_HEALTH. */
 export const HEALTH_SCALE = 10;
 export const MAX_HEALTH = 1000;
+
+/** Team colors for team modes (red, blue, green, yellow). RGB 0-255. */
+export const TEAM_COLORS = [
+  { r: 224, g: 64, b: 64 },
+  { r: 64, g: 112, b: 240 },
+  { r: 51, g: 191, b: 97 },
+  { r: 224, g: 217, b: 48 },
+] as const;
+
+export function teamColorToHex(c: { r: number; g: number; b: number }): string {
+  return `#${c.r.toString(16).padStart(2, "0")}${c.g.toString(16).padStart(2, "0")}${c.b.toString(16).padStart(2, "0")}`;
+}

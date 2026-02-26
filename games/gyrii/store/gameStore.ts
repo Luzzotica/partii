@@ -139,6 +139,8 @@ export interface Lobby {
   hasPassword: boolean;
   scoreLimit: number;
   flagLimit: number;
+  /** Number of teams for team modes (2-4). Default 2. */
+  numTeams?: number;
   nextRoundStartsAtMs?: number;
   isCustomMap?: boolean;
   mapJson?: string;

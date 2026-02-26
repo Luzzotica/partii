@@ -17,6 +17,7 @@ message CreateLobby {
   int32 flag_limit = 8;
   string password = 9;
   optional string custom_map_json = 10;
+  int32 team_count = 11;  // 2-4 for team modes; default 2
 }
 message JoinLobby {
   uint64 lobby_id = 1;

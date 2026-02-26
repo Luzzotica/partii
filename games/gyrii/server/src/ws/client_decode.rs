@@ -128,6 +128,7 @@ fn create_lobby_to_value(c: CreateLobby) -> (&'static str, Value) {
     if let Some(ref s) = c.custom_map_json.as_ref().filter(|s| !s.is_empty()) {
         params["customMapJson"] = json!(s);
     }
+    params["teamCount"] = json!(c.team_count);
     ("create_lobby", params)
 }
 

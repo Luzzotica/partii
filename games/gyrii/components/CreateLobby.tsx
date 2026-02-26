@@ -81,6 +81,7 @@ export default function CreateLobby({ onBack, isConnected }: CreateLobbyProps) {
   const [password, setPassword] = useState("");
   const [scoreLimit, setScoreLimit] = useState(25);
   const [flagLimit, setFlagLimit] = useState(3);
+  const [teamCount, setTeamCount] = useState(2);
 
   useEffect(() => {
     if (!user) {
@@ -146,6 +147,8 @@ export default function CreateLobby({ onBack, isConnected }: CreateLobbyProps) {
         mapId = mapIdMap[primaryMap] || "Arena";
       }
 
+      const isTeamMode =
+        gameMode === "teamDeathmatch" || gameMode === "captureTheFlag";
       await createLobby(
         name,
         hostPlayerName,
@@ -157,6 +160,7 @@ export default function CreateLobby({ onBack, isConnected }: CreateLobbyProps) {
         isCtf ? flagLimit : 3,
         password,
         customMapJson,
+        isTeamMode ? teamCount : 2,
       );
 
       let attempts = 0;
@@ -170,6 +174,7 @@ export default function CreateLobby({ onBack, isConnected }: CreateLobbyProps) {
           setMaxPlayers(8);
           setGameMode("freeForAll");
           setMapPool(["arena", "maze", "warehouse"]);
+          setTeamCount(2);
           setPassword("");
           onBack();
         } else if (attempts < maxAttempts) {
@@ -381,6 +386,29 @@ export default function CreateLobby({ onBack, isConnected }: CreateLobbyProps) {
             </div>
           )}
         </div>
+
+        {(gameMode === "teamDeathmatch" || gameMode === "captureTheFlag") && (
+          <div>
+            <label className="block text-xs text-gray-400 mb-2">
+              NUMBER OF TEAMS
+            </label>
+            <div className="flex gap-2 flex-wrap">
+              {[2, 3, 4].map((num) => (
+                <button
+                  key={num}
+                  onClick={() => setTeamCount(num)}
+                  className={`px-4 py-2 rounded ${
+                    teamCount === num
+                      ? "bg-pink-600 text-white"
+                      : "bg-gray-800 text-gray-400 hover:bg-gray-700"
+                  }`}
+                >
+                  {num} teams
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {(gameMode === "freeForAll" || gameMode === "teamDeathmatch") && (
           <div>

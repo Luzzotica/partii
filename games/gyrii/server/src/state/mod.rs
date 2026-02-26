@@ -52,7 +52,7 @@ mod player;
 mod spawn;
 
 pub use flag::{FlagData, FlagState};
-pub use spawn::get_best_spawn_position;
+pub use spawn::{get_best_spawn_position, CtfSpawnParams};
 
 #[derive(Clone, Debug)]
 pub struct PendingRoundRestart {

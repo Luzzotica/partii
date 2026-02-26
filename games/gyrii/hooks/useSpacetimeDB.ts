@@ -378,13 +378,15 @@ export function useSpacetimeDB() {
     async (
       name: string,
       hostPlayerName: string,
-      mapId: "Arena" | "Maze" | "Warehouse",
+      mapId: "Arena" | "Maze" | "Warehouse" | "Custom",
       _mapPool: ("Arena" | "Maze" | "Warehouse")[],
       maxPlayers: number,
       gameMode: "FreeForAll" | "TeamDeathmatch" | "CaptureTheFlag",
       scoreLimit: number,
       flagLimit: number,
       password: string = "",
+      customMapJson?: string,
+      _teamCount: number = 2,
     ) => {
       if (!singletonConnection) {
         console.warn("Not connected to SpacetimeDB");
@@ -402,7 +404,7 @@ export function useSpacetimeDB() {
           scoreLimit,
           flagLimit,
           password,
-          customMapJson: "", // use built-in map for mapId; pass custom JSON for player-made maps
+          customMapJson: customMapJson ?? "",
         });
         console.log("Create lobby:", {
           name,

@@ -101,6 +101,8 @@ pub struct Lobby {
     pub custom_map_json: Option<String>,
     /// CTF: team -> flag captures this round.
     pub team_flag_captures: HashMap<i32, i32>,
+    /// Number of teams for team modes (2-4). Default 2.
+    pub num_teams: i32,
 }
 
 impl Lobby {

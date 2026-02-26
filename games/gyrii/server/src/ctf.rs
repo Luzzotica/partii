@@ -2,8 +2,8 @@
 
 use crate::state::{FlagState, GameMode, MapFlagLocation, ServerState};
 
-const PICKUP_RADIUS: f32 = 1.2;
-const CAPTURE_RADIUS: f32 = 1.5;
+const PICKUP_RADIUS: f32 = 3.0;
+const CAPTURE_RADIUS: f32 = 3.0;
 
 fn dist_sq(ax: f32, ay: f32, az: f32, bx: f32, by: f32, bz: f32) -> f32 {
     let dx = ax - bx;
@@ -38,6 +38,7 @@ pub fn drop_flag_on_carrier_death(
 
     let key = (lobby_id, flag_team);
     if let Some(flag) = state.flags.get_mut(&key) {
+        tracing::info!("[CTF] Flag dropped on carrier death victim={} flag_team={} lobby={}", victim_id, flag_team, lobby_id);
         if let Some(physics) = state.physics_worlds.get_mut(&lobby_id) {
             let body_id = physics.next_body_id();
             physics.insert_flag_body(body_id, death_x, death_y, death_z);
@@ -56,6 +57,15 @@ pub fn process_ctf_tick(state: &mut ServerState, lobby_id: u64) -> Option<i32> {
     let lobby = state.lobbies.get(&lobby_id)?.clone();
     if lobby.game_mode != GameMode::CaptureTheFlag {
         return None;
+    }
+
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static CTF_TICK: AtomicU64 = AtomicU64::new(0);
+    let t = CTF_TICK.fetch_add(1, Ordering::Relaxed);
+    if t % 120 == 0 {
+        let flag_count = state.flags.iter().filter(|((lid, _), _)| *lid == lobby_id).count();
+        let player_count = state.players.values().filter(|p| p.lobby_id == lobby_id && p.is_alive).count();
+        tracing::info!("[CTF] heartbeat lobby={} num_teams={} flag_count={} alive_players={}", lobby_id, lobby.num_teams, flag_count, player_count);
     }
 
     let flag_locations: Vec<MapFlagLocation> = state
@@ -127,6 +137,9 @@ pub fn process_ctf_tick(state: &mut ServerState, lobby_id: u64) -> Option<i32> {
                 flag_y,
                 flag_z,
             );
+            if d2 < PICKUP_RADIUS * PICKUP_RADIUS && player.team != flag_team {
+                tracing::info!("[CTF] Player in range of enemy flag player={} player_team={} flag_team={} d2={}", player.identity, player.team, flag_team, d2);
+            }
             if d2 >= PICKUP_RADIUS * PICKUP_RADIUS {
                 continue;
             }
@@ -146,6 +159,7 @@ pub fn process_ctf_tick(state: &mut ServerState, lobby_id: u64) -> Option<i32> {
         if return_flag {
             let base = flag_locations.iter().find(|f| f.team == flag_team);
             if let Some(base) = base {
+                tracing::info!("[CTF] Flag returned to base flag_team={} lobby={}", flag_team, lobby_id);
                 if let FlagState::Dropped { rigid_body_id, .. } = &flag.state {
                     bodies_to_remove.push(*rigid_body_id);
                 }
@@ -159,6 +173,7 @@ pub fn process_ctf_tick(state: &mut ServerState, lobby_id: u64) -> Option<i32> {
                 );
             }
         } else if let Some(carrier_id) = pickup_by {
+            tracing::info!("[CTF] Flag picked up carrier={} flag_team={} lobby={}", carrier_id, flag_team, lobby_id);
             if let FlagState::Dropped { rigid_body_id, .. } = &flag.state {
                 bodies_to_remove.push(*rigid_body_id);
             }
@@ -203,6 +218,7 @@ pub fn process_ctf_tick(state: &mut ServerState, lobby_id: u64) -> Option<i32> {
                             },
                         );
                     }
+                    tracing::info!("[CTF] Flag captured carrier={} capturing_team={} captured_flag_team={} lobby={}", player.identity, player.team, carried_flag_team, lobby_id);
                     player_held_updates.insert(player.identity.clone(), None);
                     captures.push((player.identity.clone(), player.team));
                 }

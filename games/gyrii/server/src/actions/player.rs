@@ -6,8 +6,8 @@ use crate::actions::{ActionResult, BroadcastPlayerJoined};
 use crate::constants::MAX_HEALTH;
 use crate::protocol::Identity;
 use crate::state::{
-    get_best_spawn_position, GameMode, LobbyPlayer, Player, ServerState, Vec3, WeaponType,
-    SecondaryType,
+    get_best_spawn_position, CtfSpawnParams, GameMode, LobbyPlayer, Player, ServerState, Vec3,
+    WeaponType, SecondaryType,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -142,12 +142,24 @@ pub async fn request_spawn(
             .collect();
 
         let is_team_mode = lobby.game_mode != GameMode::FreeForAll;
+        let ctf_params = (lobby.game_mode == GameMode::CaptureTheFlag)
+            .then(|| {
+                state
+                    .flag_locations
+                    .iter()
+                    .find(|f| f.lobby_id == lobby_id && f.team == team)
+                    .map(|f| CtfSpawnParams {
+                        own_flag_pos: Vec3::new(f.position_x, 0.5, f.position_z),
+                    })
+            })
+            .flatten();
         let spawn_pos = get_best_spawn_position(
             &state.spawn_points,
             lobby_id,
             team,
             is_team_mode,
             &existing,
+            ctf_params,
         );
 
         let mut rigid_body_id = rigid_body_id;
@@ -238,12 +250,24 @@ pub async fn request_spawn(
         .collect();
 
     let is_team_mode = lobby.game_mode != GameMode::FreeForAll;
+    let ctf_params = (lobby.game_mode == GameMode::CaptureTheFlag)
+        .then(|| {
+            state
+                .flag_locations
+                .iter()
+                .find(|f| f.lobby_id == lobby.id && f.team == lp.team)
+                .map(|f| CtfSpawnParams {
+                    own_flag_pos: Vec3::new(f.position_x, 0.5, f.position_z),
+                })
+        })
+        .flatten();
     let spawn_pos = get_best_spawn_position(
         &state.spawn_points,
         lobby.id,
         lp.team,
         is_team_mode,
         &existing,
+        ctf_params,
     );
 
     let rigid_body_id = if let Some(physics) = state.physics_worlds.get_mut(&lobby.id) {
