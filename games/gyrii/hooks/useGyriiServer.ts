@@ -481,7 +481,9 @@ function applyLobbyState(msg: any) {
 }
 
 function applyGameEnded(msg: any) {
-  useGyriiStore.getState().setRoundEndedBanner({
+  const store = useGyriiStore.getState();
+  store.clearKillFeed();
+  store.setRoundEndedBanner({
     lobbyId: String(msg.lobby_id ?? ""),
     winnerTeam:
       typeof msg.winner_team === "number"
@@ -1007,6 +1009,7 @@ export function activateGyriiServer() {
         useGyriiStore.getState().setCurrentLobby(null);
         useGyriiStore.getState().setPendingLeaveLobby(false);
         useGyriiStore.getState().clearPlayers();
+        useGyriiStore.getState().clearKillFeed();
         useGyriiStore.getState().setRoundEndedBanner(null);
         clearDeltaTracking();
       }
@@ -1032,6 +1035,7 @@ export function deactivateGyriiServer() {
   useGyriiStore.getState().setConnectionError(null);
   useGyriiStore.getState().setCurrentLobby(null);
   useGyriiStore.getState().clearPlayers();
+  useGyriiStore.getState().clearKillFeed();
   useGyriiStore.getState().setRoundEndedBanner(null);
   clearDeltaTracking();
 }
@@ -1091,6 +1095,7 @@ export function useGyriiServer() {
     gyriiClient.leaveLobby();
     useGyriiStore.getState().setCurrentLobby(null);
     useGyriiStore.getState().clearPlayers();
+    useGyriiStore.getState().clearKillFeed();
     clearDeltaTracking();
   }, []);
 

@@ -165,6 +165,18 @@ export interface KillEvent {
   timestamp: number;
 }
 
+const KILL_FEED_ENTRY_TTL_MS = 8000;
+
+function normalizeKillEventTimestampMs(timestamp: number): number {
+  if (!Number.isFinite(timestamp) || timestamp <= 0) {
+    return Date.now();
+  }
+  // Server commonly sends micros; convert to millis for consistent UI expiry.
+  return timestamp > 10_000_000_000_000
+    ? Math.floor(timestamp / 1000)
+    : Math.floor(timestamp);
+}
+
 /** Active photon beams from server (id -> beam); used for beam rendering. */
 export interface PhotonBeamEntry {
   id: number;
@@ -237,6 +249,7 @@ interface GyriiStore {
   // Kill feed
   killFeed: KillEvent[];
   addKillEvent: (event: KillEvent) => void;
+  pruneKillFeed: () => void;
   clearKillFeed: () => void;
 
   /** CTF flags: key "lobbyId:team" */
@@ -403,6 +416,13 @@ export const useGyriiStore = create<GyriiStore>((set, get) => ({
   setCurrentLobby: (lobby) =>
     set((s) => ({
       currentLobby: lobby,
+      ...(lobby === null ||
+      (s.currentLobby &&
+        lobby &&
+        s.currentLobby.gameState !== "ended" &&
+        lobby.gameState === "ended")
+        ? { killFeed: [] }
+        : {}),
       ...(lobby === null
         ? { photonBeams: new Map<string, PhotonBeamEntry>() }
         : {}),
@@ -412,8 +432,24 @@ export const useGyriiStore = create<GyriiStore>((set, get) => ({
   setRoundEndedBanner: (banner) => set({ roundEndedBanner: banner }),
 
   addKillEvent: (event) => {
-    const killFeed = [event, ...get().killFeed].slice(0, 5);
+    const nowMs = Date.now();
+    const normalizedEvent = {
+      ...event,
+      timestamp: normalizeKillEventTimestampMs(event.timestamp),
+    };
+    const killFeed = [normalizedEvent, ...get().killFeed]
+      .filter((e) => nowMs - e.timestamp <= KILL_FEED_ENTRY_TTL_MS)
+      .slice(0, 5);
     set({ killFeed });
+  },
+  pruneKillFeed: () => {
+    const nowMs = Date.now();
+    const killFeed = get().killFeed.filter(
+      (e) => nowMs - e.timestamp <= KILL_FEED_ENTRY_TTL_MS,
+    );
+    if (killFeed.length !== get().killFeed.length) {
+      set({ killFeed });
+    }
   },
   clearKillFeed: () => set({ killFeed: [] }),
 

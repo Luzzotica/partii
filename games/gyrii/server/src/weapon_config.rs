@@ -53,10 +53,10 @@ impl WeaponConfig {
     }
 }
 
-/// Common bullet projectile config (SMG, ChainGun, DualMG, Bazooka, Flamethrower).
+/// Common bullet projectile config (ChainGun, DualMG, Bazooka, Flamethrower).
 const BULLET_PROJECTILE: ProjectileConfig = ProjectileConfig {
     speed: 35.0,
-    spray_radians: 0.06,
+    spray_radians: 0.05,
     falloff_range: 15.0,
     falloff_k: 6.0,
     recoil_impulse: 0.24,
@@ -64,6 +64,20 @@ const BULLET_PROJECTILE: ProjectileConfig = ProjectileConfig {
     mass: 0.01,
     projectile_type: 0,
     pellets: None,
+};
+
+/// SMG projectile config with much gentler damage falloff.
+const SMG_PROJECTILE: ProjectileConfig = ProjectileConfig {
+    // 5x base range => significantly reduced falloff over normal combat distances.
+    falloff_range: 75.0,
+    ..BULLET_PROJECTILE
+};
+
+/// SMG projectile config with much gentler damage falloff.
+const DUAL_SMG_PROJECTILE: ProjectileConfig = ProjectileConfig {
+    // 5x base range => significantly reduced falloff over normal combat distances.
+    falloff_range: 75.0,
+    ..BULLET_PROJECTILE
 };
 
 /// Shotgun projectile config.
@@ -88,7 +102,7 @@ pub fn weapon_config(w: WeaponType) -> &'static WeaponConfig {
         fire_rate_ms: 67,
         muzzle_offset: (1.0, 0.0, 0.0),
         photon: None,
-        projectile: Some(BULLET_PROJECTILE),
+        projectile: Some(SMG_PROJECTILE),
     };
     static DUAL_MACHINE_GUN: WeaponConfig = WeaponConfig {
         name: "dualMachineGun",
@@ -96,7 +110,7 @@ pub fn weapon_config(w: WeaponType) -> &'static WeaponConfig {
         fire_rate_ms: 50,
         muzzle_offset: (-0.38, 0.125, -0.7),
         photon: None,
-        projectile: Some(BULLET_PROJECTILE),
+        projectile: Some(DUAL_SMG_PROJECTILE),
     };
     static CHAIN_GUN: WeaponConfig = WeaponConfig {
         name: "chainGun",
@@ -112,8 +126,8 @@ pub fn weapon_config(w: WeaponType) -> &'static WeaponConfig {
         fire_rate_ms: 2000,
         muzzle_offset: (0.0, 0.0, -0.5),
         photon: Some(PhotonBeamConfig {
-            charge_micros: 1_200_000,  // 1.2 sec charge
-            recoil_impulse: 2.0,
+            charge_micros: 600_000,  // 1.2 sec charge
+            recoil_impulse: 4.0,
             beam_radius: 0.6,
             damage_falloff: 0.6,  // 40% damage at beam end
             total_damage: 120.0,

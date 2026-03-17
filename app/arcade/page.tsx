@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { UserMenu } from "@/components/auth/UserMenu";
+import { DiscordLink } from "@/components/ui/DiscordLink";
 import { usePresence } from "@/lib/supabase/hooks";
 import { isMobileDevice } from "@/lib/utils/mobile-detector";
 import { musicManager } from "@/lib/audio/MusicManager";
@@ -126,6 +127,7 @@ export default function ArcadePage() {
           ← Back to Home
         </Link>
         <div className="flex items-center gap-4">
+          <DiscordLink />
           {totalOnline > 0 && (
             <div className="flex items-center gap-2 text-sm text-white/60">
               <span className="w-2 h-2 rounded-full bg-[#2ed573] shadow-[0_0_8px_#2ed573] animate-pulse" />

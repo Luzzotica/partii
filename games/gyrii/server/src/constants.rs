@@ -19,12 +19,15 @@ pub const PLAYER_ACCEL: f32 = 30.6;
 pub const PLAYER_DAMPING: f32 = 0.96;
 
 /// Grenade constants.
-pub const GRENADE_FUSE_SEC: u64 = 5;
+pub const GRENADE_FUSE_SEC: u64 = 2;
 pub const GRENADE_THROW_SPEED: f32 = 7.2;
 pub const GRENADE_THROWER_IMPULSE: f32 = 1.35; // 0.9 * 1.5 (50% faster)
 pub const GRENADE_RESTITUTION: f32 = 1.9;
 pub const GRENADE_KNOCKBACK_BASE: f32 = 10.0;
+pub const GRENADE_IMPULSE_RADIUS_MULT: f32 = 1.6;
 pub const GRENADE_COOLDOWN_MICROS: i64 = 1_000_000;
+/// Throwing a grenade interrupts primary fire for this duration.
+pub const GRENADE_SHOOT_LOCKOUT_MICROS: i64 = 750_000; // 0.75s
 
 /// Player mass for knockback physics (used with projectile mass from weapon config).
 pub const PLAYER_MASS: f32 = 1.0;

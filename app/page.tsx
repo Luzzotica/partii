@@ -1,9 +1,10 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import Link from 'next/link';
-import { UserMenu } from '@/components/auth/UserMenu';
-import { usePresence } from '@/lib/supabase/hooks';
+import { useState, useEffect } from "react";
+import Link from "next/link";
+import { UserMenu } from "@/components/auth/UserMenu";
+import { DiscordLink } from "@/components/ui/DiscordLink";
+import { usePresence } from "@/lib/supabase/hooks";
 
 interface HexPosition {
   left: number;
@@ -20,36 +21,41 @@ export default function Home() {
       Array.from({ length: 20 }, () => ({
         left: Math.random() * 100,
         top: Math.random() * 100,
-      }))
+      })),
     );
   }, []);
 
   return (
     <div className="relative w-full min-h-screen flex justify-center items-center overflow-hidden bg-gradient-to-b from-[#0a0a14] via-[#1a1a2e] to-[#0a0a14]">
       {/* Header with auth */}
-      <div className="absolute top-5 right-5 z-20">
+      <div className="absolute top-5 right-5 z-20 flex items-center gap-4">
+        <DiscordLink />
         <UserMenu />
       </div>
 
       {/* Background gradient overlays */}
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_30%_20%,rgba(55,66,250,0.15),transparent_50%)]" />
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_70%_80%,rgba(255,71,87,0.1),transparent_50%)]" />
-      
+
       <div className="relative z-10 text-center px-10 py-10 max-w-3xl">
         <h1 className="text-8xl font-black tracking-wider mb-12 pb-2 bg-gradient-to-r from-white via-[#a8a8ff] to-white bg-clip-text text-transparent drop-shadow-[0_0_40px_rgba(100,100,255,0.5)] leading-tight">
           Sterling Long
         </h1>
-        
+
         <div className="mb-10">
-          <p className="text-2xl text-white/80 tracking-wide mb-1">Learn more.</p>
-          <p className="text-2xl text-white/80 tracking-wide mb-1">Scream more.</p>
+          <p className="text-2xl text-white/80 tracking-wide mb-1">
+            Learn more.
+          </p>
+          <p className="text-2xl text-white/80 tracking-wide mb-1">
+            Scream more.
+          </p>
           <p className="text-2xl text-white/80 tracking-wide">Live more.</p>
         </div>
-        
+
         <p className="text-lg text-white/50 leading-relaxed mb-12 max-w-2xl mx-auto">
           Games that teach or get you screaming.
         </p>
-        
+
         <div className="flex flex-col items-center gap-4">
           <Link
             href="/arcade"
@@ -65,7 +71,7 @@ export default function Home() {
           )}
         </div>
       </div>
-      
+
       {/* Floating hexagons */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
         {hexPositions.map((pos, i) => (

@@ -18,6 +18,7 @@ export default function HUD() {
     localPlayer,
     players,
     killFeed,
+    pruneKillFeed,
     currentLobby,
     mousePosition,
     weaponChargeProgress,
@@ -74,15 +75,33 @@ export default function HUD() {
     isPhotonRifle &&
     photonRifleRechargeUntil > 0 &&
     performance.now() < photonRifleRechargeUntil;
+  const hasKillFeed = killFeed.length > 0;
 
   useEffect(() => {
-    if (!isRecharging && !isGrenadeOnCooldown && !isSecondaryOnCooldown) return;
-    const id = setInterval(() => setNow(performance.now()), 16);
+    if (
+      !isRecharging &&
+      !isGrenadeOnCooldown &&
+      !isSecondaryOnCooldown &&
+      !hasKillFeed
+    ) {
+      return;
+    }
+    const id = setInterval(
+      () => {
+        setNow(performance.now());
+        if (hasKillFeed) {
+          pruneKillFeed();
+        }
+      },
+      hasKillFeed ? 250 : 16,
+    );
     return () => clearInterval(id);
   }, [
     isRecharging,
     isGrenadeOnCooldown,
     isSecondaryOnCooldown,
+    hasKillFeed,
+    pruneKillFeed,
     photonRifleRechargeUntil,
     lastGrenadeThrownAt,
     secondaryForcedCooldownUntilMicros,
@@ -227,10 +246,10 @@ export default function HUD() {
         <GameMinimap />
       </div>
 
-      {/* Kill Feed - marble/neon/tron themed (newest at bottom), to the right of minimap */}
-      <div className="absolute bottom-8 left-[164px]">
+      {/* Kill Feed - top left */}
+      <div className="absolute top-8 left-8 z-20">
         <div className="space-y-1.5">
-          {[...killFeed].reverse().map((event, index) => (
+          {killFeed.map((event, index) => (
             <div
               key={`${event.timestamp}-${index}`}
               className="px-3 py-1.5 animate-fade-in text-xs
@@ -270,7 +289,7 @@ export default function HUD() {
       </div>
 
       {/* Scoreboard */}
-      <div className="absolute top-8 left-8">
+      <div className="absolute top-56 left-8">
         <div className="bg-black/50 backdrop-blur-sm rounded-lg p-3 border border-purple-500/30 min-w-[180px]">
           {currentLobby?.gameMode === "captureTheFlag" ? (
             <>

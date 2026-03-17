@@ -5,6 +5,7 @@ mod photon_rifle;
 mod shotgun;
 
 use crate::protocol::ShotEventPayload;
+use crate::constants::GRENADE_SHOOT_LOCKOUT_MICROS;
 use crate::state::{ServerState, WeaponType};
 
 fn now_micros() -> i64 {
@@ -29,6 +30,9 @@ pub fn try_fire(
         return Vec::new();
     }
     if now_micros() < player.secondary_forced_cooldown_until_micros {
+        return Vec::new();
+    }
+    if now_micros() - player.last_grenade_thrown_at < GRENADE_SHOOT_LOCKOUT_MICROS {
         return Vec::new();
     }
     let weapon = player.weapon;

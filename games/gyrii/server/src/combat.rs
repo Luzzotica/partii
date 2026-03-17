@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::collision_groups::{GROUP_BULLET, GROUP_FLOOR, GROUP_GRENADE, GROUP_PLAYER, GROUP_WALL};
-use crate::constants::{BEAM_DURATION_TICKS, HEALTH_SCALE, PLAYER_MASS};
+use crate::constants::{BEAM_DURATION_TICKS, GRENADE_IMPULSE_RADIUS_MULT, HEALTH_SCALE, PLAYER_MASS};
 use crate::ctf;
 use crate::protocol::KillEventPayload;
 use crate::state::{GameMode, ServerState, WeaponType};
@@ -303,6 +303,8 @@ pub fn explode_grenade(
 ) -> Vec<KillEventPayload> {
     let mut kill_events = Vec::new();
     let radius_sq = radius * radius;
+    let impulse_radius = radius * GRENADE_IMPULSE_RADIUS_MULT;
+    let impulse_radius_sq = impulse_radius * impulse_radius;
     if !state.lobbies.contains_key(&lobby_id) {
         return kill_events;
     }
@@ -317,7 +319,7 @@ pub fn explode_grenade(
             let dy = p.position_y - exp_y;
             let dz = p.position_z - exp_z;
             let dist_sq = dx * dx + dy * dy + dz * dz;
-            if dist_sq > radius_sq {
+            if dist_sq > impulse_radius_sq {
                 return None;
             }
             Some((id.clone(), dist_sq, dx, dy, dz))
@@ -327,11 +329,13 @@ pub fn explode_grenade(
     // LOS check: only damage players with a clear path from blast center.
     // We raycast walls/floor only; if anything blocks before target, skip damage.
     let mut to_damage: Vec<(String, f32, f32, f32, f32)> = Vec::new();
+    let mut to_impulse: Vec<(String, f32, f32, f32, f32)> = Vec::new();
     if let Some(physics) = state.physics_worlds.get_mut(&lobby_id) {
         const LOS_EPS: f32 = 0.05;
         for (id, dist_sq, dx, dy, dz) in candidates {
             if dist_sq < 0.01 {
-                to_damage.push((id, dist_sq, dx, dy, dz));
+                to_damage.push((id.clone(), dist_sq, dx, dy, dz));
+                to_impulse.push((id, dist_sq, dx, dy, dz));
                 continue;
             }
             let dist = dist_sq.sqrt();
@@ -352,15 +356,26 @@ pub fn explode_grenade(
                     )
                     .is_some();
             if !blocked {
-                to_damage.push((id, dist_sq, dx, dy, dz));
+                if dist_sq <= radius_sq {
+                    to_damage.push((id.clone(), dist_sq, dx, dy, dz));
+                }
+                to_impulse.push((id, dist_sq, dx, dy, dz));
             }
         }
     }
 
-    for (id, dist_sq, dx, dy, dz) in to_damage {
-        if let Some(ke) = apply_damage(state, &id, damage_tenths, owner_id, "grenade") {
+    for (id, dist_sq, _, _, _) in to_damage {
+        let dist = dist_sq.sqrt();
+        let damage_mult = (1.0 - (dist / radius)).clamp(0.0, 1.0);
+        let scaled_damage_tenths = ((damage_tenths as f32) * damage_mult).round() as i32;
+        if scaled_damage_tenths <= 0 {
+            continue;
+        }
+        if let Some(ke) = apply_damage(state, &id, scaled_damage_tenths, owner_id, "grenade") {
             kill_events.push(ke);
         }
+    }
+    for (id, dist_sq, dx, dy, dz) in to_impulse {
         if let Some(player) = state.players.get(&id) {
             let rb_id = player.rigid_body_id;
             if rb_id > 0 {

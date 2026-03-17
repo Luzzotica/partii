@@ -10,6 +10,7 @@ import { musicManager } from "@/lib/audio/MusicManager";
 import { OptionsMenu } from "@/games/hexii/components/OptionsMenu";
 import { Leaderboard } from "@/games/hexii/components/Leaderboard";
 import { UserMenu } from "@/components/auth/UserMenu";
+import { DiscordLink } from "@/components/ui/DiscordLink";
 import { usePresence, useHighScores } from "@/lib/supabase/hooks";
 import { useAuth } from "@/lib/supabase/auth-context";
 
@@ -151,6 +152,7 @@ function MainMenu({
           ← Back to Arcade
         </Link>
         <div className="flex items-center gap-4">
+          <DiscordLink />
           {currentGamePlayers > 0 && (
             <div className="font-orbitron flex items-center gap-2 text-xs text-white/60 tracking-wide">
               <span className="w-2 h-2 rounded-full bg-[#2ed573] shadow-[0_0_8px_#2ed573] animate-pulse" />

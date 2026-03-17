@@ -269,15 +269,15 @@ export default function GyriiGame() {
         const camera = new BABYLON.ArcRotateCamera(
           "camera",
           -Math.PI / 2, // alpha - rotation around Y axis
-          Math.PI / 6, // beta - angle from top (30 degrees from vertical)
+          0.01, // beta - near-zero = straight down top-down view
           DEFAULT_CAMERA_ZOOM.radiusMin,
           BABYLON.Vector3.Zero(),
           scene,
         );
         camera.lowerRadiusLimit = DEFAULT_CAMERA_ZOOM.radiusMin;
         camera.upperRadiusLimit = DEFAULT_CAMERA_ZOOM.radiusMax;
-        camera.lowerBetaLimit = Math.PI / 8;
-        camera.upperBetaLimit = Math.PI / 3;
+        camera.lowerBetaLimit = 0.01;
+        camera.upperBetaLimit = 0.01;
         camera.attachControl(canvasRef.current, false);
         camera.panningSensibility = 0; // Disable panning
         camera.inputs.removeByType("ArcRotateCameraPointersInput"); // Disable orbit on drag
@@ -285,6 +285,19 @@ export default function GyriiGame() {
 
         // Initialize camera target for smooth following
         let cameraTarget = BABYLON.Vector3.Zero();
+        let cameraShakeEndsAtMs = 0;
+        let cameraShakeBaseMagnitude = 0;
+        const GRENADE_DAMAGE_RADIUS = 5.0; // Must match server grenade radius.
+        const GRENADE_SHAKE_DISTANCE =
+          GRENADE_DAMAGE_RADIUS + PLAYER_BALL_RADIUS;
+        const triggerScreenShake = (durationMs: number, magnitude: number) => {
+          const now = performance.now();
+          cameraShakeEndsAtMs = Math.max(cameraShakeEndsAtMs, now + durationMs);
+          cameraShakeBaseMagnitude = Math.max(
+            cameraShakeBaseMagnitude,
+            magnitude,
+          );
+        };
 
         setLoadingProgress(60);
 
@@ -1515,6 +1528,18 @@ export default function GyriiGame() {
                 new BABYLON.Vector3(pos.x, pos.y, pos.z),
                 2.5,
               );
+              if (localPlayer) {
+                const dx = myPos.x - pos.x;
+                const dz = myPos.z - pos.z;
+                const distSq = dx * dx + dz * dz;
+                if (distSq <= GRENADE_SHAKE_DISTANCE * GRENADE_SHAKE_DISTANCE) {
+                  const dist = Math.sqrt(distSq);
+                  const proximity =
+                    1 - Math.min(1, dist / GRENADE_SHAKE_DISTANCE);
+                  const magnitude = 0.08 + proximity * 0.12;
+                  triggerScreenShake(140, magnitude);
+                }
+              }
             }
           }
 
@@ -1648,7 +1673,22 @@ export default function GyriiGame() {
             targetPosition,
             cameraLerpSpeed,
           );
-          camera.target.copyFrom(cameraTarget);
+          const nowMs = performance.now();
+          if (nowMs < cameraShakeEndsAtMs && cameraShakeBaseMagnitude > 0) {
+            const decay = Math.max(
+              0,
+              Math.min(1, (cameraShakeEndsAtMs - nowMs) / 140),
+            );
+            const jitter = cameraShakeBaseMagnitude * decay;
+            camera.target.set(
+              cameraTarget.x + (Math.random() * 2 - 1) * jitter,
+              cameraTarget.y,
+              cameraTarget.z + (Math.random() * 2 - 1) * jitter,
+            );
+          } else {
+            cameraShakeBaseMagnitude = 0;
+            camera.target.copyFrom(cameraTarget);
+          }
 
           // Zoom camera by mouse distance from player; config from constants, overridable per weapon
           // When spectating (no localPlayer), use max zoom for overview of map

@@ -131,6 +131,9 @@ pub async fn throw_grenade(
         let player = state.players.get_mut(identity).unwrap();
         player.grenades -= 1;
         player.last_grenade_thrown_at = now_micros;
+        // Throwing a grenade always interrupts current primary fire.
+        player.is_shooting = false;
+        player.photon_rifle_charge_started_at = None;
     }
 
     if rigid_body_id > 0 {
