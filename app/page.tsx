@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { UserMenu } from "@/components/auth/UserMenu";
 import { DiscordLink } from "@/components/ui/DiscordLink";
+import { YouTubeLink } from "@/components/ui/YouTubeLink";
 import { usePresence } from "@/lib/supabase/hooks";
 
 interface HexPosition {
@@ -30,6 +31,7 @@ export default function Home() {
       {/* Header with auth */}
       <div className="absolute top-5 right-5 z-20 flex items-center gap-4">
         <DiscordLink />
+        <YouTubeLink />
         <UserMenu />
       </div>
 

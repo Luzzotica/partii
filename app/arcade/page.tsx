@@ -5,6 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { UserMenu } from "@/components/auth/UserMenu";
 import { DiscordLink } from "@/components/ui/DiscordLink";
+import { YouTubeLink } from "@/components/ui/YouTubeLink";
 import { usePresence } from "@/lib/supabase/hooks";
 import { isMobileDevice } from "@/lib/utils/mobile-detector";
 import { musicManager } from "@/lib/audio/MusicManager";
@@ -128,12 +129,7 @@ export default function ArcadePage() {
         </Link>
         <div className="flex items-center gap-4">
           <DiscordLink />
-          {totalOnline > 0 && (
-            <div className="flex items-center gap-2 text-sm text-white/60">
-              <span className="w-2 h-2 rounded-full bg-[#2ed573] shadow-[0_0_8px_#2ed573] animate-pulse" />
-              {totalOnline} online
-            </div>
-          )}
+          <YouTubeLink />
           <UserMenu />
         </div>
       </div>
@@ -221,6 +217,14 @@ export default function ArcadePage() {
           })}
         </div>
       </div>
+      {/* Online count - bottom right */}
+      {totalOnline > 0 && (
+        <div className="fixed bottom-5 right-5 z-20 flex items-center gap-2 rounded-lg bg-black/70 px-3 py-2 border border-white/10">
+          <span className="w-2 h-2 rounded-full bg-[#2ed573] shadow-[0_0_8px_#2ed573] animate-pulse" />
+          <span className="text-sm text-white/80">{totalOnline} online</span>
+        </div>
+      )}
+
       <div className="absolute top-0 left-0 w-full h-full pointer-events-none overflow-hidden">
         {hexPositions.map((pos, i) => (
           <div

@@ -11,6 +11,7 @@ import { OptionsMenu } from "@/games/hexii/components/OptionsMenu";
 import { Leaderboard } from "@/games/hexii/components/Leaderboard";
 import { UserMenu } from "@/components/auth/UserMenu";
 import { DiscordLink } from "@/components/ui/DiscordLink";
+import { YouTubeLink } from "@/components/ui/YouTubeLink";
 import { usePresence, useHighScores } from "@/lib/supabase/hooks";
 import { useAuth } from "@/lib/supabase/auth-context";
 
@@ -153,15 +154,18 @@ function MainMenu({
         </Link>
         <div className="flex items-center gap-4">
           <DiscordLink />
-          {currentGamePlayers > 0 && (
-            <div className="font-orbitron flex items-center gap-2 text-xs text-white/60 tracking-wide">
-              <span className="w-2 h-2 rounded-full bg-[#2ed573] shadow-[0_0_8px_#2ed573] animate-pulse" />
-              {currentGamePlayers} playing
-            </div>
-          )}
+          <YouTubeLink />
           <UserMenu />
         </div>
       </div>
+      {currentGamePlayers > 0 && (
+        <div className="fixed bottom-5 right-5 z-20 flex items-center gap-2 rounded-lg bg-black/70 px-3 py-2 border border-white/10">
+          <span className="w-2 h-2 rounded-full bg-[#2ed573] shadow-[0_0_8px_#2ed573] animate-pulse" />
+          <span className="font-orbitron text-xs text-white/80 tracking-wide">
+            {currentGamePlayers} playing
+          </span>
+        </div>
+      )}
       <div className="relative z-10 text-center px-4 md:px-10 pt-24 md:pt-32 pb-10 w-full max-w-[1200px]">
         <h1 className="font-orbitron text-4xl md:text-6xl lg:text-8xl xl:text-9xl font-black tracking-[10px] md:tracking-[15px] lg:tracking-[20px] mb-2 bg-gradient-to-r from-white via-[#a8a8ff] to-white bg-clip-text text-transparent drop-shadow-[0_0_40px_rgba(100,100,255,0.5)]">
           <span className="inline-block mx-2 md:mx-5 animate-[rotate_10s_linear_infinite]">

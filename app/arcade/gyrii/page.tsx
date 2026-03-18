@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { DiscordLink } from "@/components/ui/DiscordLink";
+import { YouTubeLink } from "@/components/ui/YouTubeLink";
 import dynamic from "next/dynamic";
 import { useGyriiStore } from "@/games/gyrii/store/gameStore";
 import {
@@ -73,12 +74,7 @@ export default function GyriiPage() {
       </Link>
       <div className="flex items-center gap-4">
         <DiscordLink />
-        {currentGamePlayers > 0 && (
-          <div className="font-orbitron flex items-center gap-2 text-xs text-white/60 tracking-wide">
-            <span className="w-2 h-2 rounded-full bg-[#2ed573] shadow-[0_0_8px_#2ed573] animate-pulse" />
-            {currentGamePlayers} playing
-          </div>
-        )}
+        <YouTubeLink />
         <UserMenu />
       </div>
     </div>
@@ -90,6 +86,14 @@ export default function GyriiPage() {
       <main className="relative w-full h-screen overflow-hidden bg-black">
         <TopNav />
         <LobbyUI />
+        {currentGamePlayers > 0 && (
+          <div className="absolute bottom-14 right-4 z-50 flex items-center gap-2 rounded-lg bg-black/70 px-3 py-2 border border-white/10">
+            <span className="w-2 h-2 rounded-full bg-[#2ed573] shadow-[0_0_8px_#2ed573] animate-pulse" />
+            <span className="font-orbitron text-xs text-white/80 tracking-wide">
+              {currentGamePlayers} playing
+            </span>
+          </div>
+        )}
         <ConnectionIndicator />
       </main>
     );

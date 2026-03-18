@@ -81,7 +81,15 @@ export default function RocketToHeavenPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900/30 flex flex-col items-center p-6 overflow-hidden relative">
-      <GameHeader playerCount={currentGamePlayers} />
+      <GameHeader />
+      {currentGamePlayers > 0 && (
+        <div className="fixed bottom-5 right-5 z-20 flex items-center gap-2 rounded-lg bg-black/70 px-3 py-2 border border-white/10">
+          <span className="w-2 h-2 rounded-full bg-[#2ed573] shadow-[0_0_8px_#2ed573] animate-pulse" />
+          <span className="text-sm text-white/80">
+            {currentGamePlayers} playing
+          </span>
+        </div>
+      )}
 
       {/* Light rays background */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
