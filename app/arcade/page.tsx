@@ -48,6 +48,24 @@ const games: Game[] = [
     mobileFriendly: false,
     icon: "⚪",
   },
+  {
+    id: "sandii",
+    name: "Sandii",
+    description:
+      "Sandbox-style play in a grainy world—build, explore, and experiment.",
+    color: "#c4a574",
+    mobileFriendly: true,
+    icon: "🏜️",
+  },
+  {
+    id: "cosmos",
+    name: "Cosmos",
+    description:
+      "Drift through space, dodge hazards, and chase a high score in the void.",
+    color: "#7b68ee",
+    mobileFriendly: true,
+    icon: "🌌",
+  },
 ];
 
 // Map game IDs to their menu music paths
