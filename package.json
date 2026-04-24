@@ -7,6 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "generate:soundtrack": "tsx scripts/generate-soundtrack.ts",
     "generate:sfx": "tsx scripts/generate-sfx.ts",
     "generate:mesh": "tsx scripts/generate-mesh.ts",
@@ -30,6 +32,7 @@
   "dependencies": {
     "@babylonjs/core": "^7.x",
     "@babylonjs/loaders": "^7.x",
+    "@bufbuild/protobuf": "^2.2.0",
     "@dimforge/rapier3d": "^0.12.0",
     "@supabase/ssr": "^0.8.0",
     "@supabase/supabase-js": "^2.91.1",
@@ -38,8 +41,7 @@
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "spacetimedb": "^1.12.0",
-    "zustand": "^5.0.10",
-    "@bufbuild/protobuf": "^2.2.0"
+    "zustand": "^5.0.10"
   },
   "devDependencies": {
     "@bufbuild/buf": "^1.65.0",
@@ -61,6 +63,8 @@
     "tsx": "^4.19.2",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.4",
-    "upload-post": "^1.0.3"
+    "upload-post": "^1.0.3",
+    "vite-tsconfig-paths": "^6.1.1",
+    "vitest": "^4.1.4"
   }
 }
