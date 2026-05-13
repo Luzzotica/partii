@@ -1,23 +1,33 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { requireApiKey, corsHeaders as CORS, corsPreflight } from "@/lib/api/auth";
 
 const admin = createAdminClient();
 
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, PATCH, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
-};
+async function ensureSessionOwnedByCaller(sessionId: string, apiKeyId: string) {
+  const { data } = await admin
+    .from("party_sessions")
+    .select("id")
+    .eq("id", sessionId)
+    .eq("api_key_id", apiKeyId)
+    .maybeSingle();
+  return !!data;
+}
 
 export async function OPTIONS() {
-  return new NextResponse(null, { status: 204, headers: CORS });
+  return corsPreflight();
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ sessionId: string }> },
 ) {
+  const auth = await requireApiKey(request);
+  if (!auth.ok) return auth.response;
   const { sessionId } = await params;
+  if (!(await ensureSessionOwnedByCaller(sessionId, auth.ctx.apiKeyId))) {
+    return NextResponse.json({ error: "Session not found" }, { status: 404, headers: CORS });
+  }
 
   const { data, error } = await admin
     .from("party_players")
@@ -48,7 +58,12 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ sessionId: string }> },
 ) {
+  const auth = await requireApiKey(request);
+  if (!auth.ok) return auth.response;
   const { sessionId } = await params;
+  if (!(await ensureSessionOwnedByCaller(sessionId, auth.ctx.apiKeyId))) {
+    return NextResponse.json({ error: "Session not found" }, { status: 404, headers: CORS });
+  }
 
   let body: { display_name?: string };
   try {

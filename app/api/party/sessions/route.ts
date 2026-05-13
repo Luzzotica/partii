@@ -1,25 +1,24 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { requireApiKey, recordUsage, corsHeaders as CORS, corsPreflight } from "@/lib/api/auth";
 
 const admin = createAdminClient();
 
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, PATCH, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
-};
-
 export async function OPTIONS() {
-  return new NextResponse(null, { status: 204, headers: CORS });
+  return corsPreflight();
 }
 
 export async function GET(request: Request) {
+  const auth = await requireApiKey(request);
+  if (!auth.ok) return auth.response;
+
   const url = new URL(request.url);
   const gameId = url.searchParams.get("game_id") ?? "";
 
   const query = admin
     .from("party_sessions")
     .select("id, join_code, game_id, status, max_players, metadata, created_at, expires_at")
+    .eq("api_key_id", auth.ctx.apiKeyId)
     .in("status", ["waiting", "active"])
     .order("created_at", { ascending: false })
     .limit(50);
@@ -73,6 +72,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const auth = await requireApiKey(request);
+  if (!auth.ok) return auth.response;
+
   let body: { game_id?: string; max_players?: number; metadata?: Record<string, unknown> };
   try {
     body = await request.json();
@@ -110,7 +112,14 @@ export async function POST(request: Request) {
 
   const { data, error } = await admin
     .from("party_sessions")
-    .insert({ join_code: joinCode, host_secret: hostSecret, game_id: gameId, max_players: maxPlayers, metadata })
+    .insert({
+      join_code: joinCode,
+      host_secret: hostSecret,
+      game_id: gameId,
+      max_players: maxPlayers,
+      metadata,
+      api_key_id: auth.ctx.apiKeyId,
+    })
     .select("id, join_code, expires_at")
     .single();
 
@@ -120,6 +129,8 @@ export async function POST(request: Request) {
       { status: 500, headers: CORS },
     );
   }
+
+  recordUsage(auth.ctx.apiKeyId, "party.session.create", { sessionId: data.id });
 
   // Fire-and-forget cleanup of expired data
   void admin.rpc("cleanup_party_data");

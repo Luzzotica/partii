@@ -61,7 +61,7 @@ const games: Game[] = [
     id: "cosmos",
     name: "Cosmos",
     description:
-      "Drift through space, dodge hazards, and chase a high score in the void.",
+      "An RTS tower defense game based in space. Mine asteroids. Defend yourself from aliens attacking on all sides. Explore the cosmos.",
     color: "#7b68ee",
     mobileFriendly: true,
     icon: "🌌",

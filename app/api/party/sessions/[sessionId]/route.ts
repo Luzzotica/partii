@@ -1,28 +1,27 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { requireApiKey, corsHeaders as CORS, corsPreflight } from "@/lib/api/auth";
 
 const admin = createAdminClient();
 
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, PATCH, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
-};
-
 export async function OPTIONS() {
-  return new NextResponse(null, { status: 204, headers: CORS });
+  return corsPreflight();
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ sessionId: string }> },
 ) {
+  const auth = await requireApiKey(request);
+  if (!auth.ok) return auth.response;
+
   const { sessionId } = await params;
 
   const { data: session, error } = await admin
     .from("party_sessions")
-    .select("id, join_code, game_id, status, max_players, metadata, created_at, expires_at")
+    .select("id, join_code, game_id, status, max_players, metadata, created_at, expires_at, api_key_id")
     .eq("id", sessionId)
+    .eq("api_key_id", auth.ctx.apiKeyId)
     .single();
 
   if (error || !session) {
@@ -63,6 +62,9 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ sessionId: string }> },
 ) {
+  const auth = await requireApiKey(request);
+  if (!auth.ok) return auth.response;
+
   const { sessionId } = await params;
 
   let body: { host_secret?: string; status?: string; metadata?: Record<string, unknown> };
@@ -78,8 +80,9 @@ export async function PATCH(
 
   const { data: session, error: fetchError } = await admin
     .from("party_sessions")
-    .select("id, host_secret, status")
+    .select("id, host_secret, status, api_key_id")
     .eq("id", sessionId)
+    .eq("api_key_id", auth.ctx.apiKeyId)
     .single();
 
   if (fetchError || !session) {

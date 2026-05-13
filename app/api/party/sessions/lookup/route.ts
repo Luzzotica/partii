@@ -1,19 +1,17 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { requireApiKey, corsHeaders as CORS, corsPreflight } from "@/lib/api/auth";
 
 const admin = createAdminClient();
 
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
-};
-
 export async function OPTIONS() {
-  return new NextResponse(null, { status: 204, headers: CORS });
+  return corsPreflight();
 }
 
 export async function GET(request: Request) {
+  const auth = await requireApiKey(request);
+  if (!auth.ok) return auth.response;
+
   const url = new URL(request.url);
   const code = (url.searchParams.get("code") ?? "").toUpperCase().trim();
 
@@ -26,8 +24,9 @@ export async function GET(request: Request) {
 
   const { data: session, error } = await admin
     .from("party_sessions")
-    .select("id, join_code, game_id, status, max_players, metadata, created_at, expires_at")
+    .select("id, join_code, game_id, status, max_players, metadata, created_at, expires_at, api_key_id")
     .eq("join_code", code)
+    .eq("api_key_id", auth.ctx.apiKeyId)
     .neq("status", "ended")
     .maybeSingle();
 
