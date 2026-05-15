@@ -8,41 +8,42 @@ export async function OPTIONS() {
   return corsPreflight();
 }
 
-async function assertLobbyOwned(lobbyId: string, apiKeyId: string) {
+async function assertRoomOwned(roomId: string, apiKeyId: string) {
   const { data } = await admin
-    .from("mp_lobbies")
+    .from("rooms")
     .select("id, host_secret")
-    .eq("id", lobbyId)
+    .eq("id", roomId)
     .eq("api_key_id", apiKeyId)
     .maybeSingle();
   return data ?? null;
 }
 
-// GET /api/mp/lobbies/[lobbyId]/signals?recipient_id=X&since_id=Y&limit=Z
+// GET /api/rooms/[roomId]/signals?recipient_peer_id=X&since_id=Y&limit=Z
+// since_id is a BIGSERIAL cursor; the client persists next_since_id between polls.
 export async function GET(
   request: Request,
-  { params }: { params: Promise<{ lobbyId: string }> },
+  { params }: { params: Promise<{ roomId: string }> },
 ) {
   const auth = await requireApiKey(request);
   if (!auth.ok) return auth.response;
-  const { lobbyId } = await params;
-  if (!(await assertLobbyOwned(lobbyId, auth.ctx.apiKeyId))) {
-    return NextResponse.json({ error: "Lobby not found" }, { status: 404, headers: CORS });
+  const { roomId } = await params;
+  if (!(await assertRoomOwned(roomId, auth.ctx.apiKeyId))) {
+    return NextResponse.json({ error: "Room not found" }, { status: 404, headers: CORS });
   }
 
   const url = new URL(request.url);
-  const recipientId = url.searchParams.get("recipient_id");
+  const recipientId = url.searchParams.get("recipient_peer_id");
   if (!recipientId) {
-    return NextResponse.json({ error: "recipient_id is required" }, { status: 400, headers: CORS });
+    return NextResponse.json({ error: "recipient_peer_id is required" }, { status: 400, headers: CORS });
   }
   const sinceId = Math.max(0, Number(url.searchParams.get("since_id") ?? 0));
   const limit = Math.min(Math.max(1, Number(url.searchParams.get("limit") ?? 20)), 50);
 
   const { data, error } = await admin
-    .from("mp_signaling")
-    .select("id, sender_id, signal_type, payload, created_at")
-    .eq("lobby_id", lobbyId)
-    .eq("recipient_id", recipientId)
+    .from("room_signals")
+    .select("id, sender_peer_id, signal_type, payload, created_at")
+    .eq("room_id", roomId)
+    .eq("recipient_peer_id", recipientId)
     .gt("id", sinceId)
     .order("id")
     .limit(limit);
@@ -54,7 +55,7 @@ export async function GET(
     {
       signals: signals.map((s) => ({
         signal_id: s.id,
-        sender_id: s.sender_id,
+        sender_peer_id: s.sender_peer_id,
         signal_type: s.signal_type,
         payload: s.payload,
         created_at: s.created_at,
@@ -65,23 +66,27 @@ export async function GET(
   );
 }
 
-// POST /api/mp/lobbies/[lobbyId]/signals
-// Body: { sender_screen_id?, sender_is_host?, host_secret? | screen_secret?, recipient_id, signal_type, payload }
+// POST /api/rooms/[roomId]/signals
+// Body: { recipient_peer_id, signal_type, payload, host_secret? | peer_secret? + sender_peer_id? }
+//
+// Auth modes:
+//   - host: { host_secret } → sender becomes "host"
+//   - peer: { peer_secret, sender_peer_id } → sender becomes the peer's id
 export async function POST(
   request: Request,
-  { params }: { params: Promise<{ lobbyId: string }> },
+  { params }: { params: Promise<{ roomId: string }> },
 ) {
   const auth = await requireApiKey(request);
   if (!auth.ok) return auth.response;
-  const { lobbyId } = await params;
-  const lobby = await assertLobbyOwned(lobbyId, auth.ctx.apiKeyId);
-  if (!lobby) return NextResponse.json({ error: "Lobby not found" }, { status: 404, headers: CORS });
+  const { roomId } = await params;
+  const room = await assertRoomOwned(roomId, auth.ctx.apiKeyId);
+  if (!room) return NextResponse.json({ error: "Room not found" }, { status: 404, headers: CORS });
 
   let body: {
     host_secret?: string;
-    screen_secret?: string;
-    sender_screen_id?: string;
-    recipient_id?: string;
+    peer_secret?: string;
+    sender_peer_id?: string;
+    recipient_peer_id?: string;
     signal_type?: string;
     payload?: Record<string, unknown>;
   };
@@ -91,8 +96,8 @@ export async function POST(
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400, headers: CORS });
   }
 
-  if (!body.recipient_id) {
-    return NextResponse.json({ error: "recipient_id is required" }, { status: 400, headers: CORS });
+  if (!body.recipient_peer_id) {
+    return NextResponse.json({ error: "recipient_peer_id is required" }, { status: 400, headers: CORS });
   }
   if (!body.signal_type || !["offer", "answer", "ice_candidate"].includes(body.signal_type)) {
     return NextResponse.json({ error: "Invalid signal_type" }, { status: 400, headers: CORS });
@@ -103,34 +108,34 @@ export async function POST(
 
   let senderId: string;
   if (body.host_secret) {
-    if (body.host_secret !== lobby.host_secret) {
+    if (body.host_secret !== room.host_secret) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403, headers: CORS });
     }
     senderId = "host";
-  } else if (body.screen_secret && body.sender_screen_id) {
-    const { data: screen } = await admin
-      .from("mp_lobby_screens")
-      .select("id, screen_secret")
-      .eq("id", body.sender_screen_id)
-      .eq("lobby_id", lobbyId)
+  } else if (body.peer_secret && body.sender_peer_id) {
+    const { data: peer } = await admin
+      .from("room_peers")
+      .select("id, peer_secret")
+      .eq("id", body.sender_peer_id)
+      .eq("room_id", roomId)
       .maybeSingle();
-    if (!screen || screen.screen_secret !== body.screen_secret) {
+    if (!peer || peer.peer_secret !== body.peer_secret) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403, headers: CORS });
     }
-    senderId = screen.id;
+    senderId = peer.id;
   } else {
     return NextResponse.json(
-      { error: "host_secret or (screen_secret + sender_screen_id) is required" },
+      { error: "host_secret or (peer_secret + sender_peer_id) is required" },
       { status: 400, headers: CORS },
     );
   }
 
   const { data: ins, error: insErr } = await admin
-    .from("mp_signaling")
+    .from("room_signals")
     .insert({
-      lobby_id: lobbyId,
-      sender_id: senderId,
-      recipient_id: body.recipient_id,
+      room_id: roomId,
+      sender_peer_id: senderId,
+      recipient_peer_id: body.recipient_peer_id,
       signal_type: body.signal_type,
       payload: body.payload,
     })
@@ -140,6 +145,6 @@ export async function POST(
     return NextResponse.json({ error: insErr?.message ?? "Failed to store signal" }, { status: 500, headers: CORS });
   }
 
-  recordUsage(auth.ctx.apiKeyId, "mp.signal.post", { lobbyId });
+  recordUsage(auth.ctx.apiKeyId, "room.signal.post", { roomId });
   return NextResponse.json({ signal_id: ins.id }, { status: 201, headers: CORS });
 }

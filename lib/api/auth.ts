@@ -73,14 +73,13 @@ export async function requireApiKey(
 export function recordUsage(
   apiKeyId: string,
   eventType: string,
-  refs: { sessionId?: string; lobbyId?: string } = {},
+  refs: { roomId?: string } = {},
 ) {
   void admin
     .from("usage_events")
     .insert({
       api_key_id: apiKeyId,
       event_type: eventType,
-      session_id: refs.sessionId ?? null,
-      lobby_id: refs.lobbyId ?? null,
+      room_id: refs.roomId ?? null,
     });
 }

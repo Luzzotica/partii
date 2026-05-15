@@ -35,3 +35,22 @@ games/gyrii/server/.env.prod
 # SpacetimeDB build artifacts (Rust/Cargo target, WASM output)
 games/gyrii/spacetimedb/target/
 games/gyrii/server/target/
+
+# Agent / assistant tooling and local config
+.aider.conf.yml
+.goosehints
+.claude/
+.cursor/
+.k2so/
+.opencode/
+.pi/
+.github/copilot-instructions.md
+AGENT.md
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+SKILL.md
+
+# Test artifacts
+test-results/
+playwright-report/
