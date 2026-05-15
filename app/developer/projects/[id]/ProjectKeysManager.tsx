@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 type KeyRow = {
   id: string;
@@ -11,22 +11,20 @@ type KeyRow = {
   revoked_at: string | null;
 };
 
-export default function DeveloperKeysPage() {
-  const [keys, setKeys] = useState<KeyRow[]>([]);
+export function ProjectKeysManager({ projectId, initial }: { projectId: string; initial: KeyRow[] }) {
+  const [keys, setKeys] = useState<KeyRow[]>(initial);
   const [name, setName] = useState("");
   const [revealedSecret, setRevealedSecret] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
-    const res = await fetch("/api/developer/keys");
+    const res = await fetch(`/api/developer/keys?projectId=${projectId}`);
     if (res.ok) {
       const j = await res.json();
       setKeys(j.keys ?? []);
     }
   }
-
-  useEffect(() => { void load(); }, []);
 
   async function create(e: React.FormEvent) {
     e.preventDefault();
@@ -36,7 +34,7 @@ export default function DeveloperKeysPage() {
     const res = await fetch("/api/developer/keys", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, projectId }),
     });
     setBusy(false);
     if (!res.ok) {
@@ -57,7 +55,7 @@ export default function DeveloperKeysPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">API Keys</h1>
+      <h2 className="text-lg font-semibold">API Keys</h2>
 
       <form onSubmit={create} className="rounded border border-white/10 p-4 bg-white/[0.02] space-y-3">
         <div className="font-medium">Create new key</div>

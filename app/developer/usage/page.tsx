@@ -1,25 +1,36 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getDeveloperFromCookie } from "@/lib/api/developerAuth";
+import { requireUser } from "@/lib/auth/requireUser";
 
 const admin = createAdminClient();
 
 export default async function DeveloperUsagePage() {
-  const dev = await getDeveloperFromCookie();
-  if (!dev) return null;
+  const auth = await requireUser();
+  if (!auth.ok) return null;
 
-  const { data: keys } = await admin
-    .from("api_keys")
+  // All projects belonging to this user.
+  const { data: projects } = await admin
+    .from("projects")
     .select("id")
-    .eq("developer_id", dev.developerId);
-  const ids = (keys ?? []).map((k) => k.id);
+    .eq("user_id", auth.user.userId);
+  const projectIds = (projects ?? []).map((p) => p.id);
+
+  // All keys under those projects.
+  let keyIds: string[] = [];
+  if (projectIds.length > 0) {
+    const { data: keys } = await admin
+      .from("api_keys")
+      .select("id")
+      .in("project_id", projectIds);
+    keyIds = (keys ?? []).map((k) => k.id);
+  }
 
   let rows: { event_type: string; day: string; count: number }[] = [];
-  if (ids.length > 0) {
+  if (keyIds.length > 0) {
     const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     const { data } = await admin
       .from("usage_events")
       .select("event_type, created_at")
-      .in("api_key_id", ids)
+      .in("api_key_id", keyIds)
       .gte("created_at", since)
       .limit(10000);
     const acc: Record<string, number> = {};

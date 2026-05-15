@@ -1,40 +1,59 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getDeveloperFromCookie } from "@/lib/api/developerAuth";
+import { requireUser } from "@/lib/auth/requireUser";
 import { generateApiKey } from "@/lib/api/crypto";
 
 const admin = createAdminClient();
 
-export async function GET() {
-  const dev = await getDeveloperFromCookie();
-  if (!dev) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+async function userOwnsProject(userId: string, projectId: string): Promise<boolean> {
+  const { data } = await admin
+    .from("projects")
+    .select("id")
+    .eq("id", projectId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  return !!data;
+}
+
+export async function GET(request: Request) {
+  const auth = await requireUser();
+  if (!auth.ok) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const projectId = new URL(request.url).searchParams.get("projectId");
+  if (!projectId) return NextResponse.json({ error: "projectId is required" }, { status: 400 });
+  if (!(await userOwnsProject(auth.user.userId, projectId))) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
 
   const { data, error } = await admin
     .from("api_keys")
     .select("id, key_prefix, name, created_at, last_used_at, revoked_at")
-    .eq("developer_id", dev.developerId)
+    .eq("project_id", projectId)
     .order("created_at", { ascending: false });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
   return NextResponse.json({ keys: data ?? [] });
 }
 
 export async function POST(request: Request) {
-  const dev = await getDeveloperFromCookie();
-  if (!dev) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const auth = await requireUser();
+  if (!auth.ok) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  let body: { name?: string };
+  let body: { name?: string; projectId?: string };
   try { body = await request.json(); } catch { body = {}; }
-  const name = (body.name ?? "").slice(0, 80) || "Untitled key";
+  const projectId = body.projectId;
+  if (!projectId) return NextResponse.json({ error: "projectId is required" }, { status: 400 });
+  if (!(await userOwnsProject(auth.user.userId, projectId))) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
 
+  const name = (body.name ?? "").slice(0, 80) || "Untitled key";
   const { secret, hash, prefix } = generateApiKey();
   const { data, error } = await admin
     .from("api_keys")
-    .insert({ developer_id: dev.developerId, key_prefix: prefix, key_hash: hash, name })
+    .insert({ project_id: projectId, key_prefix: prefix, key_hash: hash, name })
     .select("id, key_prefix, name, created_at")
     .single();
   if (error || !data) return NextResponse.json({ error: error?.message ?? "Failed" }, { status: 500 });
 
-  // Secret is returned only here, never stored or returned again.
   return NextResponse.json({ key: data, secret });
 }

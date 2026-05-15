@@ -4,7 +4,7 @@ import { sha256Hex } from "./crypto";
 
 export type ApiKeyContext = {
   apiKeyId: string;
-  developerId: string;
+  projectId: string;
 };
 
 const admin = createAdminClient();
@@ -23,7 +23,7 @@ export function corsPreflight() {
 
 /**
  * Resolve the caller's API key from the X-API-Key header (or Authorization: Bearer).
- * Returns NextResponse on failure (401), or { apiKeyId, developerId } on success.
+ * Returns NextResponse on failure (401), or { apiKeyId, projectId } on success.
  */
 export async function requireApiKey(
   request: Request,
@@ -47,7 +47,7 @@ export async function requireApiKey(
   const hash = sha256Hex(secret);
   const { data, error } = await admin
     .from("api_keys")
-    .select("id, developer_id, revoked_at")
+    .select("id, project_id, revoked_at")
     .eq("key_hash", hash)
     .maybeSingle();
 
@@ -67,7 +67,7 @@ export async function requireApiKey(
     .update({ last_used_at: new Date().toISOString() })
     .eq("id", data.id);
 
-  return { ok: true, ctx: { apiKeyId: data.id, developerId: data.developer_id } };
+  return { ok: true, ctx: { apiKeyId: data.id, projectId: data.project_id } };
 }
 
 export function recordUsage(
