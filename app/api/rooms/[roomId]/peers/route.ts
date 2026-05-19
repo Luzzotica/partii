@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireApiKey, recordUsage, corsHeaders as CORS, corsPreflight } from "@/lib/api/auth";
 import { verifyPassword } from "@/lib/api/crypto";
+import { generateTurnCredentials } from "@/lib/api/turn";
 
 const admin = createAdminClient();
 
@@ -86,6 +87,8 @@ export async function POST(
 
   recordUsage(auth.ctx.apiKeyId, "room.peer.join", { roomId });
 
+  const turn = generateTurnCredentials(auth.ctx.apiKeyId, row.peer_id);
+
   return NextResponse.json(
     {
       peer_id: row.peer_id,
@@ -93,6 +96,7 @@ export async function POST(
       slot: row.peer_slot,
       kind,
       display_name: displayName,
+      ice_servers: turn.ice_servers,
     },
     { status: 201, headers: CORS },
   );

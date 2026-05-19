@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireApiKey, recordUsage, corsHeaders as CORS, corsPreflight } from "@/lib/api/auth";
 import { hashPassword } from "@/lib/api/crypto";
+import { generateTurnCredentials } from "@/lib/api/turn";
 
 const admin = createAdminClient();
 
@@ -170,6 +171,8 @@ export async function POST(request: Request) {
   recordUsage(auth.ctx.apiKeyId, "room.create", { roomId: room.id });
   void admin.rpc("cleanup_room_data");
 
+  const turn = generateTurnCredentials(auth.ctx.apiKeyId, hostPeer.id);
+
   return NextResponse.json(
     {
       room_id: room.id,
@@ -178,6 +181,7 @@ export async function POST(request: Request) {
       host_peer_id: hostPeer.id,
       host_peer_secret: hostPeerSecret,
       expires_at: room.expires_at,
+      ice_servers: turn.ice_servers,
     },
     { status: 201, headers: CORS },
   );

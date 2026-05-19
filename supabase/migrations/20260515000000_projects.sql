@@ -44,6 +44,15 @@ BEGIN
   LOOP
     SELECT id INTO matched_user FROM auth.users WHERE email = k.dev_email LIMIT 1;
     IF matched_user IS NULL THEN
+      IF to_regclass('public.rooms')          IS NOT NULL THEN
+        EXECUTE 'DELETE FROM public.rooms          WHERE api_key_id = $1' USING k.api_key_id;
+      END IF;
+      IF to_regclass('public.mp_lobbies')     IS NOT NULL THEN
+        EXECUTE 'DELETE FROM public.mp_lobbies     WHERE api_key_id = $1' USING k.api_key_id;
+      END IF;
+      IF to_regclass('public.party_sessions') IS NOT NULL THEN
+        EXECUTE 'DELETE FROM public.party_sessions WHERE api_key_id = $1' USING k.api_key_id;
+      END IF;
       DELETE FROM public.api_keys WHERE id = k.api_key_id;
       CONTINUE;
     END IF;

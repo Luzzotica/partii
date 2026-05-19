@@ -1,129 +1,138 @@
 import type {
-  CreateSessionResult,
-  JoinSessionResult,
-  PartySession,
-  PollSignalsResult,
-  Signal,
-  SignalType,
+  CreateRoomResult,
+  IncomingSignal,
+  JoinRoomResult,
   PartyClientConfig,
+  PollSignalsResult,
+  RoomSummary,
+  SignalType,
 } from "./types";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// SignalingService
-//
-// Wraps all REST calls to /api/party/**. Owns the polling loop.
+// SignalingService — REST client for /api/rooms/** with a polling signal loop.
 //
 // Usage (host):
-//   const svc = new SignalingService({ baseUrl: "https://..." });
-//   const { session_id, host_secret } = await svc.createSession({ game_id: "my-game" });
-//   svc.hostSecret = host_secret;
-//   svc.startPolling(session_id, "host", (signal) => { ... });
+//   const svc = new SignalingService({ baseUrl, apiKey });
+//   const room = await svc.createRoom({ game_id: "hexii" });
+//   svc.hostSecret = room.host_secret;
+//   svc.peerId     = room.host_peer_id;
+//   svc.startPolling(room.room_id, room.host_peer_id, onSignal);
 //
 // Usage (controller):
-//   const svc = new SignalingService({ baseUrl: "https://..." });
-//   const { player_id, player_secret } = await svc.joinSession(session_id, "Alice");
-//   // player_id and player_secret are auto-stored on the instance
-//   svc.startPolling(session_id, player_id, (signal) => { ... });
-// ─────────────────────────────────────────────────────────────────────────────
+//   const svc = new SignalingService({ baseUrl, apiKey });
+//   const join = await svc.joinRoom(roomId, { kind: "controller" });
+//   svc.peerSecret = join.peer_secret;
+//   svc.peerId     = join.peer_id;
+//   svc.startPolling(roomId, join.peer_id, onSignal);
 
 export class SignalingService {
   private readonly baseUrl: string;
+  private readonly apiKey: string;
   private readonly pollIntervalMs: number;
 
-  private pollingTimer: ReturnType<typeof setTimeout> | null = null;
-  private isPolling: boolean = false;
-  private sinceId: number = 0;
-
-  // Set these after creation/join — used for authenticated sends.
+  /** Set on the host side after createRoom(). */
   public hostSecret: string | null = null;
-  public playerId: string | null = null;
-  public playerSecret: string | null = null;
+  /** Set after joinRoom() on controllers. */
+  public peerSecret: string | null = null;
+  /** Set after create/join. Used as `sender_peer_id` on signal POSTs. */
+  public peerId: string | null = null;
+
+  private pollingTimer: ReturnType<typeof setTimeout> | null = null;
+  private isPolling = false;
+  private sinceId = 0;
 
   constructor(config: PartyClientConfig) {
     this.baseUrl = config.baseUrl.replace(/\/$/, "");
+    this.apiKey = config.apiKey;
     this.pollIntervalMs = config.pollIntervalMs ?? 1500;
   }
 
-  // ─── Session management ───────────────────────────────────────────────────
+  // ─── Room lifecycle ─────────────────────────────────────────────────────────
 
-  async createSession(options?: {
-    game_id?: string;
-    max_players?: number;
+  async listRooms(gameId?: string): Promise<RoomSummary[]> {
+    const qs = gameId ? `?game_id=${encodeURIComponent(gameId)}` : "";
+    const res = (await this.get(`/api/rooms${qs}`)) as { rooms: RoomSummary[] };
+    return res.rooms;
+  }
+
+  async createRoom(options: {
+    game_id: string;
+    display_name?: string;
+    host_kind?: string;
+    host_display_name?: string;
+    host_metadata?: Record<string, unknown>;
+    max_peers?: number;
+    password?: string;
+    visibility?: "public" | "private";
     metadata?: Record<string, unknown>;
-  }): Promise<CreateSessionResult> {
-    const result = await this.post("/api/party/sessions", options ?? {}) as CreateSessionResult;
-    this.hostSecret = result.host_secret;
-    return result;
+  }): Promise<CreateRoomResult> {
+    const r = (await this.post("/api/rooms", options)) as CreateRoomResult;
+    this.hostSecret = r.host_secret;
+    this.peerId = r.host_peer_id;
+    return r;
   }
 
-  async getSession(sessionId: string): Promise<PartySession> {
-    return this.get(`/api/party/sessions/${sessionId}`) as Promise<PartySession>;
+  async joinRoom(
+    roomId: string,
+    options: {
+      kind: string;
+      display_name?: string;
+      password?: string;
+      metadata?: Record<string, unknown>;
+    },
+  ): Promise<JoinRoomResult> {
+    const r = (await this.post(
+      `/api/rooms/${encodeURIComponent(roomId)}/peers`,
+      options,
+    )) as JoinRoomResult;
+    this.peerSecret = r.peer_secret;
+    this.peerId = r.peer_id;
+    return r;
   }
 
-  async endSession(sessionId: string): Promise<void> {
+  async endRoom(roomId: string): Promise<void> {
     if (!this.hostSecret) throw new Error("hostSecret not set");
-    await this.patch(`/api/party/sessions/${sessionId}`, {
+    await this.patch(`/api/rooms/${encodeURIComponent(roomId)}`, {
       host_secret: this.hostSecret,
       status: "ended",
     });
   }
 
-  // ─── Player management ───────────────────────────────────────────────────
-
-  async joinSession(sessionId: string, displayName?: string): Promise<JoinSessionResult> {
-    const result = await this.post(
-      `/api/party/sessions/${sessionId}/players`,
-      { display_name: displayName },
-    ) as JoinSessionResult;
-    this.playerId = result.player_id;
-    this.playerSecret = result.player_secret;
-    return result;
+  async leaveRoom(roomId: string): Promise<void> {
+    if (!this.peerSecret || !this.peerId) throw new Error("not a peer in this room");
+    await this.fetchJson(
+      `/api/rooms/${encodeURIComponent(roomId)}/peers/${encodeURIComponent(this.peerId)}`,
+      { method: "DELETE", body: { peer_secret: this.peerSecret } },
+    );
   }
 
-  async updatePlayerStatus(
-    sessionId: string,
-    playerId: string,
-    status: "connected" | "disconnected",
-  ): Promise<void> {
-    if (!this.playerSecret) throw new Error("playerSecret not set");
-    await this.patch(`/api/party/sessions/${sessionId}/players/${playerId}`, {
-      player_secret: this.playerSecret,
-      status,
-    });
-  }
-
-  // ─── Signaling ────────────────────────────────────────────────────────────
+  // ─── Signaling ──────────────────────────────────────────────────────────────
 
   async sendSignal(
-    sessionId: string,
-    recipientId: string,
+    roomId: string,
+    recipientPeerId: string,
     signalType: SignalType,
     payload: Record<string, unknown>,
   ): Promise<void> {
     const body: Record<string, unknown> = {
-      recipient_id: recipientId,
+      recipient_peer_id: recipientPeerId,
       signal_type: signalType,
       payload,
     };
-
     if (this.hostSecret) {
       body.host_secret = this.hostSecret;
-    } else if (this.playerSecret && this.playerId) {
-      body.player_secret = this.playerSecret;
-      body.sender_player_id = this.playerId;
+    } else if (this.peerSecret && this.peerId) {
+      body.peer_secret = this.peerSecret;
+      body.sender_peer_id = this.peerId;
     } else {
-      throw new Error("Neither hostSecret nor playerSecret is set");
+      throw new Error("neither hostSecret nor peerSecret is set");
     }
-
-    await this.post(`/api/party/sessions/${sessionId}/signals`, body);
+    await this.post(`/api/rooms/${encodeURIComponent(roomId)}/signals`, body);
   }
 
-  // ─── Polling loop ─────────────────────────────────────────────────────────
-
   startPolling(
-    sessionId: string,
-    recipientId: string,
-    onSignal: (signal: Signal) => void,
+    roomId: string,
+    recipientPeerId: string,
+    onSignal: (signal: IncomingSignal) => void,
   ): void {
     if (this.isPolling) return;
     this.isPolling = true;
@@ -133,14 +142,12 @@ export class SignalingService {
       if (!this.isPolling) return;
       try {
         const path =
-          `/api/party/sessions/${sessionId}/signals` +
-          `?recipient_id=${encodeURIComponent(recipientId)}` +
+          `/api/rooms/${encodeURIComponent(roomId)}/signals` +
+          `?recipient_peer_id=${encodeURIComponent(recipientPeerId)}` +
           `&since_id=${this.sinceId}` +
           `&limit=50`;
         const result = (await this.get(path)) as PollSignalsResult;
-        for (const signal of result.signals) {
-          onSignal(signal);
-        }
+        for (const sig of result.signals) onSignal(sig);
         this.sinceId = result.next_since_id;
       } catch (err) {
         console.warn("[SignalingService] poll error:", err);
@@ -150,7 +157,7 @@ export class SignalingService {
       }
     };
 
-    poll();
+    void poll();
   }
 
   stopPolling(): void {
@@ -161,40 +168,36 @@ export class SignalingService {
     }
   }
 
-  // ─── HTTP helpers ─────────────────────────────────────────────────────────
+  // ─── HTTP helpers ───────────────────────────────────────────────────────────
 
-  private async get(path: string): Promise<unknown> {
-    const res = await fetch(`${this.baseUrl}${path}`);
+  private headers(extra: Record<string, string> = {}): Record<string, string> {
+    return { "X-API-Key": this.apiKey, ...extra };
+  }
+
+  private async fetchJson(
+    path: string,
+    init: { method: string; body?: unknown },
+  ): Promise<unknown> {
+    const res = await fetch(`${this.baseUrl}${path}`, {
+      method: init.method,
+      headers: this.headers(init.body !== undefined ? { "Content-Type": "application/json" } : {}),
+      body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
+    });
     if (!res.ok) {
-      const body = await res.json().catch(() => ({})) as Record<string, unknown>;
-      throw new Error(`GET ${path} → ${res.status}: ${body?.error ?? res.statusText}`);
+      const b = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      throw new Error(`${init.method} ${path} → ${res.status}: ${b?.error ?? res.statusText}`);
     }
+    if (res.status === 204) return undefined;
     return res.json();
   }
 
-  private async post(path: string, body: unknown): Promise<unknown> {
-    const res = await fetch(`${this.baseUrl}${path}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      const b = await res.json().catch(() => ({})) as Record<string, unknown>;
-      throw new Error(`POST ${path} → ${res.status}: ${b?.error ?? res.statusText}`);
-    }
-    return res.json();
+  private get(path: string): Promise<unknown> {
+    return this.fetchJson(path, { method: "GET" });
   }
-
-  private async patch(path: string, body: unknown): Promise<unknown> {
-    const res = await fetch(`${this.baseUrl}${path}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      const b = await res.json().catch(() => ({})) as Record<string, unknown>;
-      throw new Error(`PATCH ${path} → ${res.status}: ${b?.error ?? res.statusText}`);
-    }
-    return res.json();
+  private post(path: string, body: unknown): Promise<unknown> {
+    return this.fetchJson(path, { method: "POST", body });
+  }
+  private patch(path: string, body: unknown): Promise<unknown> {
+    return this.fetchJson(path, { method: "PATCH", body });
   }
 }

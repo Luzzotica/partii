@@ -1,81 +1,85 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// Party WebRTC SDK — shared types
-// These mirror the REST API response shapes exactly.
-// ─────────────────────────────────────────────────────────────────────────────
+// Party WebRTC SDK — shared types.
+// Mirrors the live REST API (rooms/peers under /api/rooms/**).
 
-export type SessionStatus = "waiting" | "active" | "ended";
-export type PlayerStatus = "joined" | "connected" | "disconnected";
+export type RoomStatus = "waiting" | "active" | "ended";
+export type PeerStatus = "joined" | "connected" | "disconnected";
 export type SignalType = "offer" | "answer" | "ice_candidate";
 
-export interface PartyPlayer {
-  player_id: string;
-  display_name: string;
-  slot: number;
-  status: PlayerStatus;
-  joined_at: string;
-  metadata: Record<string, unknown>;
+export interface IceServer {
+  urls: string | string[];
+  username?: string;
+  credential?: string;
 }
 
-export interface PartySession {
-  session_id: string;
+export interface CreateRoomResult {
+  room_id: string;
+  join_code: string;
+  host_secret: string;
+  host_peer_id: string;
+  host_peer_secret: string;
+  expires_at: string;
+  ice_servers: IceServer[];
+}
+
+export interface JoinRoomResult {
+  peer_id: string;
+  peer_secret: string;
+  slot: number;
+  kind: string;
+  display_name: string;
+  ice_servers: IceServer[];
+}
+
+export interface RoomSummary {
+  room_id: string;
   join_code: string;
   game_id: string;
-  status: SessionStatus;
-  max_players: number;
-  player_count: number;
-  players: PartyPlayer[];
+  display_name: string;
+  status: RoomStatus;
+  max_peers: number;
+  peer_count: number;
+  is_password_protected: boolean;
+  visibility: "public" | "private";
+  joinable: boolean;
   metadata: Record<string, unknown>;
   created_at: string;
   expires_at: string;
 }
 
-// Returned once on session creation — store host_secret immediately.
-export interface CreateSessionResult {
-  session_id: string;
-  join_code: string;
-  host_secret: string;
-  expires_at: string;
-}
-
-// Returned once on player join — store player_secret immediately.
-export interface JoinSessionResult {
-  player_id: string;
-  player_secret: string;
-  slot: number;
-  display_name: string;
-}
-
-export interface Signal {
+export interface IncomingSignal {
   signal_id: number;
-  sender_id: string;
+  sender_peer_id: string;
   signal_type: SignalType;
-  payload: RTCSessionDescriptionInit | RTCIceCandidateInit | Record<string, unknown>;
+  payload: Record<string, unknown>;
   created_at: string;
 }
 
 export interface PollSignalsResult {
-  signals: Signal[];
+  signals: IncomingSignal[];
   next_since_id: number;
 }
 
+// ─── Client config + callbacks ────────────────────────────────────────────────
+
 export interface PartyClientConfig {
-  /** Base URL of the Next.js deployment, e.g. "https://hexii.vercel.app" */
+  /** Base URL of the Next.js deployment, e.g. "https://hexii.vercel.app". */
   baseUrl: string;
-  /** Poll interval in milliseconds. Default: 1500. */
+  /** REST API key (X-API-Key). */
+  apiKey: string;
+  /** Poll interval for signals in ms. Default 1500. */
   pollIntervalMs?: number;
 }
 
 export interface HostCallbacks {
-  onPlayerJoined?: (player: PartyPlayer) => void;
-  onPlayerConnected?: (playerId: string) => void;
-  onPlayerDisconnected?: (playerId: string) => void;
-  onMessage?: (playerId: string, data: string | ArrayBuffer) => void;
+  onPeerConnected?: (peerId: string) => void;
+  onPeerDisconnected?: (peerId: string) => void;
+  onMessage?: (peerId: string, data: string | ArrayBuffer) => void;
   onError?: (err: Error) => void;
 }
 
 export interface ControllerCallbacks {
   onConnected?: () => void;
-  onMessage?: (data: string | ArrayBuffer) => void;
   onDisconnected?: () => void;
+  onMessage?: (data: string | ArrayBuffer) => void;
   onError?: (err: Error) => void;
 }

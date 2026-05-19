@@ -1,18 +1,18 @@
 export { SignalingService } from "./SignalingService";
 export { HostWebRTCManager, ControllerWebRTCManager } from "./WebRTCManager";
 export type {
-  PartySession,
-  PartyPlayer,
-  Signal,
-  CreateSessionResult,
-  JoinSessionResult,
+  RoomStatus,
+  PeerStatus,
+  SignalType,
+  IceServer,
+  CreateRoomResult,
+  JoinRoomResult,
+  RoomSummary,
+  IncomingSignal,
   PollSignalsResult,
   PartyClientConfig,
   HostCallbacks,
   ControllerCallbacks,
-  SessionStatus,
-  PlayerStatus,
-  SignalType,
 } from "./types";
 
 import { SignalingService } from "./SignalingService";
@@ -21,29 +21,43 @@ import type {
   PartyClientConfig,
   HostCallbacks,
   ControllerCallbacks,
-  CreateSessionResult,
-  JoinSessionResult,
+  CreateRoomResult,
+  JoinRoomResult,
 } from "./types";
 
 // ─── Convenience factories ────────────────────────────────────────────────────
 
-export async function createHostSession(
+export async function createHostRoom(
   config: PartyClientConfig,
-  options?: { game_id?: string; max_players?: number; metadata?: Record<string, unknown> },
+  options: {
+    game_id: string;
+    display_name?: string;
+    host_kind?: string;
+    host_display_name?: string;
+    host_metadata?: Record<string, unknown>;
+    max_peers?: number;
+    password?: string;
+    visibility?: "public" | "private";
+    metadata?: Record<string, unknown>;
+  },
   callbacks?: HostCallbacks,
 ): Promise<{
-  result: CreateSessionResult;
+  result: CreateRoomResult;
   manager: HostWebRTCManager;
   signaling: SignalingService;
 }> {
   const signaling = new SignalingService(config);
-  const result = await signaling.createSession(options);
+  const result = await signaling.createRoom(options);
 
-  const manager = new HostWebRTCManager(result.session_id, signaling, callbacks ?? {});
+  const manager = new HostWebRTCManager(
+    result.room_id,
+    signaling,
+    result.ice_servers,
+    callbacks ?? {},
+  );
 
-  // Host polls for answers + ICE candidates from players
-  signaling.startPolling(result.session_id, "host", (signal) => {
-    manager.handleSignal(signal);
+  signaling.startPolling(result.room_id, result.host_peer_id, (signal) => {
+    void manager.handleSignal(signal);
   });
 
   return { result, manager, signaling };
@@ -51,24 +65,35 @@ export async function createHostSession(
 
 export async function joinAsController(
   config: PartyClientConfig,
-  sessionId: string,
-  displayName: string,
+  roomId: string,
+  hostPeerId: string,
+  options: {
+    kind: string;
+    display_name?: string;
+    password?: string;
+    metadata?: Record<string, unknown>;
+  },
   callbacks?: ControllerCallbacks,
 ): Promise<{
-  result: JoinSessionResult;
+  result: JoinRoomResult;
   manager: ControllerWebRTCManager;
   signaling: SignalingService;
 }> {
   const signaling = new SignalingService(config);
-  const result = await signaling.joinSession(sessionId, displayName);
+  const result = await signaling.joinRoom(roomId, options);
 
   const manager = new ControllerWebRTCManager(
-    sessionId,
-    result.player_id,
+    roomId,
+    hostPeerId,
     signaling,
+    result.ice_servers,
     callbacks ?? {},
   );
-  manager.startListening();
+  manager.start();
+
+  signaling.startPolling(roomId, result.peer_id, (signal) => {
+    void manager.handleSignal(signal);
+  });
 
   return { result, manager, signaling };
 }
