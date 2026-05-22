@@ -25,12 +25,14 @@ export default async function StoreOfferPage({ params }: Ctx) {
   const admin = createAdminClient();
   const { data: { user } } = await supabase.auth.getUser();
 
-  let { data: offer, error: offerErr } = await admin
+  const offerQuery = await admin
     .from('offers')
     .select('id, slug, name, description, price_cents, currency, cover_image_url, is_published')
     .eq('slug', slug)
     .eq('is_published', true)
     .single();
+  const offerErr = offerQuery.error;
+  let offer = offerQuery.data;
   if (offerErr || !offer) {
     if (offerErr) console.error('[store/slug] offer query error (with cover):', offerErr);
     const fallback = await admin

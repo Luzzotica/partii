@@ -17,11 +17,13 @@ function formatPrice(cents: number, currency: string): string {
 export default async function StorePage() {
   const admin = createAdminClient();
 
-  let { data: offers, error } = await admin
+  const offersQuery = await admin
     .from('offers')
     .select('id, slug, name, description, price_cents, currency, cover_image_url, is_published')
     .eq('is_published', true)
     .order('created_at', { ascending: false });
+  const error = offersQuery.error;
+  let offers = offersQuery.data;
   if (error) {
     console.error('[store] failed to load offers (with cover_image_url):', error);
     // Retry without cover_image_url in case the migration hasn't been applied yet

@@ -42,7 +42,7 @@ export async function PATCH(
     .eq("id", peerId)
     .eq("room_id", roomId)
     .maybeSingle();
-  if (!peer || (peer as any).rooms?.api_key_id !== auth.ctx.apiKeyId) {
+  if (!peer || (peer as unknown as { rooms?: { api_key_id?: string } }).rooms?.api_key_id !== auth.ctx.apiKeyId) {
     return NextResponse.json({ error: "Peer not found" }, { status: 404, headers: CORS });
   }
   if (peer.peer_secret !== body.peer_secret) {
@@ -89,7 +89,7 @@ export async function DELETE(
     .eq("id", peerId)
     .eq("room_id", roomId)
     .maybeSingle();
-  if (!peer || (peer as any).rooms?.api_key_id !== auth.ctx.apiKeyId) {
+  if (!peer || (peer as unknown as { rooms?: { api_key_id?: string } }).rooms?.api_key_id !== auth.ctx.apiKeyId) {
     return NextResponse.json({ error: "Peer not found" }, { status: 404, headers: CORS });
   }
   if (peer.peer_secret !== peerSecret) {
