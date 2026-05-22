@@ -18,6 +18,7 @@
 
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
+import { createLineConsumer } from "./parser.mjs";
 
 const COTURN_BIN = process.env.COTURN_BIN ?? "/usr/bin/turnserver";
 const COTURN_CONF = process.env.COTURN_CONF ?? "/etc/coturn/turnserver.conf";
@@ -42,61 +43,17 @@ if (!reportingEnabled) {
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
-/** sessions: sessionId -> { username, realm, rb, sb, rp, sp, firstSeen, lastSeen } */
-const sessions = new Map();
 const pending = []; // queued usage events ready to ship
-
-// ─── Parsers ──────────────────────────────────────────────────────────────────
-
-const USAGE_RE =
-  /session\s+(\d+):\s.*usage:.*realm=<([^>]*)>,\s*username=<([^>]*)>,\s*rp=(\d+),\s*rb=(\d+),\s*sp=(\d+),\s*sb=(\d+)/;
-const CLOSE_RE = /session\s+(\d+):\s+closed/;
-
-function parseUsername(username) {
-  // Expected: "<expiry>:k=<apiKeyId>:p=<peerTag>"
-  const m = /^(\d+):k=([^:]+):p=(.*)$/.exec(username);
-  if (!m) return null;
-  return { apiKeyId: m[2], peerTag: m[3] };
-}
+const consumeLine = createLineConsumer();
 
 function handleLine(line) {
-  const u = USAGE_RE.exec(line);
-  if (u) {
-    const [, sid, realm, username, rp, rb, sp, sb] = u;
-    const now = new Date().toISOString();
-    const s = sessions.get(sid) ?? { firstSeen: now };
-    s.username = username;
-    s.realm = realm;
-    s.rp = Number(rp);
-    s.rb = Number(rb);
-    s.sp = Number(sp);
-    s.sb = Number(sb);
-    s.lastSeen = now;
-    sessions.set(sid, s);
-    return;
-  }
-  const c = CLOSE_RE.exec(line);
-  if (c) {
-    const sid = c[1];
-    const s = sessions.get(sid);
-    sessions.delete(sid);
-    if (!s || !s.username) return;
-    const parsed = parseUsername(s.username);
-    if (!parsed) return;
-    pending.push({
-      session_id: sid,
-      api_key_id: parsed.apiKeyId,
-      peer_tag: parsed.peerTag,
-      realm: s.realm ?? TURN_REALM,
-      bytes_sent: s.sb ?? 0,
-      bytes_received: s.rb ?? 0,
-      packets_sent: s.sp ?? 0,
-      packets_received: s.rp ?? 0,
-      started_at: s.firstSeen ?? null,
-      ended_at: new Date().toISOString(),
-    });
-    if (pending.length >= MAX_BATCH) void flush("size");
-  }
+  const result = consumeLine(line);
+  if (!result) return;
+  const event = { ...result.event };
+  // Fill realm default if coturn didn't surface one on the usage line.
+  if (!event.realm) event.realm = TURN_REALM;
+  pending.push(event);
+  if (pending.length >= MAX_BATCH) void flush("size");
 }
 
 // ─── Flushing ─────────────────────────────────────────────────────────────────
