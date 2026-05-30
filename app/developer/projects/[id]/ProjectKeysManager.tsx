@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { buildWebRTCPrompt } from "@/lib/devPrompt";
 
 type KeyRow = {
   id: string;
@@ -17,6 +18,18 @@ export function ProjectKeysManager({ projectId, initial }: { projectId: string; 
   const [revealedSecret, setRevealedSecret] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  async function copyAIPrompt() {
+    if (!revealedSecret) return;
+    const prompt = buildWebRTCPrompt({
+      apiKey: revealedSecret,
+      baseUrl: window.location.origin,
+    });
+    await navigator.clipboard.writeText(prompt);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
 
   async function load() {
     const res = await fetch(`/api/developer/keys?projectId=${projectId}`);
@@ -72,10 +85,23 @@ export function ProjectKeysManager({ projectId, initial }: { projectId: string; 
       </form>
 
       {revealedSecret && (
-        <div className="rounded border border-yellow-500/30 bg-yellow-500/10 p-4 space-y-2">
+        <div className="rounded border border-yellow-500/30 bg-yellow-500/10 p-4 space-y-3">
           <div className="font-medium text-yellow-200">Save this secret — it will not be shown again:</div>
           <pre className="bg-black/40 rounded p-3 overflow-x-auto text-xs select-all">{revealedSecret}</pre>
-          <button onClick={() => setRevealedSecret(null)} className="text-sm text-white/60 hover:text-white">Dismiss</button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={copyAIPrompt}
+              className="px-4 py-2 bg-blue-600 rounded hover:bg-blue-500 text-sm"
+            >
+              {copied ? "Copied ✓" : "Copy AI prompt"}
+            </button>
+            <button onClick={() => setRevealedSecret(null)} className="text-sm text-white/60 hover:text-white">
+              Dismiss
+            </button>
+          </div>
+          <div className="text-xs text-white/60">
+            Paste into ChatGPT, Claude, or Cursor and it will build a working WebRTC client using this key.
+          </div>
         </div>
       )}
 
