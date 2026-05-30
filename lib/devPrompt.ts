@@ -37,7 +37,7 @@ ${credentialsFooter}
 - **Host** — the creator of the room. Receives \`host_secret\` and \`host_peer_id\` exactly **once** at creation time.
 - **Peer (controller)** — a phone/browser that joined via \`join_code\`. Receives \`peer_id\` and \`peer_secret\` exactly **once** at join time.
 - **Secrets** — \`host_secret\` and \`peer_secret\` must be kept in memory by the originating client only. They authenticate mutating actions (sending signals, updating peer status, ending the room). **Never** put them on \`window\`, never log them, never send them to anyone else.
-- **ICE servers** — \`POST /api/rooms\` and \`POST /api/rooms/{id}/peers\` both return an \`ice_servers\` array. Pass it straight into \`new RTCPeerConnection({ iceServers })\`. Don't hard-code STUN/TURN.
+- **ICE servers (STUN + TURN, provided for you)** — \`POST /api/rooms\` and \`POST /api/rooms/{id}/peers\` both return an \`ice_servers\` array containing **STUN** entries *and* a **TURN** entry with short-lived \`username\` + \`credential\` (HMAC-signed, ~10 min TTL). The TURN server is hosted by Hexii — you do not need to run your own. Pass the array straight into \`new RTCPeerConnection({ iceServers })\`. Never hard-code STUN/TURN URLs and never strip the TURN entry — without it, peers behind symmetric NAT (most cellular networks, many corporate Wi-Fi) will fail to connect.
 - **Signaling transport** — REST only. There is **no WebSocket**. Both sides POST signals and GET-poll for incoming signals.
 
 ---
@@ -69,7 +69,18 @@ Response \`201\`:
   "host_peer_id": "uuid",
   "host_peer_secret": "uuid",
   "expires_at": "ISO 8601",
-  "ice_servers": [{ "urls": "stun:...", "username": "?", "credential": "?" }]
+  "ice_servers": [
+    { "urls": "stun:arcade-turn.fly.dev:3478" },
+    { "urls": "stun:stun.l.google.com:19302" },
+    {
+      "urls": [
+        "turn:arcade-turn.fly.dev:3478?transport=udp",
+        "turn:arcade-turn.fly.dev:3478?transport=tcp"
+      ],
+      "username": "1730000000:k=apk_...:p=...",
+      "credential": "base64-hmac-sha1"
+    }
+  ]
 }
 \`\`\`
 
@@ -105,7 +116,18 @@ Response \`201\`:
   "slot": 1,
   "kind": "phone",
   "display_name": "...",
-  "ice_servers": [...]
+  "ice_servers": [
+    { "urls": "stun:arcade-turn.fly.dev:3478" },
+    { "urls": "stun:stun.l.google.com:19302" },
+    {
+      "urls": [
+        "turn:arcade-turn.fly.dev:3478?transport=udp",
+        "turn:arcade-turn.fly.dev:3478?transport=tcp"
+      ],
+      "username": "1730000000:k=apk_...:p=...",
+      "credential": "base64-hmac-sha1"
+    }
+  ]
 }
 \`\`\`
 
@@ -204,6 +226,15 @@ Response:
 ## Cleanup
 - Controller: \`addEventListener("beforeunload", () => navigator.sendBeacon(...))\` is fine, but a plain \`DELETE /peers/{peerId}?peer_secret=…\` in \`close()\` works for explicit teardown.
 - Host: \`PATCH /api/rooms/{roomId}\` with \`{ host_secret, status: "ended" }\` in \`close()\`. Close all \`RTCPeerConnection\`s.
+
+## TURN / NAT traversal — rules
+- **You don't need to run a TURN server.** The Hexii backend mints ephemeral TURN credentials for every \`POST /api/rooms\` and \`POST /api/rooms/{id}/peers\` response. Use them.
+- **TTL is ~10 minutes.** Credentials are signed and short-lived. ICE gathering + connection establishment normally completes in seconds, so the TTL is never a problem during initial connect.
+- **Refresh on reconnect.** If a peer disconnects and rejoins (page reload, network blip past the 10-min mark, new device), call \`POST /api/rooms/{roomId}/peers\` again — it returns a fresh \`ice_servers\` array. There is no separate "refresh creds" endpoint; re-joining is the refresh.
+- **Use the array as-is.** Do not filter, dedupe, or reorder it. WebRTC needs both STUN (for srflx candidates) and TURN (for relay fallback) entries; the order returned is correct.
+- **Debug tip:** when testing TURN coverage, temporarily construct the \`RTCPeerConnection\` with \`{ iceServers, iceTransportPolicy: "relay" }\` to *force* TURN relay. If the data channel still opens, TURN is healthy. Remove this in production — \`"all"\` (the default) lets WebRTC pick the cheapest working path.
+- **No silent fallback to STUN-only.** If the server can't mint TURN creds (misconfigured backend), the \`ice_servers\` array will contain STUN entries only. Connections behind symmetric NAT will then fail. If you see ICE state stuck at \`checking\` or \`disconnected\` for peers on cellular networks, verify the response contained a \`turn:\` entry — if not, the backend is misconfigured (not your problem to fix, but tell the operator).
+- **Don't log the TURN \`credential\`.** It's tied to the API key for billing attribution; leaking it lets others draft TURN bandwidth against the account until the TTL expires.
 
 ## Worked example — one offer POST
 
