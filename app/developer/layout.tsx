@@ -13,7 +13,7 @@ export default async function DeveloperLayout({ children }: { children: React.Re
     <div className="min-h-screen bg-[#0a0a1a] text-white">
       <header className="flex items-center justify-between px-6 py-3 border-b border-white/10">
         <div className="flex items-center gap-6">
-          <Link href="/developer" className="font-semibold">Multiplayer Platform</Link>
+          <Link href="/developer" className="font-semibold">Lobbii</Link>
           <nav className="flex items-center gap-4 text-sm text-white/70">
             <Link href="/developer" className="hover:text-white">Projects</Link>
             <Link href="/developer/usage" className="hover:text-white">Usage</Link>
