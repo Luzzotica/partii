@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { buildWebRTCPrompt, HEXII_API_KEY_PLACEHOLDER } from "@/lib/devPrompt";
+import { buildWebRTCPrompt, API_KEY_PLACEHOLDER } from "@/lib/devPrompt";
 
 type KeyRow = {
   id: string;
@@ -22,7 +22,7 @@ export function ProjectKeysManager({ projectId, initial }: { projectId: string; 
 
   async function copyPlaceholderPrompt() {
     const prompt = buildWebRTCPrompt({
-      apiKey: HEXII_API_KEY_PLACEHOLDER,
+      apiKey: API_KEY_PLACEHOLDER,
       baseUrl: window.location.origin,
     });
     await navigator.clipboard.writeText(prompt);

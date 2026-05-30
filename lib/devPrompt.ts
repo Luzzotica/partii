@@ -1,23 +1,33 @@
-export const HEXII_API_KEY_PLACEHOLDER = "YOUR_HEXII_API_KEY";
+export const API_KEY_PLACEHOLDER = "YOUR_API_KEY";
 
 export function buildWebRTCPrompt(opts: { apiKey: string; baseUrl: string }): string {
   const { apiKey, baseUrl } = opts;
-  const isPlaceholder = apiKey === HEXII_API_KEY_PLACEHOLDER;
+  const isPlaceholder = apiKey === API_KEY_PLACEHOLDER;
   const credentialsHeading = isPlaceholder
     ? "## Credentials (you must fill in the API key)"
     : "## Credentials (already filled in for you)";
   const credentialsFooter = isPlaceholder
-    ? `Before running anything, replace \`${HEXII_API_KEY_PLACEHOLDER}\` with a real API key from https://sterlinglong.me/developer. If the user hasn't given you one, ask for it before writing code.`
-    : "Hard-code these into a `config.ts` or accept them via constructor — your call — but the user does not need to provide them again.";
-  return `# Build a Hexii WebRTC party-session client
+    ? `Before running anything, replace \`${API_KEY_PLACEHOLDER}\` with a real API key from the developer dashboard at \`${baseUrl}/developer\`. If the user hasn't given you one, ask for it before writing code.`
+    : "Hard-code these into a config module or accept them via constructor — the user does not need to provide them again.";
+  return `# Build a WebRTC party-session client
 
-You are a senior TypeScript engineer. Build a working **browser TypeScript** client against the Hexii party-session REST API described below. Output runnable code (no pseudocode, no placeholders) and explain only what's necessary. Use plain \`fetch\` and the browser's \`RTCPeerConnection\` — no extra dependencies. TypeScript strict mode.
+You are a senior engineer. Build a working WebRTC client against the party-session REST API described below. The signaling protocol is HTTP/JSON — it is language- and platform-agnostic, and clients are commonly built in TypeScript (browser), Godot (GDScript / C#), Rust, Swift, Kotlin, Unity, Unreal, Python, or anything else with a WebRTC implementation and an HTTP client.
 
-When the user asks you to "build it", produce three modules covering **both** the host (TV/desktop, creates rooms) and the controller (phone/web, joins via code):
+**First, before writing any code:** if the user has not told you what target they want, ask them: *"What language and platform are you building for — browser TypeScript, Godot, Rust, Unity, native Swift/Kotlin, something else?"* Then write idiomatic code for that target using its standard WebRTC API. Examples:
+- **Browser / TypeScript / JavaScript** → \`RTCPeerConnection\` + \`fetch\`
+- **Godot 4** → \`WebRTCPeerConnection\` + \`HTTPRequest\`
+- **Rust** → \`webrtc-rs\` (or \`webrtc.rs\`) + \`reqwest\`
+- **C# / Unity** → \`Unity.WebRTC\` + \`UnityWebRequest\`
+- **Swift / iOS** → Google's \`WebRTC.framework\` + \`URLSession\`
+- **Kotlin / Android** → Google's \`webrtc\` Android lib + OkHttp / Ktor
+- **Python** → \`aiortc\` + \`httpx\`
+- **C++ / native** → \`libdatachannel\` or \`libwebrtc\` + any HTTP client
 
-- \`signaling.ts\` — typed \`fetch\` helpers for every endpoint listed in this prompt.
-- \`host.ts\` — exports \`createHostSession({ gameId, displayName }) => Promise<HostSession>\` where \`HostSession\` has \`{ joinCode, onPeerConnect(cb), onPeerMessage(cb), broadcast(data), close() }\`.
-- \`controller.ts\` — exports \`joinAsController({ joinCode, displayName }) => Promise<ControllerSession>\` where \`ControllerSession\` has \`{ send(data), onMessage(cb), onClose(cb), close() }\`.
+The protocol is the same on every platform; only the API calls differ. Produce runnable, idiomatic code (no pseudocode) covering **both** roles:
+
+- A **Host** module — creates rooms, accepts incoming peers, owns the authoritative data channel(s).
+- A **Controller** (peer) module — joins a room by code, talks to the host over WebRTC.
+- A thin **signaling client** that wraps the REST endpoints below.
 
 ---
 
@@ -35,16 +45,16 @@ ${credentialsFooter}
 
 - **Room** — a session created by the host. Identified by \`room_id\` (uuid). Also has a 6-char alphanumeric \`join_code\` that controllers use.
 - **Host** — the creator of the room. Receives \`host_secret\` and \`host_peer_id\` exactly **once** at creation time.
-- **Peer (controller)** — a phone/browser that joined via \`join_code\`. Receives \`peer_id\` and \`peer_secret\` exactly **once** at join time.
-- **Secrets** — \`host_secret\` and \`peer_secret\` must be kept in memory by the originating client only. They authenticate mutating actions (sending signals, updating peer status, ending the room). **Never** put them on \`window\`, never log them, never send them to anyone else.
-- **ICE servers (STUN + TURN, provided for you)** — \`POST /api/rooms\` and \`POST /api/rooms/{id}/peers\` both return an \`ice_servers\` array containing **STUN** entries *and* a **TURN** entry with short-lived \`username\` + \`credential\` (HMAC-signed, ~10 min TTL). The TURN server is hosted by Hexii — you do not need to run your own. Pass the array straight into \`new RTCPeerConnection({ iceServers })\`. Never hard-code STUN/TURN URLs and never strip the TURN entry — without it, peers behind symmetric NAT (most cellular networks, many corporate Wi-Fi) will fail to connect.
-- **Signaling transport** — REST only. There is **no WebSocket**. Both sides POST signals and GET-poll for incoming signals.
+- **Peer (controller)** — a phone, console, or browser that joined via \`join_code\`. Receives \`peer_id\` and \`peer_secret\` exactly **once** at join time.
+- **Secrets** — \`host_secret\` and \`peer_secret\` must be kept in memory by the originating client only. They authenticate mutating actions (sending signals, updating peer status, ending the room). **Never** expose them to other peers, never log them, never persist them client-side beyond the session.
+- **ICE servers (STUN + TURN, provided for you)** — \`POST /api/rooms\` and \`POST /api/rooms/{id}/peers\` both return an \`ice_servers\` array containing **STUN** entries *and* a **TURN** entry with short-lived \`username\` + \`credential\` (HMAC-signed, ~10 min TTL). The TURN server is hosted by the backend — you do not need to run your own. Pass the array straight into your platform's PeerConnection config (\`RTCConfiguration.iceServers\` in browser/Unity, \`add_ice_server()\` in Godot, \`RTCConfiguration::ice_servers\` in webrtc-rs, etc). Never hard-code STUN/TURN URLs and never strip the TURN entry — without it, peers behind symmetric NAT (most cellular networks, many corporate Wi-Fi) will fail to connect.
+- **Signaling transport** — REST/HTTP only. There is **no WebSocket**. Both sides POST signals and GET-poll for incoming signals.
 
 ---
 
 ## Endpoints
 
-All endpoints require \`X-API-Key: ${apiKey}\`. All return JSON. All accept JSON bodies (\`Content-Type: application/json\`). Base URL is \`${baseUrl}\`.
+All endpoints require header \`X-API-Key: ${apiKey}\`. All return JSON. All accept JSON bodies (\`Content-Type: application/json\`). Base URL is \`${baseUrl}\`.
 
 ### \`POST /api/rooms\` — create a room (host)
 Request:
@@ -70,12 +80,12 @@ Response \`201\`:
   "host_peer_secret": "uuid",
   "expires_at": "ISO 8601",
   "ice_servers": [
-    { "urls": "stun:arcade-turn.fly.dev:3478" },
+    { "urls": "stun:turn-host:3478" },
     { "urls": "stun:stun.l.google.com:19302" },
     {
       "urls": [
-        "turn:arcade-turn.fly.dev:3478?transport=udp",
-        "turn:arcade-turn.fly.dev:3478?transport=tcp"
+        "turn:turn-host:3478?transport=udp",
+        "turn:turn-host:3478?transport=tcp"
       ],
       "username": "1730000000:k=apk_...:p=...",
       "credential": "base64-hmac-sha1"
@@ -117,12 +127,12 @@ Response \`201\`:
   "kind": "phone",
   "display_name": "...",
   "ice_servers": [
-    { "urls": "stun:arcade-turn.fly.dev:3478" },
+    { "urls": "stun:turn-host:3478" },
     { "urls": "stun:stun.l.google.com:19302" },
     {
       "urls": [
-        "turn:arcade-turn.fly.dev:3478?transport=udp",
-        "turn:arcade-turn.fly.dev:3478?transport=tcp"
+        "turn:turn-host:3478?transport=udp",
+        "turn:turn-host:3478?transport=tcp"
       ],
       "username": "1730000000:k=apk_...:p=...",
       "credential": "base64-hmac-sha1"
@@ -138,7 +148,7 @@ Response \`201\`:
 Status values: \`joined | connected | disconnected\`. Set \`connected\` when the data channel opens.
 
 ### \`DELETE /api/rooms/{roomId}/peers/{peerId}?peer_secret=...\` — leave room
-Call on unload / page close.
+Call on unload / page close / app teardown.
 
 ### \`POST /api/rooms/{roomId}/signals\` — send a WebRTC signal
 **From host:**
@@ -195,23 +205,23 @@ Response:
    - **Signal poll:** \`GET /signals?recipient_peer_id=host&since_id=…\` every ~1500 ms. Drain everything per response before sleeping. Advance \`since_id\` to \`next_since_id\`.
    - **Roster poll:** \`GET /api/rooms/{roomId}\` every ~2000 ms. Compare \`peers[]\` against peers you've already seen; for each new \`peer_id\`, kick off step 3.
 3. For each new peer:
-   1. \`new RTCPeerConnection({ iceServers })\`.
-   2. \`pc.createDataChannel("hexii", { ordered: true })\` — host always creates the channel.
-   3. Wire \`pc.onicecandidate\` → \`POST /signals\` with \`signal_type: "ice_candidate"\`, \`recipient_peer_id: <peerId>\`.
-   4. \`pc.createOffer()\` → \`pc.setLocalDescription(offer)\` → \`POST /signals\` with \`signal_type: "offer"\`, \`recipient_peer_id: <peerId>\`, payload = \`{ type, sdp }\`.
-   5. When the signal poll yields an \`answer\` from this peer: \`pc.setRemoteDescription(answer.payload)\`.
-   6. When the signal poll yields an \`ice_candidate\` from this peer: \`pc.addIceCandidate(candidate.payload)\`. Buffer them until \`setRemoteDescription\` has resolved.
-   7. When the data channel hits \`open\`, stop signal polling for this peer (you may keep the global poll running to handle new joiners).
+   1. Create a PeerConnection using the \`ice_servers\` array.
+   2. Create a reliable, ordered data channel (host always creates the channel — controllers only *receive* one).
+   3. Wire the "on local ICE candidate" callback to \`POST /signals\` with \`signal_type: "ice_candidate"\`, \`recipient_peer_id: <peerId>\`.
+   4. Create an offer → set local description → \`POST /signals\` with \`signal_type: "offer"\`, \`recipient_peer_id: <peerId>\`, payload = \`{ type, sdp }\`.
+   5. When the signal poll yields an \`answer\` from this peer: set remote description from \`answer.payload\`.
+   6. When the signal poll yields an \`ice_candidate\` from this peer: add it. Buffer incoming candidates until the remote description has been applied (most stacks require this ordering).
+   7. When the data channel transitions to \`open\`, stop signal polling *for this peer* (the global poll keeps running to handle new joiners).
 
 ### Controller
 1. \`GET /api/rooms/lookup?code=<joinCode>\` → get \`room_id\`.
 2. \`POST /api/rooms/{roomId}/peers\` → keep \`peer_id\`, \`peer_secret\`, \`ice_servers\`.
-3. \`new RTCPeerConnection({ iceServers })\`.
-4. Register \`pc.ondatachannel = e => { channel = e.channel; ... }\` — the host opens the channel; you receive it.
-5. Wire \`pc.onicecandidate\` → \`POST /signals\` with \`peer_secret\`, \`sender_peer_id: <peerId>\`, \`recipient_peer_id: "host"\`, \`signal_type: "ice_candidate"\`.
+3. Create a PeerConnection using the \`ice_servers\` array.
+4. Register an "on data channel" callback — the host opens the channel; you receive it.
+5. Wire "on local ICE candidate" → \`POST /signals\` with \`peer_secret\`, \`sender_peer_id: <peerId>\`, \`recipient_peer_id: "host"\`, \`signal_type: "ice_candidate"\`.
 6. Start signal polling: \`GET /signals?recipient_peer_id=<peerId>&since_id=…\` every ~1500 ms.
-7. On incoming \`offer\`: \`pc.setRemoteDescription(offer.payload)\` → \`pc.createAnswer()\` → \`pc.setLocalDescription(answer)\` → \`POST /signals\` with \`signal_type: "answer"\`, \`recipient_peer_id: "host"\`.
-8. On incoming \`ice_candidate\`: \`pc.addIceCandidate(...)\`.
+7. On incoming \`offer\`: set remote description from \`offer.payload\` → create answer → set local description → \`POST /signals\` with \`signal_type: "answer"\`, \`recipient_peer_id: "host"\`.
+8. On incoming \`ice_candidate\`: add it.
 9. When the data channel hits \`open\`, \`PATCH /peers/{peerId}\` with \`{ peer_secret, status: "connected" }\` and stop polling.
 
 ---
@@ -224,16 +234,16 @@ Response:
 - On 5xx, back off (e.g. 3s, 6s, 12s capped). On 4xx, fail loudly — these are programmer errors.
 
 ## Cleanup
-- Controller: \`addEventListener("beforeunload", () => navigator.sendBeacon(...))\` is fine, but a plain \`DELETE /peers/{peerId}?peer_secret=…\` in \`close()\` works for explicit teardown.
-- Host: \`PATCH /api/rooms/{roomId}\` with \`{ host_secret, status: "ended" }\` in \`close()\`. Close all \`RTCPeerConnection\`s.
+- Controller: send a \`DELETE /peers/{peerId}?peer_secret=…\` on app teardown. Browsers can use \`navigator.sendBeacon\`; native apps can fire-and-forget on app close.
+- Host: \`PATCH /api/rooms/{roomId}\` with \`{ host_secret, status: "ended" }\` when shutting down. Close all PeerConnections.
 
 ## TURN / NAT traversal — rules
-- **You don't need to run a TURN server.** The Hexii backend mints ephemeral TURN credentials for every \`POST /api/rooms\` and \`POST /api/rooms/{id}/peers\` response. Use them.
+- **You don't need to run a TURN server.** The backend mints ephemeral TURN credentials for every \`POST /api/rooms\` and \`POST /api/rooms/{id}/peers\` response. Use them.
 - **TTL is ~10 minutes.** Credentials are signed and short-lived. ICE gathering + connection establishment normally completes in seconds, so the TTL is never a problem during initial connect.
-- **Refresh on reconnect.** If a peer disconnects and rejoins (page reload, network blip past the 10-min mark, new device), call \`POST /api/rooms/{roomId}/peers\` again — it returns a fresh \`ice_servers\` array. There is no separate "refresh creds" endpoint; re-joining is the refresh.
-- **Use the array as-is.** Do not filter, dedupe, or reorder it. WebRTC needs both STUN (for srflx candidates) and TURN (for relay fallback) entries; the order returned is correct.
-- **Debug tip:** when testing TURN coverage, temporarily construct the \`RTCPeerConnection\` with \`{ iceServers, iceTransportPolicy: "relay" }\` to *force* TURN relay. If the data channel still opens, TURN is healthy. Remove this in production — \`"all"\` (the default) lets WebRTC pick the cheapest working path.
-- **No silent fallback to STUN-only.** If the server can't mint TURN creds (misconfigured backend), the \`ice_servers\` array will contain STUN entries only. Connections behind symmetric NAT will then fail. If you see ICE state stuck at \`checking\` or \`disconnected\` for peers on cellular networks, verify the response contained a \`turn:\` entry — if not, the backend is misconfigured (not your problem to fix, but tell the operator).
+- **Refresh on reconnect.** If a peer disconnects and rejoins (network blip past the 10-min mark, new device, app relaunch), call \`POST /api/rooms/{roomId}/peers\` again — it returns a fresh \`ice_servers\` array. There is no separate "refresh creds" endpoint; re-joining is the refresh.
+- **Use the array as-is.** Do not filter, dedupe, or reorder it. WebRTC needs both STUN (for srflx candidates) and TURN (for relay fallback); the order returned is correct.
+- **Debug tip:** when testing TURN coverage, temporarily force relay by setting your stack's equivalent of \`iceTransportPolicy: "relay"\` (browser/Unity), \`RTCIceTransportPolicy::Relay\` (webrtc-rs), or the matching enum in your library. If the data channel still opens, TURN is healthy. Remove this in production — the default ("all") lets WebRTC pick the cheapest working path.
+- **No silent fallback to STUN-only.** If the backend can't mint TURN creds, the \`ice_servers\` array will contain STUN entries only. Connections behind symmetric NAT will then fail. If you see ICE state stuck at \`checking\` or \`disconnected\` for peers on cellular networks, verify the response contained a \`turn:\` entry.
 - **Don't log the TURN \`credential\`.** It's tied to the API key for billing attribution; leaking it lets others draft TURN bandwidth against the account until the TTL expires.
 
 ## Worked example — one offer POST
@@ -271,10 +281,9 @@ Content-Type: application/json
 
 ## Build it now
 
-Produce \`signaling.ts\`, \`host.ts\`, \`controller.ts\` as described above, plus a 10-line \`example.ts\` that:
-1. Calls \`createHostSession({ gameId: "demo" })\` and \`console.log\`s the join code.
-2. (In a separate snippet meant for a different tab) calls \`joinAsController({ joinCode: "PASTE_ME" })\` and logs every received message.
-
-Do not ask for the API key — it is \`${apiKey}\`. Do not ask for the base URL — it is \`${baseUrl}\`. Start coding.
+1. **Confirm the target.** If the user hasn't already said, ask them what language/platform they're targeting.
+2. **Produce idiomatic code for that target** covering the Host role and the Controller (peer) role, plus a thin signaling client wrapping the REST endpoints. Use the platform's native WebRTC and HTTP libraries — no exotic deps.
+3. **Wire in the credentials above.** Don't ask for the API key — it is \`${apiKey}\`. Don't ask for the base URL — it is \`${baseUrl}\`.
+4. **Include a tiny runnable example** showing the host printing the join code and the controller connecting to it and exchanging one round-trip message over the data channel.
 `;
 }
