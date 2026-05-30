@@ -63,7 +63,7 @@ export default function ChangelogPage() {
     <div className="space-y-10">
       <div>
         <h1 className="text-3xl font-semibold tracking-tight">Changelog</h1>
-        <p className="text-white/60 mt-2">What's new across the site, games, and developer platform.</p>
+        <p className="text-white/60 mt-2">What&apos;s new across the site, games, and developer platform.</p>
       </div>
 
       {entries.length === 0 && (

@@ -18,17 +18,24 @@ export function ProjectKeysManager({ projectId, initial }: { projectId: string; 
   const [revealedSecret, setRevealedSecret] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<null | "token" | "prompt">(null);
 
-  async function copyAIPrompt() {
+  async function copyToken() {
+    if (!revealedSecret) return;
+    await navigator.clipboard.writeText(revealedSecret);
+    setCopied("token");
+    setTimeout(() => setCopied(null), 2000);
+  }
+
+  async function copyTokenAndPrompt() {
     if (!revealedSecret) return;
     const prompt = buildWebRTCPrompt({
       apiKey: revealedSecret,
       baseUrl: window.location.origin,
     });
     await navigator.clipboard.writeText(prompt);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    setCopied("prompt");
+    setTimeout(() => setCopied(null), 2000);
   }
 
   async function load() {
@@ -88,20 +95,34 @@ export function ProjectKeysManager({ projectId, initial }: { projectId: string; 
         <div className="rounded border border-yellow-500/30 bg-yellow-500/10 p-4 space-y-3">
           <div className="font-medium text-yellow-200">Save this secret — it will not be shown again:</div>
           <pre className="bg-black/40 rounded p-3 overflow-x-auto text-xs select-all">{revealedSecret}</pre>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 flex-wrap">
             <button
-              onClick={copyAIPrompt}
-              className="px-4 py-2 bg-blue-600 rounded hover:bg-blue-500 text-sm"
+              onClick={copyToken}
+              className="px-3 py-2 bg-white/10 hover:bg-white/15 rounded text-sm border border-white/15"
             >
-              {copied ? "Copied ✓" : "Copy AI prompt"}
+              {copied === "token" ? "Copied ✓" : "Copy token"}
             </button>
-            <button onClick={() => setRevealedSecret(null)} className="text-sm text-white/60 hover:text-white">
+            <button
+              onClick={copyTokenAndPrompt}
+              className="px-3 py-2 bg-blue-600 hover:bg-blue-500 rounded text-sm"
+            >
+              {copied === "prompt" ? "Copied ✓" : "Copy token + AI prompt"}
+            </button>
+            <button onClick={() => setRevealedSecret(null)} className="text-sm text-white/60 hover:text-white ml-2">
               Dismiss
             </button>
           </div>
           <div className="text-xs text-white/60">
-            Paste into ChatGPT, Claude, or Cursor and it will build a working WebRTC client using this key.
+            <strong>Copy token</strong> — just the API key, for use in your own code.{" "}
+            <strong>Copy token + AI prompt</strong> — the key plus a full WebRTC build spec; paste into ChatGPT, Claude,
+            or Cursor and it will scaffold a working host + controller client.
           </div>
+        </div>
+      )}
+
+      {!revealedSecret && keys.some((k) => !k.revoked_at) && (
+        <div className="text-xs text-white/50">
+          To copy a token or generate an AI build prompt, create a new key — secrets are only shown once at creation.
         </div>
       )}
 
