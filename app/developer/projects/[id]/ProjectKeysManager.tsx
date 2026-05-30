@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { buildWebRTCPrompt } from "@/lib/devPrompt";
+import { buildWebRTCPrompt, HEXII_API_KEY_PLACEHOLDER } from "@/lib/devPrompt";
 
 type KeyRow = {
   id: string;
@@ -18,7 +18,17 @@ export function ProjectKeysManager({ projectId, initial }: { projectId: string; 
   const [revealedSecret, setRevealedSecret] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState<null | "token" | "prompt">(null);
+  const [copied, setCopied] = useState<null | "token" | "prompt" | "placeholder">(null);
+
+  async function copyPlaceholderPrompt() {
+    const prompt = buildWebRTCPrompt({
+      apiKey: HEXII_API_KEY_PLACEHOLDER,
+      baseUrl: window.location.origin,
+    });
+    await navigator.clipboard.writeText(prompt);
+    setCopied("placeholder");
+    setTimeout(() => setCopied(null), 2000);
+  }
 
   async function copyToken() {
     if (!revealedSecret) return;
@@ -120,11 +130,20 @@ export function ProjectKeysManager({ projectId, initial }: { projectId: string; 
         </div>
       )}
 
-      {!revealedSecret && keys.some((k) => !k.revoked_at) && (
-        <div className="text-xs text-white/50">
-          To copy a token or generate an AI build prompt, create a new key — secrets are only shown once at creation.
+      <div className="rounded border border-white/10 bg-white/[0.02] p-4 space-y-2">
+        <div className="flex items-center gap-3 flex-wrap">
+          <button
+            onClick={copyPlaceholderPrompt}
+            className="px-3 py-2 bg-white/10 hover:bg-white/15 rounded text-sm border border-white/15"
+          >
+            {copied === "placeholder" ? "Copied ✓" : "Copy AI prompt"}
+          </button>
+          <span className="text-xs text-white/50">
+            The full WebRTC build spec — paste into any LLM, then provide your own key.
+          </span>
         </div>
-      )}
+      </div>
+
 
       <div className="rounded border border-white/10 overflow-hidden">
         <table className="w-full text-sm">

@@ -1,5 +1,14 @@
+export const HEXII_API_KEY_PLACEHOLDER = "YOUR_HEXII_API_KEY";
+
 export function buildWebRTCPrompt(opts: { apiKey: string; baseUrl: string }): string {
   const { apiKey, baseUrl } = opts;
+  const isPlaceholder = apiKey === HEXII_API_KEY_PLACEHOLDER;
+  const credentialsHeading = isPlaceholder
+    ? "## Credentials (you must fill in the API key)"
+    : "## Credentials (already filled in for you)";
+  const credentialsFooter = isPlaceholder
+    ? `Before running anything, replace \`${HEXII_API_KEY_PLACEHOLDER}\` with a real API key from https://sterlinglong.me/developer. If the user hasn't given you one, ask for it before writing code.`
+    : "Hard-code these into a `config.ts` or accept them via constructor — your call — but the user does not need to provide them again.";
   return `# Build a Hexii WebRTC party-session client
 
 You are a senior TypeScript engineer. Build a working **browser TypeScript** client against the Hexii party-session REST API described below. Output runnable code (no pseudocode, no placeholders) and explain only what's necessary. Use plain \`fetch\` and the browser's \`RTCPeerConnection\` — no extra dependencies. TypeScript strict mode.
@@ -12,13 +21,13 @@ When the user asks you to "build it", produce three modules covering **both** th
 
 ---
 
-## Credentials (already filled in for you)
+${credentialsHeading}
 
 - **API key:** \`${apiKey}\`
 - **Base URL:** \`${baseUrl}\`
 - **Auth header on every request:** \`X-API-Key: <the api key above>\`
 
-Hard-code these into a \`config.ts\` or accept them via constructor — your call — but the user does not need to provide them again.
+${credentialsFooter}
 
 ---
 
