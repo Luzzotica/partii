@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "date": "2026-05-30",
+      "title": "Changelog page",
+      "summary": "There's now a public /changelog where you can see what's shipped recently across the site, games, and developer platform. Entries are grouped by month and link to the underlying commit.",
+      "tags": ["infra"]
+    },
+    {
+      "date": "2026-05-30",
+      "title": "One-click \"Copy AI prompt\" for new API keys",
+      "summary": "When you create a new developer API key, the reveal panel now has a Copy AI prompt button. It copies a self-contained prompt — your real key inlined plus the full WebRTC signaling spec — that you can paste into ChatGPT, Claude, or Cursor to scaffold a working browser-TS host + controller client in one shot.",
+      "tags": ["developer"],
+      "commit": "b178808"
+    }
+  ]
+}
