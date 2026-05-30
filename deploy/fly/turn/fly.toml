@@ -34,15 +34,24 @@ primary_region = "iad"
 # USAGE_API_URL / USAGE_API_TOKEN from the env (set via `fly secrets`) and
 # constructs coturn's command-line itself — so no `[experimental] cmd` here.
 
+# Keep the machine pinned running — UDP doesn't have a connection lifecycle
+# the fly-proxy can use to wake auto-stopped machines, so an autosuspended
+# coturn would silently drop the first packets of every new TURN session.
 [[services]]
   protocol = "udp"
   internal_port = 3478
+  auto_stop_machines = false
+  auto_start_machines = false
+  min_machines_running = 1
   [[services.ports]]
     port = 3478
 
 [[services]]
   protocol = "tcp"
   internal_port = 3478
+  auto_stop_machines = false
+  auto_start_machines = false
+  min_machines_running = 1
   [[services.ports]]
     port = 3478
 
