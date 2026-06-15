@@ -222,7 +222,7 @@ Response:
 6. Start signal polling: \`GET /signals?recipient_peer_id=<peerId>&since_id=…\` every ~1500 ms.
 7. On incoming \`offer\`: set remote description from \`offer.payload\` → create answer → set local description → \`POST /signals\` with \`signal_type: "answer"\`, \`recipient_peer_id: "host"\`.
 8. On incoming \`ice_candidate\`: add it.
-9. When the data channel hits \`open\`, \`PATCH /peers/{peerId}\` with \`{ peer_secret, status: "connected" }\` and stop polling.
+9. When the data channel hits \`open\`, \`PATCH /peers/{peerId}\` with \`{ peer_secret, status: "connected" }\`. Then KEEP the signal poll running (you may slow it to ~3000 ms) for the rest of the session — do NOT stop it. ICE-restart offers during recovery arrive on this same channel; if you stop polling you can never recover from a network blip. See **Connection recovery** below.
 
 ---
 
@@ -230,7 +230,7 @@ Response:
 - 1500 ms interval is a sane default; do not poll faster than 1000 ms.
 - Always advance \`since_id\` using the returned \`next_since_id\` — never re-fetch processed signals.
 - Drain the full response before sleeping; if you got \`limit\` items, immediately fetch again before sleeping (catch-up).
-- Stop signal polling once the data channel is \`open\` (clients) or once all expected peers are connected (host can keep polling for new joiners).
+- Do NOT stop signal polling when the data channel opens. Slow it (e.g. to ~3000 ms) but keep it alive for the session: ICE-restart offers during recovery ride the same channel, and the host also needs it to discover new joiners. (See **Connection recovery**.)
 - On 5xx, back off (e.g. 3s, 6s, 12s capped). On 4xx, fail loudly — these are programmer errors.
 
 ## Cleanup
@@ -245,6 +245,95 @@ Response:
 - **Debug tip:** when testing TURN coverage, temporarily force relay by setting your stack's equivalent of \`iceTransportPolicy: "relay"\` (browser/Unity), \`RTCIceTransportPolicy::Relay\` (webrtc-rs), or the matching enum in your library. If the data channel still opens, TURN is healthy. Remove this in production — the default ("all") lets WebRTC pick the cheapest working path.
 - **No silent fallback to STUN-only.** If the backend can't mint TURN creds, the \`ice_servers\` array will contain STUN entries only. Connections behind symmetric NAT will then fail. If you see ICE state stuck at \`checking\` or \`disconnected\` for peers on cellular networks, verify the response contained a \`turn:\` entry.
 - **Don't log the TURN \`credential\`.** It's tied to the API key for billing attribution; leaking it lets others draft TURN bandwidth against the account until the TTL expires.
+
+---
+
+## Connection recovery & reconnection (REQUIRED — do not skip)
+
+A live WebRTC connection WILL briefly drop on real networks — phones switching Wi-Fi↔cellular, NAT rebinds, airport / hotel / corporate Wi-Fi. Your platform surfaces this as \`iceConnectionState\` / \`connectionState\` transitioning to \`disconnected\` or \`failed\`. **These states are RECOVERABLE.** The single most common integration bug is treating the first \`disconnected\`/\`failed\` as fatal and tearing the peer down (kicking the player, ending the room) — that turns a one-second blip into a lost session. Do not do this.
+
+Implement the following on both roles:
+
+1. **Never tear down on the first drop.** On \`disconnected\`/\`failed\`, do NOT close the PeerConnection or remove the peer. Enter a recovery window instead.
+2. **Grace window (~10s).** Arm a single timer (~10000 ms — generous, because the restart offer/answer rides the poll-based signaling and adds a round trip). Only fire a real disconnect (kick the peer / show "connection lost") if the link is still down when it elapses.
+3. **ICE restart, driven by the host (offerer).** Immediately create a fresh offer with the ICE-restart flag — \`pc.createOffer({ iceRestart: true })\` in the browser, the equivalent on your stack — \`setLocalDescription\`, and POST it as a normal \`offer\` signal to that peer. This forces BOTH ends to re-gather candidates, crucially a fresh TURN relay allocation, so ICE can fail over to the relay when the direct path has died.
+4. **The client (answerer) just answers it.** A restart offer is identical to the initial offer: \`setRemoteDescription\` → \`createAnswer\` → \`setLocalDescription\` → POST \`answer\`. No special-casing — but it means the client MUST still be polling for signals (see the polling fix above), otherwise it never receives the restart offer.
+5. **Recovered = reset.** When state returns to \`connected\`/\`completed\`, cancel the grace timer and reset the restart counter so a future blip earns a fresh budget.
+6. **Cap restarts** at ~2 per drop episode so a permanently dead network can't spin the signaling channel forever; reset the count once healthy.
+7. **Genuine terminal loss → re-join.** If the grace window elapses unrecovered (or you're past the ~10-min TURN TTL), re-join with \`POST /api/rooms/{roomId}/peers\` to get a fresh \`ice_servers\` array and redo the handshake — don't reuse dead state.
+
+State names differ by platform, same semantics: browser/Unity \`pc.connectionState\` + \`oniceconnectionstatechange\`; Godot \`WebRTCPeerConnection\` + \`get_connection_state()\`; webrtc-rs \`on_peer_connection_state_change\`. Treat \`closed\` (only ever from your own teardown) as terminal; \`disconnected\`/\`failed\` as recoverable.
+
+### Reference implementation (TypeScript / browser — port the state-enum names for other stacks)
+
+This is the exact recovery state machine our own games ship. Call \`attachRecovery()\` right after you create the \`RTCPeerConnection\`. It is transport-agnostic: you supply how to POST a restart offer and what to do on a real disconnect.
+
+\`\`\`ts
+const RECOVERY_GRACE_MS = 10_000;
+const MAX_ICE_RESTARTS = 2;
+
+// role: "host" (offerer) drives the ICE restart; "client" (answerer) recovers
+//   by answering the restart offer it receives on its signal poll.
+// sendRestartOffer(offer): POST it as a normal { signal_type: "offer" } signal.
+// onTerminalDisconnect(reason): only called if recovery genuinely fails.
+function attachRecovery(
+  pc: RTCPeerConnection,
+  role: "host" | "client",
+  sendRestartOffer: (offer: RTCSessionDescriptionInit) => Promise<void>,
+  onTerminalDisconnect: (reason: string) => void,
+) {
+  let recoveryTimer: ReturnType<typeof setTimeout> | null = null;
+  let iceRestarts = 0;
+  let fired = false;
+
+  const healthy = () => {
+    if (recoveryTimer) { clearTimeout(recoveryTimer); recoveryTimer = null; }
+    iceRestarts = 0;
+  };
+
+  const fireOnce = (reason: string) => {
+    if (fired) return;
+    fired = true;
+    onTerminalDisconnect(reason);
+  };
+
+  const tryIceRestart = async () => {
+    if (role !== "host") return;                 // offerer drives it; client answers
+    if (iceRestarts >= MAX_ICE_RESTARTS) return;
+    iceRestarts++;
+    try {
+      const offer = await pc.createOffer({ iceRestart: true });
+      await pc.setLocalDescription(offer);
+      await sendRestartOffer(offer);
+    } catch { /* a later state change re-enters recovery, capped */ }
+  };
+
+  const startRecovery = (reason: string) => {
+    if (fired || recoveryTimer) return;          // already recovering
+    void tryIceRestart();
+    recoveryTimer = setTimeout(() => {
+      recoveryTimer = null;
+      const s = pc.connectionState, i = pc.iceConnectionState;
+      if (s === "connected" || i === "connected" || i === "completed") return;
+      fireOnce(reason);
+    }, RECOVERY_GRACE_MS);
+  };
+
+  pc.onconnectionstatechange = () => {
+    const s = pc.connectionState;
+    if (s === "connected") healthy();
+    else if (s === "closed") fireOnce("closed");
+    else if (s === "failed" || s === "disconnected") startRecovery("connectionState=" + s);
+  };
+  pc.oniceconnectionstatechange = () => {
+    const s = pc.iceConnectionState;
+    if (s === "connected" || s === "completed") healthy();
+    else if (s === "failed" || s === "disconnected") startRecovery("iceConnectionState=" + s);
+  };
+}
+\`\`\`
+
+Your existing "incoming offer" handler already covers restart offers — just make sure it runs for offers that arrive AFTER the channel is open, not only the first one.
 
 ## Worked example — one offer POST
 
@@ -285,5 +374,6 @@ Content-Type: application/json
 2. **Produce idiomatic code for that target** covering the Host role and the Client (peer) role, plus a thin signaling client wrapping the REST endpoints. Use the platform's native WebRTC and HTTP libraries — no exotic deps.
 3. **Wire in the credentials above.** Don't ask for the API key — it is \`${apiKey}\`. Don't ask for the base URL — it is \`${baseUrl}\`.
 4. **Include a tiny runnable example** showing the host printing the join code and a client connecting to it and exchanging one round-trip message over the data channel.
+5. **Implement Connection recovery (the REQUIRED section above).** A \`disconnected\`/\`failed\` ICE/connection state must trigger a grace window + host-driven ICE restart, NOT a teardown — and the client must keep polling so it receives the restart offer. This is not optional: without it, players get kicked on every transient network blip. Port the reference \`attachRecovery()\` to your target.
 `;
 }
