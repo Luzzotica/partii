@@ -42,6 +42,7 @@ games/gyrii/server/target/
 .claude/
 .cursor/
 .k2so/
+.k2/
 .opencode/
 .pi/
 .github/copilot-instructions.md
@@ -54,3 +55,5 @@ SKILL.md
 # Test artifacts
 test-results/
 playwright-report/
+# Consolidated marketing deliverables + pipeline workspaces (local-only).
+/marketing/

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireApiKey, recordUsage, corsHeaders as CORS, corsPreflight } from "@/lib/api/auth";
+import { requireAuth, recordUsage, corsHeaders as CORS, corsPreflight } from "@/lib/api/auth";
+import { rateLimit, tooManyRequests } from "@/lib/api/quota";
 
 const admin = createAdminClient();
 
@@ -24,7 +25,7 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ roomId: string }> },
 ) {
-  const auth = await requireApiKey(request);
+  const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
   const { roomId } = await params;
   if (!(await assertRoomOwned(roomId, auth.ctx.apiKeyId))) {
@@ -76,8 +77,15 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ roomId: string }> },
 ) {
-  const auth = await requireApiKey(request);
+  const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
+
+  // Best-effort burst cap on signal posts per project (600/min ≈ 10/s — far
+  // above real WebRTC signalling, which is a handful of messages per peer).
+  if (!rateLimit(`signal:${auth.ctx.projectId}`, 600, 60_000)) {
+    return tooManyRequests("Signalling rate limit exceeded");
+  }
+
   const { roomId } = await params;
   const room = await assertRoomOwned(roomId, auth.ctx.apiKeyId);
   if (!room) return NextResponse.json({ error: "Room not found" }, { status: 404, headers: CORS });

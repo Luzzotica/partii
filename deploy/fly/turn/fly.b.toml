@@ -1,0 +1,120 @@
+# Fly.io app config for the coturn TURN/STUN server.
+#
+# The container's ENTRYPOINT is a small Node wrapper (usage-reporter.mjs) that
+# spawns coturn, mirrors its stdout to Fly logs, and POSTs per-session
+# bandwidth to Vercel for billing attribution.
+#
+# Prerequisites:
+#   fly apps create arcade-turn
+#   fly ips allocate-v4 -a arcade-turn        # dedicated IPv4 required for UDP
+#   fly ips allocate-v6 -a arcade-turn
+#
+#   # Shared TURN secret (same value goes on Vercel as TURN_SHARED_SECRET):
+#   fly secrets set TURN_SHARED_SECRET="$(openssl rand -hex 32)" -a arcade-turn
+#
+#   # Vercel→Fly usage-reporting auth (same value goes on Vercel as TURN_USAGE_TOKEN):
+#   fly secrets set USAGE_API_TOKEN="$(openssl rand -hex 32)" -a arcade-turn
+#
+#   # Where to POST usage events — your Hexii deployment:
+#   fly secrets set USAGE_API_URL="https://hexii.vercel.app" -a arcade-turn
+#
+#   # Optional: custom realm if you point a hostname at this app.
+#   fly secrets set TURN_REALM="turn.sterlinglong.me" -a arcade-turn
+#
+# Deploy:
+#   fly deploy -a arcade-turn -c fly.toml
+
+app = "arcade-turn-b"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+# Note: the wrapper script reads TURN_SHARED_SECRET / TURN_REALM /
+# USAGE_API_URL / USAGE_API_TOKEN from the env (set via `fly secrets`) and
+# constructs coturn's command-line itself — so no `[experimental] cmd` here.
+
+# Keep the machine pinned running — UDP doesn't have a connection lifecycle
+# the fly-proxy can use to wake auto-stopped machines, so an autosuspended
+# coturn would silently drop the first packets of every new TURN session.
+[[services]]
+  protocol = "udp"
+  internal_port = 3478
+  auto_stop_machines = false
+  auto_start_machines = false
+  min_machines_running = 1
+  [[services.ports]]
+    port = 3478
+
+[[services]]
+  protocol = "tcp"
+  internal_port = 3478
+  auto_stop_machines = false
+  auto_start_machines = false
+  min_machines_running = 1
+  [[services.ports]]
+    port = 3478
+
+# UDP relay range. coturn allocates ephemeral relay ports for each session.
+# Fly requires each UDP port to be declared. We use a narrow band (matches
+# turnserver.conf min-port/max-port). Bump the count if you outgrow ~10
+# concurrent TURN sessions.
+[[services]]
+  protocol = "udp"
+  internal_port = 49160
+  [[services.ports]]
+    port = 49160
+[[services]]
+  protocol = "udp"
+  internal_port = 49161
+  [[services.ports]]
+    port = 49161
+[[services]]
+  protocol = "udp"
+  internal_port = 49162
+  [[services.ports]]
+    port = 49162
+[[services]]
+  protocol = "udp"
+  internal_port = 49163
+  [[services.ports]]
+    port = 49163
+[[services]]
+  protocol = "udp"
+  internal_port = 49164
+  [[services.ports]]
+    port = 49164
+[[services]]
+  protocol = "udp"
+  internal_port = 49165
+  [[services.ports]]
+    port = 49165
+[[services]]
+  protocol = "udp"
+  internal_port = 49166
+  [[services.ports]]
+    port = 49166
+[[services]]
+  protocol = "udp"
+  internal_port = 49167
+  [[services.ports]]
+    port = 49167
+[[services]]
+  protocol = "udp"
+  internal_port = 49168
+  [[services.ports]]
+    port = 49168
+[[services]]
+  protocol = "udp"
+  internal_port = 49169
+  [[services.ports]]
+    port = 49169
+[[services]]
+  protocol = "udp"
+  internal_port = 49170
+  [[services.ports]]
+    port = 49170
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

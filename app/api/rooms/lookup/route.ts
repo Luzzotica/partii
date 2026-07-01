@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireApiKey, corsHeaders as CORS, corsPreflight } from "@/lib/api/auth";
+import { requireAuth, corsHeaders as CORS, corsPreflight } from "@/lib/api/auth";
 
 const admin = createAdminClient();
 
@@ -12,7 +12,7 @@ export async function OPTIONS() {
 // Resolve a join code to a room summary. Used by both phone-pairing
 // (controller scanned a QR code) and laptop-join-by-code flows.
 export async function GET(request: Request) {
-  const auth = await requireApiKey(request);
+  const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
 
   const url = new URL(request.url);

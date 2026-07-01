@@ -1,11 +1,26 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sha256Hex } from "./crypto";
+import { verifySessionToken } from "./token";
 
 export type ApiKeyContext = {
   apiKeyId: string;
   projectId: string;
+  /** Platform that attested for this caller, when authed via session token. */
+  platform?: string;
 };
+
+/**
+ * When true, signalling endpoints REQUIRE a short-lived session token (minted
+ * at /api/auth/token after origin + attestation checks) and reject a raw API
+ * key. Default false during the client rollout so games keep working until each
+ * has been updated to do the token exchange. Flip to "true" once every game
+ * ships the new RoomService.
+ */
+export function enforceSessionTokens(): boolean {
+  const v = process.env.ENFORCE_SESSION_TOKENS;
+  return v === "true" || v === "1";
+}
 
 const admin = createAdminClient();
 
@@ -68,6 +83,56 @@ export async function requireApiKey(
     .eq("id", data.id);
 
   return { ok: true, ctx: { apiKeyId: data.id, projectId: data.project_id } };
+}
+
+/**
+ * Auth gate for signalling endpoints. Prefers a session token (Bearer JWT,
+ * verified locally — no DB round-trip), and during the migration window falls
+ * back to a raw API key. Once `enforceSessionTokens()` is on, a raw key is
+ * rejected here (it's still accepted at /api/auth/token, the only place it's
+ * meant to be used).
+ *
+ * Session-token revocation lag: a token stays valid until its short TTL
+ * expires even if its API key is revoked mid-flight — the same model the TURN
+ * credentials already use. Acceptable given the ~10 min TTL.
+ */
+export async function requireAuth(
+  request: Request,
+): Promise<{ ok: true; ctx: ApiKeyContext } | { ok: false; response: NextResponse }> {
+  const auth = request.headers.get("authorization") ?? "";
+  const bearer = auth.toLowerCase().startsWith("bearer ") ? auth.slice(7).trim() : "";
+
+  // A Bearer value that isn't a raw API key and looks like a JWT → session token.
+  if (bearer && !bearer.startsWith("mpk_") && bearer.split(".").length === 3) {
+    const claims = verifySessionToken(bearer);
+    if (claims) {
+      return {
+        ok: true,
+        ctx: { apiKeyId: claims.kid, projectId: claims.pid, platform: claims.plat },
+      };
+    }
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { error: "Invalid or expired session token" },
+        { status: 401, headers: CORS_HEADERS },
+      ),
+    };
+  }
+
+  // No session token present.
+  if (enforceSessionTokens()) {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { error: "Session token required — exchange your API key at /api/auth/token" },
+        { status: 401, headers: CORS_HEADERS },
+      ),
+    };
+  }
+
+  // Migration window: accept the raw API key directly.
+  return requireApiKey(request);
 }
 
 export function recordUsage(

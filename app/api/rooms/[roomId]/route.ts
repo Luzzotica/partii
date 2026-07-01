@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireApiKey, corsHeaders as CORS, corsPreflight } from "@/lib/api/auth";
+import { requireAuth, corsHeaders as CORS, corsPreflight } from "@/lib/api/auth";
 
 const admin = createAdminClient();
 
@@ -14,7 +14,7 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ roomId: string }> },
 ) {
-  const auth = await requireApiKey(request);
+  const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
   const { roomId } = await params;
 
@@ -70,7 +70,7 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ roomId: string }> },
 ) {
-  const auth = await requireApiKey(request);
+  const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
   const { roomId } = await params;
 

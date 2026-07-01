@@ -40,7 +40,7 @@ function turnHost(): string {
 
 function iceServers(username: string, credential: string): IceServer[] {
   const host = turnHost();
-  return [
+  const servers: IceServer[] = [
     { urls: `stun:${host}:3478` },
     { urls: "stun:stun.l.google.com:19302" },
     {
@@ -52,6 +52,26 @@ function iceServers(username: string, credential: string): IceServer[] {
       credential,
     },
   ];
+  // Optional SECOND TURN server on a DIFFERENT public IP (TURN_HOST_B). Critical
+  // for same-WiFi peers (host + phone behind one NAT): when the direct LAN path
+  // is blocked and BOTH must relay, a single server produces a relay↔relay pair
+  // with identical IPs that WebRTC prunes as a self-loop → no fallback → connect
+  // fails. A second server with a different IP yields a cross-pair
+  // (relay-A ↔ relay-B) that survives pruning, so the relay fallback actually
+  // connects. The same TURN_SHARED_SECRET is used on both, so the one minted
+  // credential authenticates against either (coturn's HMAC is realm-independent).
+  const hostB = process.env.TURN_HOST_B;
+  if (hostB) {
+    servers.push({
+      urls: [
+        `turn:${hostB}:3478?transport=udp`,
+        `turn:${hostB}:3478?transport=tcp`,
+      ],
+      username,
+      credential,
+    });
+  }
+  return servers;
 }
 
 function sanitize(s: string, max: number): string {

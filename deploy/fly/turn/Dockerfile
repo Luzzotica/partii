@@ -10,6 +10,7 @@ RUN apt-get update \
 
 COPY turnserver.conf /etc/coturn/turnserver.conf
 COPY usage-reporter.mjs /opt/usage-reporter.mjs
+COPY parser.mjs /opt/parser.mjs
 
 EXPOSE 3478/udp 3478/tcp 49160-49200/udp
 

@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireApiKey, recordUsage, corsHeaders as CORS, corsPreflight } from "@/lib/api/auth";
+import { requireAuth, recordUsage, corsHeaders as CORS, corsPreflight } from "@/lib/api/auth";
 import { hashPassword } from "@/lib/api/crypto";
 import { generateTurnCredentials } from "@/lib/api/turn";
+import { enforceRoomCreateQuota } from "@/lib/api/quota";
 
 const admin = createAdminClient();
 
@@ -15,7 +16,7 @@ export async function OPTIONS() {
 // endpoint that both phone-pairing flows and laptop-discovery flows
 // can call (filter on metadata client-side if needed).
 export async function GET(request: Request) {
-  const auth = await requireApiKey(request);
+  const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
 
   const url = new URL(request.url);
@@ -74,8 +75,12 @@ export async function GET(request: Request) {
 // Creates the room and its host peer atomically. The host_kind defaults to
 // 'screen' (which is what bouncy-blobs uses); callers can pass anything.
 export async function POST(request: Request) {
-  const auth = await requireApiKey(request);
+  const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
+
+  // Damage cap: bound how many rooms a (possibly leaked) key can spin up.
+  const overQuota = await enforceRoomCreateQuota(admin, auth.ctx.projectId, auth.ctx.apiKeyId);
+  if (overQuota) return overQuota;
 
   let body: {
     game_id?: string;

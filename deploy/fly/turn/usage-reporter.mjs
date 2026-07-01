@@ -18,6 +18,7 @@
 
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
+import { lookup } from "node:dns/promises";
 import { createLineConsumer } from "./parser.mjs";
 
 const COTURN_BIN = process.env.COTURN_BIN ?? "/usr/bin/turnserver";
@@ -94,11 +95,46 @@ setInterval(() => { void flush("tick"); }, FLUSH_INTERVAL_MS).unref();
 
 // ─── Spawn coturn ─────────────────────────────────────────────────────────────
 
+// On Fly the container only sees its private internal NIC; the public
+// dedicated IP is mapped by Fly's edge. coturn binds to 0.0.0.0 fine, but
+// when a client ALLOCATES a relay, coturn advertises whatever local IP its
+// socket sees — i.e. the private Fly IP — which the remote peer can't
+// reach. `--external-ip=<PUBLIC>` tells coturn to advertise the public IP
+// in ALLOCATION responses while keeping the local bind. Without this,
+// every TURN-relay candidate is born unroutable and ICE silently fails.
+const TURN_EXTERNAL_IP = process.env.TURN_EXTERNAL_IP;
+
+// Fly UDP requires binding to `fly-global-services` — Linux picks the wrong
+// source address on `0.0.0.0` replies and the edge proxy drops them. Resolve
+// it now so we can pass IP literals to coturn (which doesn't do DNS for
+// listening-ip / relay-ip).
+let flyGlobalIp = null;
+try {
+  const { address } = await lookup("fly-global-services", { family: 4 });
+  flyGlobalIp = address;
+  console.error(`[reporter] resolved fly-global-services → ${flyGlobalIp}`);
+} catch (err) {
+  console.error(
+    `[reporter] failed to resolve fly-global-services (${err?.message ?? err}); falling back to 0.0.0.0 bind — UDP will likely not work.`,
+  );
+}
+
 const args = [
   "-c", COTURN_CONF,
   `--static-auth-secret=${TURN_SHARED_SECRET}`,
   `--realm=${TURN_REALM}`,
 ];
+if (flyGlobalIp) {
+  args.push(`--listening-ip=${flyGlobalIp}`);
+  args.push(`--relay-ip=${flyGlobalIp}`);
+}
+if (TURN_EXTERNAL_IP) {
+  args.push(`--external-ip=${TURN_EXTERNAL_IP}`);
+} else {
+  console.error(
+    "[reporter] TURN_EXTERNAL_IP not set — relay candidates will advertise the container's private IP and clients won't be able to reach the relay. Set via `fly secrets set TURN_EXTERNAL_IP=<public v4>`.",
+  );
+}
 
 console.error(`[reporter] starting coturn: ${COTURN_BIN} ${args.map(a => a.startsWith("--static-auth") ? "--static-auth-secret=***" : a).join(" ")}`);
 
