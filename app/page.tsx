@@ -74,6 +74,13 @@ export default function Home() {
         </div>
       </div>
 
+      {/* Footer */}
+      <footer className="absolute bottom-4 inset-x-0 flex items-center justify-center gap-4 text-xs text-white/35">
+        <Link href="/changelog" className="hover:text-white/70 transition-colors">Changelog</Link>
+        <span aria-hidden>·</span>
+        <Link href="/privacy" className="hover:text-white/70 transition-colors">Privacy</Link>
+      </footer>
+
       {/* Floating hexagons */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
         {hexPositions.map((pos, i) => (
