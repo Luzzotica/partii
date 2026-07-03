@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAuth, recordUsage, corsHeaders as CORS, corsPreflight } from "@/lib/api/auth";
 import { hashPassword } from "@/lib/api/crypto";
-import { generateTurnCredentials, mintCloudflareIceServers } from "@/lib/api/turn";
+import { generateTurnCredentials, mintCloudflareIceServers, stunOnlyIceServers } from "@/lib/api/turn";
+import { relayCapStatus } from "@/lib/billing/relayCap";
 import { mintRoomToken } from "@/lib/api/roomToken";
 import { enforceRoomCreateQuota } from "@/lib/api/quota";
 
@@ -183,7 +184,15 @@ export async function POST(request: Request) {
   recordUsage(auth.ctx.apiKeyId, "room.create", { roomId: room.id });
 
   const turn = generateTurnCredentials(auth.ctx.apiKeyId, hostPeer.id, auth.ctx.playerId);
-  const cfIce = await mintCloudflareIceServers();
+  // Free-tier relay cap: past the monthly included GB we stop minting relay
+  // creds (STUN/direct still works). Pro is metered, never capped.
+  const { data: projRow } = await admin
+    .from("projects")
+    .select("id, plan, relay_included_gb")
+    .eq("id", auth.ctx.projectId)
+    .maybeSingle();
+  const cap = await relayCapStatus(admin, projRow ?? { id: auth.ctx.projectId, plan: "free", relay_included_gb: 5 });
+  const cfIce = cap.capped ? [] : await mintCloudflareIceServers();
 
   return NextResponse.json(
     {
@@ -197,7 +206,7 @@ export async function POST(request: Request) {
       // proves "host of THIS room" and nothing else.
       room_token: mintRoomToken(room.id, "host", "host", room.expires_at),
       signal_gw: process.env.SIGNAL_GW_PUBLIC_URL || undefined,
-      ice_servers: [...turn.ice_servers, ...cfIce],
+      ice_servers: cap.capped ? stunOnlyIceServers() : [...turn.ice_servers, ...cfIce],
     },
     { status: 201, headers: CORS },
   );

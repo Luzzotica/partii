@@ -143,6 +143,15 @@ export function generateTurnCredentials(
 
 const CF_MINT_TIMEOUT_MS = 2_000;
 
+/** STUN-only ICE set — served to free projects past their monthly relay cap.
+ *  Direct peer-to-peer keeps working; only relay-requiring pairs are affected. */
+export function stunOnlyIceServers(): IceServer[] {
+  const host = process.env.TURN_HOST || "arcade-turn.fly.dev";
+  return [
+    { urls: [`stun:${host}:3478`, "stun:stun.l.google.com:19302"] },
+  ];
+}
+
 export async function mintCloudflareIceServers(
   ttlSeconds: number = DEFAULT_TTL_SECONDS,
 ): Promise<IceServer[]> {

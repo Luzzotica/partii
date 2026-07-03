@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getStripe, STRIPE_WEBHOOK_SECRET } from '@/lib/stripe/client';
 import { grantOfferAccess } from '@/lib/checkout/grantOfferAccess';
+import { applyLobbiiSubscriptionEvent } from '@/lib/billing/webhook';
 
 export async function POST(req: NextRequest) {
   if (!STRIPE_WEBHOOK_SECRET) {
@@ -28,6 +29,9 @@ export async function POST(req: NextRequest) {
       await grantOfferAccess({ userId, offerId, paymentRef: obj.id });
     }
   }
+
+  // Lobbii API-product subscriptions (identified by project_id metadata).
+  await applyLobbiiSubscriptionEvent(event);
 
   return NextResponse.json({ received: true });
 }

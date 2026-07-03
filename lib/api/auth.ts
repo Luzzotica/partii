@@ -138,8 +138,26 @@ export async function requireAuth(
     };
   }
 
-  // Migration window: accept the raw API key directly.
-  return requireApiKey(request);
+  // Migration window: accept the raw API key directly — unless THIS project
+  // opted into enforcement (per-project flag; the global env flag can't flip
+  // until every customer has, which is never guaranteed).
+  const viaKey = await requireApiKey(request);
+  if (!viaKey.ok) return viaKey;
+  const { data: proj } = await admin
+    .from("projects")
+    .select("require_session_tokens")
+    .eq("id", viaKey.ctx.projectId)
+    .maybeSingle();
+  if (proj?.require_session_tokens) {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { error: "Session token required — exchange your API key at /api/auth/token" },
+        { status: 401, headers: CORS_HEADERS },
+      ),
+    };
+  }
+  return viaKey;
 }
 
 export function recordUsage(

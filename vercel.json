@@ -7,6 +7,10 @@
     {
       "path": "/api/cron/usage-alert",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/relay-usage",
+      "schedule": "30 2 * * *"
     }
   ]
 }

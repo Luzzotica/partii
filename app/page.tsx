@@ -76,6 +76,8 @@ export default function Home() {
 
       {/* Footer */}
       <footer className="absolute bottom-4 inset-x-0 flex items-center justify-center gap-4 text-xs text-white/35">
+        <Link href="/docs" className="hover:text-white/70 transition-colors">Docs</Link>
+        <span aria-hidden>·</span>
         <Link href="/changelog" className="hover:text-white/70 transition-colors">Changelog</Link>
         <span aria-hidden>·</span>
         <Link href="/privacy" className="hover:text-white/70 transition-colors">Privacy</Link>

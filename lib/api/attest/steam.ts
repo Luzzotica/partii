@@ -15,13 +15,17 @@ const AUTH_URL = "https://api.steampowered.com/ISteamUserAuth/AuthenticateUserTi
 export async function verifySteamTicket(
   ticket: string | undefined,
   claimedSteamId: string | undefined,
+  projectKey?: string | null,
+  projectAppId?: string | null,
 ): Promise<AttestResult> {
-  const key = process.env.STEAM_WEBAPI_PUBLISHER_KEY;
-  const appId = process.env.STEAM_APP_ID;
+  // BYO first: Steam publisher keys are scoped to the PUBLISHER's apps, so a
+  // customer's Steam game must verify with their own key + app id.
+  const key = projectKey || process.env.STEAM_WEBAPI_PUBLISHER_KEY;
+  const appId = projectAppId || process.env.STEAM_APP_ID;
 
   if (!key || !appId) {
     if (process.env.NODE_ENV !== "production") return { ok: true };
-    return { ok: false, reason: "STEAM_WEBAPI_PUBLISHER_KEY / STEAM_APP_ID not configured" };
+    return { ok: false, reason: "No Steam publisher key / app id configured for this project" };
   }
   if (!ticket) return { ok: false, reason: "missing Steam ticket" };
 

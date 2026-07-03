@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAuth, recordUsage, corsHeaders as CORS, corsPreflight } from "@/lib/api/auth";
 import { verifyPassword } from "@/lib/api/crypto";
-import { generateTurnCredentials, mintCloudflareIceServers } from "@/lib/api/turn";
+import { generateTurnCredentials, mintCloudflareIceServers, stunOnlyIceServers } from "@/lib/api/turn";
+import { relayCapStatus } from "@/lib/billing/relayCap";
 import { mintRoomToken } from "@/lib/api/roomToken";
 
 const admin = createAdminClient();
@@ -89,7 +90,13 @@ export async function POST(
   recordUsage(auth.ctx.apiKeyId, "room.peer.join", { roomId });
 
   const turn = generateTurnCredentials(auth.ctx.apiKeyId, row.peer_id, auth.ctx.playerId);
-  const cfIce = await mintCloudflareIceServers();
+  const { data: projRow } = await admin
+    .from("projects")
+    .select("id, plan, relay_included_gb")
+    .eq("id", auth.ctx.projectId)
+    .maybeSingle();
+  const cap = await relayCapStatus(admin, projRow ?? { id: auth.ctx.projectId, plan: "free", relay_included_gb: 5 });
+  const cfIce = cap.capped ? [] : await mintCloudflareIceServers();
 
   return NextResponse.json(
     {
@@ -100,7 +107,7 @@ export async function POST(
       slot: row.peer_slot,
       kind,
       display_name: displayName,
-      ice_servers: [...turn.ice_servers, ...cfIce],
+      ice_servers: cap.capped ? stunOnlyIceServers() : [...turn.ice_servers, ...cfIce],
     },
     { status: 201, headers: CORS },
   );

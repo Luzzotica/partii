@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAuth, corsHeaders as CORS, corsPreflight } from "@/lib/api/auth";
 import { rateLimit, tooManyRequests } from "@/lib/api/quota";
-import { generateTurnCredentials, mintCloudflareIceServers } from "@/lib/api/turn";
+import { generateTurnCredentials, mintCloudflareIceServers, stunOnlyIceServers } from "@/lib/api/turn";
+import { relayCapStatus } from "@/lib/billing/relayCap";
 
 const admin = createAdminClient();
 
@@ -70,9 +71,15 @@ export async function POST(
   }
 
   const turn = generateTurnCredentials(auth.ctx.apiKeyId, peerTag, auth.ctx.playerId);
-  const cfIce = await mintCloudflareIceServers();
+  const { data: projRow } = await admin
+    .from("projects")
+    .select("id, plan, relay_included_gb")
+    .eq("id", auth.ctx.projectId)
+    .maybeSingle();
+  const cap = await relayCapStatus(admin, projRow ?? { id: auth.ctx.projectId, plan: "free", relay_included_gb: 5 });
+  const cfIce = cap.capped ? [] : await mintCloudflareIceServers();
   return NextResponse.json(
-    { ice_servers: [...turn.ice_servers, ...cfIce] },
+    { ice_servers: cap.capped ? stunOnlyIceServers() : [...turn.ice_servers, ...cfIce] },
     { headers: CORS },
   );
 }

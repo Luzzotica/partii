@@ -2,6 +2,24 @@
   "entries": [
     {
       "date": "2026-07-03",
+      "title": "Lobbii docs, pricing, and the AI build prompt v2",
+      "summary": "There's now a public docs site at /docs: paste one AI prompt and your coding assistant builds a working multiplayer client for any engine — browser, Godot, Unity, native. The prompt now covers realtime push signaling, TLS relays for strict networks, and self-healing reconnection. Pricing is live too: free to build, $5/month per project when you grow, with relay bandwidth metered beyond the included allowance.",
+      "tags": [
+        "developer"
+      ],
+      "commit": "a00f2ad"
+    },
+    {
+      "date": "2026-07-03",
+      "title": "Project settings and a connection-health dashboard",
+      "summary": "Each project now has a settings panel: allowed browser origins, bring-your-own attestation credentials (encrypted at rest), and an opt-in switch that locks the API to short-lived session tokens. The usage page shows connection health — success rates, connect times, relay share — reported by real game clients, plus relay bandwidth against your plan's allowance.",
+      "tags": [
+        "developer"
+      ],
+      "commit": "a00f2ad"
+    },
+    {
+      "date": "2026-07-03",
       "title": "Connections that survive strict firewalls, and a reliability dashboard behind the scenes",
       "summary": "Multiplayer connections now have a TLS relay path on port 443, so games connect even on corporate, campus, and other UDP-blocking networks that previously failed outright. Relay capacity grew 10×, and every connection attempt now reports what happened — so reliability problems get found and fixed from data instead of bug reports.",
       "tags": [

@@ -11,14 +11,17 @@ const SITEVERIFY = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
 export async function verifyTurnstile(
   token: string | undefined,
   ip: string | null,
+  projectSecret?: string | null,
 ): Promise<AttestResult> {
-  const secret = process.env.TURNSTILE_SECRET;
+  // BYO first: a customer project's own widget secret (their domains); the
+  // platform env secret only serves first-party projects.
+  const secret = projectSecret || process.env.TURNSTILE_SECRET;
 
   // No secret configured: allow locally (so dev isn't blocked) but fail closed
   // in production — we don't want to silently disable the check on deploy.
   if (!secret) {
     if (process.env.NODE_ENV !== "production") return { ok: true };
-    return { ok: false, reason: "TURNSTILE_SECRET not configured" };
+    return { ok: false, reason: "No Turnstile secret configured for this project" };
   }
   if (!token) return { ok: false, reason: "missing Turnstile token" };
 

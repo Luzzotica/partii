@@ -5,6 +5,7 @@ import { originAllowed } from "@/lib/api/origin";
 import { verifyAttestation } from "@/lib/api/attest";
 import { mintSessionToken } from "@/lib/api/token";
 import { rateLimit, tooManyRequests } from "@/lib/api/quota";
+import { openSecret } from "@/lib/api/secretBox";
 
 const admin = createAdminClient();
 
@@ -46,7 +47,7 @@ export async function POST(request: Request) {
   // 2. Origin allowlist (browser clients only; native clients have no Origin).
   const { data: project } = await admin
     .from("projects")
-    .select("allowed_origins")
+    .select("allowed_origins, turnstile_secret_enc, steam_publisher_key_enc, steam_app_id")
     .eq("id", auth.ctx.projectId)
     .maybeSingle();
   const allowedOrigins: string[] = project?.allowed_origins ?? [];
@@ -64,6 +65,11 @@ export async function POST(request: Request) {
     origin,
     ip,
     steamId: body.steam_id,
+    projectCreds: {
+      turnstileSecret: openSecret(project?.turnstile_secret_enc),
+      steamPublisherKey: openSecret(project?.steam_publisher_key_enc),
+      steamAppId: project?.steam_app_id ?? null,
+    },
   });
   if (!attest.ok) {
     return NextResponse.json(

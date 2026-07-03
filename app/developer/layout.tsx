@@ -17,6 +17,7 @@ export default async function DeveloperLayout({ children }: { children: React.Re
           <nav className="flex items-center gap-4 text-sm text-white/70">
             <Link href="/developer" className="hover:text-white">Projects</Link>
             <Link href="/developer/usage" className="hover:text-white">Usage</Link>
+          <Link href="/docs" className="text-sm text-white/60 hover:text-white transition-colors">Docs</Link>
           </nav>
         </div>
         <div className="flex items-center gap-3">

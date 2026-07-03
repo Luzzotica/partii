@@ -37,6 +37,15 @@ export type AttestInput = {
   ip?: string | null;
   /** Steam ticket auth needs the steamid the client claims. */
   steamId?: string;
+  /** BYO attestation credentials from the caller's project row (decrypted).
+   *  Our Turnstile widget / Steam publisher key are scoped to OUR domains and
+   *  apps, so customer projects supply their own; null/absent falls back to
+   *  the platform env credentials (first-party games). */
+  projectCreds?: {
+    turnstileSecret?: string | null;
+    steamPublisherKey?: string | null;
+    steamAppId?: string | null;
+  };
 };
 
 const isProd = () => process.env.NODE_ENV === "production";
@@ -46,10 +55,15 @@ export async function verifyAttestation(input: AttestInput): Promise<AttestResul
 
   switch (platform) {
     case "web":
-      return verifyTurnstile(input.proof, input.ip ?? null);
+      return verifyTurnstile(input.proof, input.ip ?? null, input.projectCreds?.turnstileSecret);
 
     case "steam":
-      return verifySteamTicket(input.proof, input.steamId);
+      return verifySteamTicket(
+        input.proof,
+        input.steamId,
+        input.projectCreds?.steamPublisherKey,
+        input.projectCreds?.steamAppId,
+      );
 
     case "dev":
       // Local dev convenience only. Never trust 'dev' from a real origin in prod.
