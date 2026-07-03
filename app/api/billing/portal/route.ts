@@ -13,22 +13,22 @@ export async function POST(request: Request) {
 
   let body: { project_id?: string };
   try { body = await request.json(); } catch { body = {}; }
-  if (!body.project_id) return NextResponse.json({ error: "project_id required" }, { status: 400 });
 
-  const { data: project } = await admin
-    .from("projects")
-    .select("id, stripe_customer_id")
-    .eq("id", body.project_id)
+  const { data: account } = await admin
+    .from("billing_accounts")
+    .select("stripe_customer_id")
     .eq("user_id", auth.user.userId)
     .maybeSingle();
-  if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
-  if (!project.stripe_customer_id) {
-    return NextResponse.json({ error: "No billing on this project yet" }, { status: 409 });
+  if (!account?.stripe_customer_id) {
+    return NextResponse.json({ error: "No billing on this account yet" }, { status: 409 });
   }
 
+  const back = body.project_id
+    ? `${new URL(request.url).origin}/developer/projects/${body.project_id}`
+    : `${new URL(request.url).origin}/developer`;
   const session = await getStripe().billingPortal.sessions.create({
-    customer: project.stripe_customer_id,
-    return_url: `${new URL(request.url).origin}/developer/projects/${project.id}`,
+    customer: account.stripe_customer_id,
+    return_url: back,
   });
   return NextResponse.json({ url: session.url });
 }

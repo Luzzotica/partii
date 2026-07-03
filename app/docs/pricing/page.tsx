@@ -7,15 +7,15 @@ const TIERS = [
     name: "Free",
     price: "$0",
     blurb: "Everything you need to build and playtest.",
-    rows: ["120 rooms/hour", "50 concurrent rooms", "600 signals/min", "5 GB relay bandwidth/mo"],
+    rows: ["1 project, 1 API key", "120 rooms/hour", "50 concurrent rooms", "600 signals/min", "5 GB relay bandwidth/mo"],
     note: "Past the relay allowance, relayed connections pause until next month — direct peer-to-peer keeps working.",
   },
   {
     name: "Pro",
     price: "$5/mo",
-    blurb: "For launched games. Per project.",
-    rows: ["1,200 rooms/hour", "500 concurrent rooms", "6,000 signals/min", "25 GB relay bandwidth/mo included"],
-    note: "Relay overage metered at $0.10/GB. Upgrade from your project page in the dashboard.",
+    blurb: "One subscription for your whole account.",
+    rows: ["Unlimited projects & API keys", "1,200 rooms/hour", "500 concurrent rooms", "6,000 signals/min", "25 GB relay bandwidth/mo per project"],
+    note: "Relay overage metered at $0.10/GB. Upgrade from any project page in the dashboard.",
     highlight: true,
   },
 ];
@@ -44,7 +44,7 @@ export default function PricingPage() {
     <div className="space-y-12">
       <div>
         <h1 className="text-3xl font-semibold tracking-tight">Pricing</h1>
-        <p className="text-white/60 mt-2">Free to build. $5/month per project when you grow.</p>
+        <p className="text-white/60 mt-2">Free to build. $5/month for your whole account when you grow.</p>
       </div>
 
       <div className="grid sm:grid-cols-2 gap-4">

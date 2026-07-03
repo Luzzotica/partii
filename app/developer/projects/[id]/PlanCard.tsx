@@ -54,6 +54,12 @@ export function PlanCard({ info }: { info: PlanInfo }) {
         Relay bandwidth this month: {info.relayUsedGb.toFixed(2)} / {info.relayIncludedGb} GB included
         {pro && <span className="text-white/45"> · overage $0.10/GB</span>}
       </div>
+      {!pro && (
+        <p className="text-xs text-white/45">
+          Free includes one project and one API key. Pro is account-wide: unlimited projects
+          and keys, 10× quotas, 25 GB relay included.
+        </p>
+      )}
       <div className="h-2 rounded bg-white/10 overflow-hidden">
         <div
           className={`h-full ${pct >= 100 ? "bg-red-400/70" : pct > 75 ? "bg-amber-400/70" : "bg-emerald-400/60"}`}

@@ -5,7 +5,7 @@ import { requireUser } from "@/lib/auth/requireUser";
 import { ProjectKeysManager } from "./ProjectKeysManager";
 import { ProjectSettingsManager } from "./ProjectSettingsManager";
 import { PlanCard } from "./PlanCard";
-import { planLimits } from "@/lib/billing/plans";
+import { planLimits, accountPlan } from "@/lib/billing/plans";
 import { relayCapStatus } from "@/lib/billing/relayCap";
 
 const admin = createAdminClient();
@@ -25,8 +25,9 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     .maybeSingle();
   if (!project) notFound();
 
-  const cap = await relayCapStatus(admin, project);
-  const limits = planLimits(project.plan);
+  const plan = await accountPlan(admin, auth.user.userId);
+  const cap = await relayCapStatus(admin, { ...project, plan });
+  const limits = planLimits(plan);
 
   const { data: keys } = await admin
     .from("api_keys")
@@ -47,7 +48,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       <PlanCard
         info={{
           projectId: project.id,
-          plan: project.plan ?? "free",
+          plan,
           relayIncludedGb: project.relay_included_gb ?? 5,
           relayUsedGb: cap.usedGb,
           limits,

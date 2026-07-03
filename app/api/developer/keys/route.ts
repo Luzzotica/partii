@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireUser } from "@/lib/auth/requireUser";
+import { accountPlan } from "@/lib/billing/plans";
 import { generateApiKey } from "@/lib/api/crypto";
 
 const admin = createAdminClient();
@@ -44,6 +45,22 @@ export async function POST(request: Request) {
   if (!projectId) return NextResponse.json({ error: "projectId is required" }, { status: 400 });
   if (!(await userOwnsProject(auth.user.userId, projectId))) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  // Free accounts get ONE active key per project; Pro is unlimited.
+  const plan = await accountPlan(admin, auth.user.userId);
+  if (plan !== "pro") {
+    const { count } = await admin
+      .from("api_keys")
+      .select("id", { count: "exact", head: true })
+      .eq("project_id", projectId)
+      .is("revoked_at", null);
+    if ((count ?? 0) >= 1) {
+      return NextResponse.json(
+        { error: "Free includes one active API key — revoke the existing key first, or upgrade to Pro ($5/mo) for unlimited keys.", upgrade: true },
+        { status: 402 },
+      );
+    }
   }
 
   const name = (body.name ?? "").slice(0, 80) || "Untitled key";

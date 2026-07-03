@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireUser } from "@/lib/auth/requireUser";
+import { accountPlan } from "@/lib/billing/plans";
 
 const admin = createAdminClient();
 
@@ -28,6 +29,21 @@ export async function GET() {
 export async function POST(request: Request) {
   const auth = await requireUser();
   if (!auth.ok) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Free accounts get ONE project; Pro is unlimited.
+  const plan = await accountPlan(admin, auth.user.userId);
+  if (plan !== "pro") {
+    const { count } = await admin
+      .from("projects")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", auth.user.userId);
+    if ((count ?? 0) >= 1) {
+      return NextResponse.json(
+        { error: "Free includes one project — upgrade to Pro ($5/mo) for unlimited projects.", upgrade: true },
+        { status: 402 },
+      );
+    }
+  }
 
   let body: { name?: string; slug?: string };
   try { body = await request.json(); } catch { body = {}; }

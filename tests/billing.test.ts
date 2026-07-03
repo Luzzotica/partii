@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type Stripe from "stripe";
 import { PLAN_LIMITS, planLimits, planPatch, proCheckoutParams } from "@/lib/billing/plans";
-import { lobbiiPatchForEvent } from "@/lib/billing/webhook";
+import { lobbiiPlanForEvent } from "@/lib/billing/webhook";
 
 describe("plan limits", () => {
   it("free is the fallback for unknown/null plans", () => {
@@ -20,12 +20,12 @@ describe("plan limits", () => {
 
 describe("pro checkout params", () => {
   const params = proCheckoutParams({
-    projectId: "proj-1",
     userId: "user-1",
     userEmail: "dev@example.com",
     proPriceId: "price_pro",
     overagePriceId: "price_over",
     baseUrl: "https://example.com",
+    returnProjectId: "proj-1",
   });
 
   it("is a subscription with flat + metered items", () => {
@@ -36,9 +36,9 @@ describe("pro checkout params", () => {
     ]);
   });
 
-  it("carries project metadata on session AND subscription", () => {
-    expect(params.metadata?.project_id).toBe("proj-1");
-    expect(params.subscription_data?.metadata?.project_id).toBe("proj-1");
+  it("carries the USER (billing principal) on session AND subscription", () => {
+    expect(params.metadata?.user_id).toBe("user-1");
+    expect(params.subscription_data?.metadata?.user_id).toBe("user-1");
     expect(params.metadata?.product).toBe("lobbii");
   });
 
@@ -51,25 +51,24 @@ function subEvent(type: string, sub: Partial<Stripe.Subscription>): Stripe.Event
   return { type, data: { object: sub } } as unknown as Stripe.Event;
 }
 
-describe("webhook event → project patch", () => {
-  it("checkout completion upgrades to pro with stripe ids", () => {
+describe("webhook event → account plan", () => {
+  it("checkout completion upgrades the ACCOUNT to pro with stripe ids", () => {
     const event = {
       type: "checkout.session.completed",
       data: {
         object: {
           mode: "subscription",
-          metadata: { product: "lobbii", project_id: "proj-1" },
+          metadata: { product: "lobbii", user_id: "user-1" },
           customer: "cus_123",
           subscription: "sub_456",
         },
       },
     } as unknown as Stripe.Event;
-    const mapped = lobbiiPatchForEvent(event);
-    expect(mapped?.projectId).toBe("proj-1");
-    expect(mapped?.patch.plan).toBe("pro");
-    expect(mapped?.patch.stripe_customer_id).toBe("cus_123");
-    expect(mapped?.patch.stripe_subscription_id).toBe("sub_456");
-    expect(mapped?.patch.relay_included_gb).toBe(25);
+    const mapped = lobbiiPlanForEvent(event);
+    expect(mapped?.userId).toBe("user-1");
+    expect(mapped?.plan).toBe("pro");
+    expect(mapped?.stripeCustomerId).toBe("cus_123");
+    expect(mapped?.stripeSubscriptionId).toBe("sub_456");
   });
 
   it("ignores non-lobbii checkouts (courses)", () => {
@@ -77,42 +76,41 @@ describe("webhook event → project patch", () => {
       type: "checkout.session.completed",
       data: { object: { mode: "payment", metadata: { user_id: "u", offer_id: "o" } } },
     } as unknown as Stripe.Event;
-    expect(lobbiiPatchForEvent(event)).toBeNull();
+    expect(lobbiiPlanForEvent(event)).toBeNull();
   });
 
-  it("subscription deletion downgrades to free limits", () => {
-    const mapped = lobbiiPatchForEvent(
+  it("subscription deletion downgrades the account to free", () => {
+    const mapped = lobbiiPlanForEvent(
       subEvent("customer.subscription.deleted", {
-        metadata: { product: "lobbii", project_id: "proj-1" },
+        metadata: { product: "lobbii", user_id: "user-1" },
         status: "canceled",
         id: "sub_456",
       }),
     );
-    expect(mapped?.patch.plan).toBe("free");
-    expect(mapped?.patch.relay_included_gb).toBe(5);
-    expect(mapped?.patch.stripe_subscription_id).toBeNull();
+    expect(mapped?.plan).toBe("free");
+    expect(mapped?.stripeSubscriptionId).toBeNull();
   });
 
   it("subscription update to unpaid downgrades; active keeps pro", () => {
-    const unpaid = lobbiiPatchForEvent(
+    const unpaid = lobbiiPlanForEvent(
       subEvent("customer.subscription.updated", {
-        metadata: { product: "lobbii", project_id: "proj-1" },
+        metadata: { product: "lobbii", user_id: "user-1" },
         status: "unpaid",
         id: "sub_456",
       }),
     );
-    expect(unpaid?.patch.plan).toBe("free");
-    const active = lobbiiPatchForEvent(
+    expect(unpaid?.plan).toBe("free");
+    const active = lobbiiPlanForEvent(
       subEvent("customer.subscription.updated", {
-        metadata: { product: "lobbii", project_id: "proj-1" },
+        metadata: { product: "lobbii", user_id: "user-1" },
         status: "active",
         id: "sub_456",
       }),
     );
-    expect(active?.patch.plan).toBe("pro");
+    expect(active?.plan).toBe("pro");
   });
 
   it("ignores unrelated event types", () => {
-    expect(lobbiiPatchForEvent({ type: "invoice.paid", data: { object: {} } } as unknown as Stripe.Event)).toBeNull();
+    expect(lobbiiPlanForEvent({ type: "invoice.paid", data: { object: {} } } as unknown as Stripe.Event)).toBeNull();
   });
 });

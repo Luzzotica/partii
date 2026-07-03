@@ -6,25 +6,23 @@ import { priceIdByLookup, proCheckoutParams, PRO_PRICE_LOOKUP, OVERAGE_PRICE_LOO
 
 const admin = createAdminClient();
 
-// POST /api/checkout/plans  { project_id }
-// Upgrade a project to Lobbii Pro: $5/mo flat + metered relay overage.
+// POST /api/checkout/plans  { project_id? }
+// Upgrade the ACCOUNT to Lobbii Pro ($5/mo + metered relay overage):
+// unlimited projects and API keys; every project gets pro quotas.
 export async function POST(request: Request) {
   const auth = await requireUser();
   if (!auth.ok) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   let body: { project_id?: string };
   try { body = await request.json(); } catch { body = {}; }
-  if (!body.project_id) return NextResponse.json({ error: "project_id required" }, { status: 400 });
 
-  const { data: project } = await admin
-    .from("projects")
-    .select("id, plan, stripe_customer_id")
-    .eq("id", body.project_id)
+  const { data: account } = await admin
+    .from("billing_accounts")
+    .select("plan, stripe_customer_id")
     .eq("user_id", auth.user.userId)
     .maybeSingle();
-  if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
-  if (project.plan === "pro") {
-    return NextResponse.json({ error: "Project is already on Pro" }, { status: 409 });
+  if (account?.plan === "pro") {
+    return NextResponse.json({ error: "Account is already on Pro" }, { status: 409 });
   }
 
   const stripe = getStripe();
@@ -34,15 +32,15 @@ export async function POST(request: Request) {
   ]);
   const baseUrl = new URL(request.url).origin;
   const params = proCheckoutParams({
-    projectId: project.id,
     userId: auth.user.userId,
     userEmail: auth.user.email,
     proPriceId,
     overagePriceId,
     baseUrl,
+    returnProjectId: body.project_id,
   });
-  if (project.stripe_customer_id) {
-    params.customer = project.stripe_customer_id;
+  if (account?.stripe_customer_id) {
+    params.customer = account.stripe_customer_id;
     delete params.customer_email;
   }
   const session = await stripe.checkout.sessions.create(params);

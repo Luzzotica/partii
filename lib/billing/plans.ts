@@ -1,4 +1,5 @@
 import type Stripe from "stripe";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { getStripe } from "@/lib/stripe/client";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -40,6 +41,16 @@ export const PLAN_LIMITS: Record<PlanId, PlanLimits> = {
   },
 };
 
+/** The user's account plan ('free' when no billing row exists). */
+export async function accountPlan(admin: SupabaseClient, userId: string): Promise<PlanId> {
+  const { data } = await admin
+    .from("billing_accounts")
+    .select("plan")
+    .eq("user_id", userId)
+    .maybeSingle();
+  return data?.plan === "pro" ? "pro" : "free";
+}
+
 export function planLimits(plan: string | null | undefined): PlanLimits {
   return PLAN_LIMITS[(plan as PlanId) ?? "free"] ?? PLAN_LIMITS.free;
 }
@@ -63,16 +74,20 @@ export async function priceIdByLookup(lookup: string): Promise<string> {
   return price.id;
 }
 
-/** Build the Checkout Session params for upgrading a project to pro.
+/** Build the Checkout Session params for upgrading the ACCOUNT to pro.
  *  Pure-ish (prices injected) so tests can assert the shape without Stripe. */
 export function proCheckoutParams(opts: {
-  projectId: string;
   userId: string;
   userEmail?: string | null;
   proPriceId: string;
   overagePriceId: string;
   baseUrl: string;
+  /** Optional: which project page to return to. */
+  returnProjectId?: string;
 }): Stripe.Checkout.SessionCreateParams {
+  const back = opts.returnProjectId
+    ? `${opts.baseUrl}/developer/projects/${opts.returnProjectId}`
+    : `${opts.baseUrl}/developer`;
   return {
     mode: "subscription",
     line_items: [
@@ -80,13 +95,13 @@ export function proCheckoutParams(opts: {
       { price: opts.overagePriceId }, // metered: no quantity
     ],
     // metadata on BOTH the session and the subscription: the webhook reads
-    // whichever object the event carries.
-    metadata: { project_id: opts.projectId, user_id: opts.userId, product: "lobbii" },
+    // whichever object the event carries. user_id is the billing principal.
+    metadata: { user_id: opts.userId, product: "lobbii" },
     subscription_data: {
-      metadata: { project_id: opts.projectId, user_id: opts.userId, product: "lobbii" },
+      metadata: { user_id: opts.userId, product: "lobbii" },
     },
     customer_email: opts.userEmail ?? undefined,
-    success_url: `${opts.baseUrl}/developer/projects/${opts.projectId}?upgraded=1`,
-    cancel_url: `${opts.baseUrl}/developer/projects/${opts.projectId}`,
+    success_url: `${back}?upgraded=1`,
+    cancel_url: back,
   };
 }
