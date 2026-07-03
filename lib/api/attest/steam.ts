@@ -52,5 +52,7 @@ export async function verifySteamTicket(
   if (claimedSteamId && claimedSteamId !== params.steamid) {
     return { ok: false, reason: "Steam ticket steamid mismatch" };
   }
-  return { ok: true };
+  // The ticket proves BOTH genuineness and identity — surface the SteamID so
+  // the token mint can bind this session to a stable player identity.
+  return { ok: true, playerId: `steam:${params.steamid}` };
 }

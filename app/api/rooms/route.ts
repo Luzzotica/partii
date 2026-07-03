@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAuth, recordUsage, corsHeaders as CORS, corsPreflight } from "@/lib/api/auth";
 import { hashPassword } from "@/lib/api/crypto";
-import { generateTurnCredentials } from "@/lib/api/turn";
+import { generateTurnCredentials, mintCloudflareIceServers } from "@/lib/api/turn";
+import { mintRoomToken } from "@/lib/api/roomToken";
 import { enforceRoomCreateQuota } from "@/lib/api/quota";
 
 const admin = createAdminClient();
@@ -176,7 +177,8 @@ export async function POST(request: Request) {
   recordUsage(auth.ctx.apiKeyId, "room.create", { roomId: room.id });
   void admin.rpc("cleanup_room_data");
 
-  const turn = generateTurnCredentials(auth.ctx.apiKeyId, hostPeer.id);
+  const turn = generateTurnCredentials(auth.ctx.apiKeyId, hostPeer.id, auth.ctx.playerId);
+  const cfIce = await mintCloudflareIceServers();
 
   return NextResponse.json(
     {
@@ -186,7 +188,10 @@ export async function POST(request: Request) {
       host_peer_id: hostPeer.id,
       host_peer_secret: hostPeerSecret,
       expires_at: room.expires_at,
-      ice_servers: turn.ice_servers,
+      // Scoped credential for room-level surfaces (realtime signal gateway):
+      // proves "host of THIS room" and nothing else.
+      room_token: mintRoomToken(room.id, "host", "host", room.expires_at),
+      ice_servers: [...turn.ice_servers, ...cfIce],
     },
     { status: 201, headers: CORS },
   );

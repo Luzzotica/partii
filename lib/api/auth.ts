@@ -8,6 +8,8 @@ export type ApiKeyContext = {
   projectId: string;
   /** Platform that attested for this caller, when authed via session token. */
   platform?: string;
+  /** Player identity ('steam:<id64>' | 'anon:<uuid>') from the session token. */
+  playerId?: string;
 };
 
 /**
@@ -108,7 +110,12 @@ export async function requireAuth(
     if (claims) {
       return {
         ok: true,
-        ctx: { apiKeyId: claims.kid, projectId: claims.pid, platform: claims.plat },
+        ctx: {
+          apiKeyId: claims.kid,
+          projectId: claims.pid,
+          platform: claims.plat,
+          playerId: claims.sub,
+        },
       };
     }
     return {

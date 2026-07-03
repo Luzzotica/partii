@@ -43,14 +43,22 @@ describe("generateTurnCredentials", () => {
     const def = generateTurnCredentials("k", "p");
     expect(def.ttl_seconds).toBe(600); // default 10 min
 
-    const short = generateTurnCredentials("k", "p", 5);
+    const short = generateTurnCredentials("k", "p", undefined, 5);
     expect(short.ttl_seconds).toBe(60); // clamped up
 
-    const long = generateTurnCredentials("k", "p", 999_999);
+    const long = generateTurnCredentials("k", "p", undefined, 999_999);
     expect(long.ttl_seconds).toBe(86_400); // clamped down
 
-    const ok = generateTurnCredentials("k", "p", 1800);
+    const ok = generateTurnCredentials("k", "p", undefined, 1800);
     expect(ok.ttl_seconds).toBe(1800);
+  });
+
+  it("embeds the player identity tag and keeps peer_tag parseable", () => {
+    process.env.TURN_SHARED_SECRET = "s";
+    const creds = generateTurnCredentials("key1", "peer1", "steam:7656119");
+    expect(creds.username).toMatch(/^\d+:k=key1:p=peer1:u=steam:7656119$/);
+    const plain = generateTurnCredentials("key1", "peer1");
+    expect(plain.username).toMatch(/^\d+:k=key1:p=peer1$/);
   });
 
   it("sanitizes weird characters out of the username", () => {

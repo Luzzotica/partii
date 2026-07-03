@@ -30,9 +30,17 @@ export type SessionTokenClaims = {
   exp: number;
   /** unique token id (for future denylist / logging). */
   jti: string;
+  /** Player identity: 'steam:<id64>' (attested) or 'anon:<device-uuid>'
+   *  (client-chosen, Turnstile-gated). Absent on legacy exchanges. */
+  sub?: string;
 };
 
-export type SessionContext = { projectId: string; apiKeyId: string; platform: string };
+export type SessionContext = {
+  projectId: string;
+  apiKeyId: string;
+  platform: string;
+  playerId?: string;
+};
 
 // 10 min — long enough to start a match and survive a reconnect, short enough
 // that a leaked token is near-worthless. Clients refresh before expiry.
@@ -70,6 +78,7 @@ export function mintSessionToken(
     iat: now,
     exp: now + ttl,
     jti: randomUUID(),
+    ...(ctx.playerId ? { sub: ctx.playerId } : {}),
   };
   const header = b64url(JSON.stringify({ alg: "HS256", typ: "JWT" }));
   const payload = b64url(JSON.stringify(claims));

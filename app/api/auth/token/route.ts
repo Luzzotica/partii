@@ -34,7 +34,7 @@ export async function POST(request: Request) {
   const auth = await requireApiKey(request);
   if (!auth.ok) return auth.response;
 
-  let body: { platform?: string; attestation?: string; steam_id?: string };
+  let body: { platform?: string; attestation?: string; steam_id?: string; device_id?: string };
   try {
     body = await request.json();
   } catch {
@@ -72,15 +72,30 @@ export async function POST(request: Request) {
     );
   }
 
-  // 4. Mint the short-lived session token.
+  // 4. Resolve the player identity this session runs as. Attested platforms
+  // (Steam) prove one; browsers get an anonymous device identity from a
+  // client-persisted UUID — unverifiable, but Turnstile-gated and used only
+  // for attribution (telemetry, TURN billing, quotas), never authorization.
+  const deviceId = typeof body.device_id === "string"
+    ? body.device_id.slice(0, 64).replace(/[^a-zA-Z0-9_-]/g, "")
+    : "";
+  const playerId = attest.playerId ?? (deviceId ? `anon:${deviceId}` : undefined);
+
+  // 5. Mint the short-lived session token.
   const { token, expiresIn } = mintSessionToken({
     projectId: auth.ctx.projectId,
     apiKeyId: auth.ctx.apiKeyId,
     platform,
+    playerId,
   });
 
   return NextResponse.json(
-    { session_token: token, token_type: "Bearer", expires_in: expiresIn },
+    {
+      session_token: token,
+      token_type: "Bearer",
+      expires_in: expiresIn,
+      ...(playerId ? { player_id: playerId } : {}),
+    },
     { headers: CORS },
   );
 }

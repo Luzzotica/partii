@@ -56,65 +56,606 @@ primary_region = "iad"
     port = 3478
 
 # UDP relay range. coturn allocates ephemeral relay ports for each session.
-# Fly requires each UDP port to be declared. We use a narrow band (matches
-# turnserver.conf min-port/max-port). Bump the count if you outgrow ~10
-# concurrent TURN sessions.
+# Fly requires each UDP port to be declared individually (internal must equal
+# external for UDP). 100 ports = ~100 concurrent relay sessions; the
+# Cloudflare TURN tier (turns:443) absorbs overflow beyond that.
+
 [[services]]
   protocol = "udp"
   internal_port = 49160
   [[services.ports]]
     port = 49160
+
 [[services]]
   protocol = "udp"
   internal_port = 49161
   [[services.ports]]
     port = 49161
+
 [[services]]
   protocol = "udp"
   internal_port = 49162
   [[services.ports]]
     port = 49162
+
 [[services]]
   protocol = "udp"
   internal_port = 49163
   [[services.ports]]
     port = 49163
+
 [[services]]
   protocol = "udp"
   internal_port = 49164
   [[services.ports]]
     port = 49164
+
 [[services]]
   protocol = "udp"
   internal_port = 49165
   [[services.ports]]
     port = 49165
+
 [[services]]
   protocol = "udp"
   internal_port = 49166
   [[services.ports]]
     port = 49166
+
 [[services]]
   protocol = "udp"
   internal_port = 49167
   [[services.ports]]
     port = 49167
+
 [[services]]
   protocol = "udp"
   internal_port = 49168
   [[services.ports]]
     port = 49168
+
 [[services]]
   protocol = "udp"
   internal_port = 49169
   [[services.ports]]
     port = 49169
+
 [[services]]
   protocol = "udp"
   internal_port = 49170
   [[services.ports]]
     port = 49170
 
-[[vm]]
-  size = "shared-cpu-1x"
-  memory = "256mb"
+[[services]]
+  protocol = "udp"
+  internal_port = 49171
+  [[services.ports]]
+    port = 49171
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49172
+  [[services.ports]]
+    port = 49172
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49173
+  [[services.ports]]
+    port = 49173
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49174
+  [[services.ports]]
+    port = 49174
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49175
+  [[services.ports]]
+    port = 49175
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49176
+  [[services.ports]]
+    port = 49176
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49177
+  [[services.ports]]
+    port = 49177
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49178
+  [[services.ports]]
+    port = 49178
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49179
+  [[services.ports]]
+    port = 49179
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49180
+  [[services.ports]]
+    port = 49180
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49181
+  [[services.ports]]
+    port = 49181
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49182
+  [[services.ports]]
+    port = 49182
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49183
+  [[services.ports]]
+    port = 49183
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49184
+  [[services.ports]]
+    port = 49184
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49185
+  [[services.ports]]
+    port = 49185
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49186
+  [[services.ports]]
+    port = 49186
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49187
+  [[services.ports]]
+    port = 49187
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49188
+  [[services.ports]]
+    port = 49188
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49189
+  [[services.ports]]
+    port = 49189
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49190
+  [[services.ports]]
+    port = 49190
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49191
+  [[services.ports]]
+    port = 49191
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49192
+  [[services.ports]]
+    port = 49192
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49193
+  [[services.ports]]
+    port = 49193
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49194
+  [[services.ports]]
+    port = 49194
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49195
+  [[services.ports]]
+    port = 49195
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49196
+  [[services.ports]]
+    port = 49196
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49197
+  [[services.ports]]
+    port = 49197
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49198
+  [[services.ports]]
+    port = 49198
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49199
+  [[services.ports]]
+    port = 49199
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49200
+  [[services.ports]]
+    port = 49200
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49201
+  [[services.ports]]
+    port = 49201
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49202
+  [[services.ports]]
+    port = 49202
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49203
+  [[services.ports]]
+    port = 49203
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49204
+  [[services.ports]]
+    port = 49204
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49205
+  [[services.ports]]
+    port = 49205
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49206
+  [[services.ports]]
+    port = 49206
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49207
+  [[services.ports]]
+    port = 49207
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49208
+  [[services.ports]]
+    port = 49208
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49209
+  [[services.ports]]
+    port = 49209
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49210
+  [[services.ports]]
+    port = 49210
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49211
+  [[services.ports]]
+    port = 49211
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49212
+  [[services.ports]]
+    port = 49212
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49213
+  [[services.ports]]
+    port = 49213
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49214
+  [[services.ports]]
+    port = 49214
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49215
+  [[services.ports]]
+    port = 49215
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49216
+  [[services.ports]]
+    port = 49216
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49217
+  [[services.ports]]
+    port = 49217
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49218
+  [[services.ports]]
+    port = 49218
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49219
+  [[services.ports]]
+    port = 49219
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49220
+  [[services.ports]]
+    port = 49220
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49221
+  [[services.ports]]
+    port = 49221
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49222
+  [[services.ports]]
+    port = 49222
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49223
+  [[services.ports]]
+    port = 49223
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49224
+  [[services.ports]]
+    port = 49224
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49225
+  [[services.ports]]
+    port = 49225
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49226
+  [[services.ports]]
+    port = 49226
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49227
+  [[services.ports]]
+    port = 49227
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49228
+  [[services.ports]]
+    port = 49228
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49229
+  [[services.ports]]
+    port = 49229
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49230
+  [[services.ports]]
+    port = 49230
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49231
+  [[services.ports]]
+    port = 49231
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49232
+  [[services.ports]]
+    port = 49232
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49233
+  [[services.ports]]
+    port = 49233
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49234
+  [[services.ports]]
+    port = 49234
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49235
+  [[services.ports]]
+    port = 49235
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49236
+  [[services.ports]]
+    port = 49236
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49237
+  [[services.ports]]
+    port = 49237
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49238
+  [[services.ports]]
+    port = 49238
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49239
+  [[services.ports]]
+    port = 49239
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49240
+  [[services.ports]]
+    port = 49240
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49241
+  [[services.ports]]
+    port = 49241
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49242
+  [[services.ports]]
+    port = 49242
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49243
+  [[services.ports]]
+    port = 49243
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49244
+  [[services.ports]]
+    port = 49244
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49245
+  [[services.ports]]
+    port = 49245
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49246
+  [[services.ports]]
+    port = 49246
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49247
+  [[services.ports]]
+    port = 49247
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49248
+  [[services.ports]]
+    port = 49248
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49249
+  [[services.ports]]
+    port = 49249
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49250
+  [[services.ports]]
+    port = 49250
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49251
+  [[services.ports]]
+    port = 49251
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49252
+  [[services.ports]]
+    port = 49252
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49253
+  [[services.ports]]
+    port = 49253
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49254
+  [[services.ports]]
+    port = 49254
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49255
+  [[services.ports]]
+    port = 49255
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49256
+  [[services.ports]]
+    port = 49256
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49257
+  [[services.ports]]
+    port = 49257
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49258
+  [[services.ports]]
+    port = 49258
+
+[[services]]
+  protocol = "udp"
+  internal_port = 49259
+  [[services.ports]]
+    port = 49259

@@ -20,9 +20,10 @@ export const CLOSE_RE = /session\s+(\d+):\s+closed/;
  * outside of hexii/lib/api/turn.ts (e.g. the Trickle ICE manual test).
  */
 export function parseUsername(username) {
-  const m = /^(\d+):k=([^:]+):p=(.*)$/.exec(username);
+  // `p=` may be followed by an optional `:u=<playerId>` identity tag.
+  const m = /^(\d+):k=([^:]+):p=(.*?)(?::u=([^:]*))?$/.exec(username);
   if (!m) return null;
-  return { expiry: Number(m[1]), apiKeyId: m[2], peerTag: m[3] };
+  return { expiry: Number(m[1]), apiKeyId: m[2], peerTag: m[3], playerId: m[4] ?? null };
 }
 
 /**

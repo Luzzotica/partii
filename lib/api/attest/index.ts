@@ -18,7 +18,15 @@ import { verifySteamTicket } from "./steam";
 // an unknown or unconfigured provider is rejected rather than waved through.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type AttestResult = { ok: true } | { ok: false; reason: string };
+export type AttestResult =
+  | {
+      ok: true;
+      /** Verified platform identity ('steam:<id64>') when the provider proves
+       *  one. Web/dev attestations prove genuineness, not identity — the caller
+       *  derives an anonymous device identity instead. */
+      playerId?: string;
+    }
+  | { ok: false; reason: string };
 
 export type AttestInput = {
   platform: string;

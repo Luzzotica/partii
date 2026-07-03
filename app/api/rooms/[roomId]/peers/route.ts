@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAuth, recordUsage, corsHeaders as CORS, corsPreflight } from "@/lib/api/auth";
 import { verifyPassword } from "@/lib/api/crypto";
-import { generateTurnCredentials } from "@/lib/api/turn";
+import { generateTurnCredentials, mintCloudflareIceServers } from "@/lib/api/turn";
+import { mintRoomToken } from "@/lib/api/roomToken";
 
 const admin = createAdminClient();
 
@@ -87,16 +88,18 @@ export async function POST(
 
   recordUsage(auth.ctx.apiKeyId, "room.peer.join", { roomId });
 
-  const turn = generateTurnCredentials(auth.ctx.apiKeyId, row.peer_id);
+  const turn = generateTurnCredentials(auth.ctx.apiKeyId, row.peer_id, auth.ctx.playerId);
+  const cfIce = await mintCloudflareIceServers();
 
   return NextResponse.json(
     {
       peer_id: row.peer_id,
       peer_secret: peerSecret,
+      room_token: mintRoomToken(roomId, row.peer_id, "peer"),
       slot: row.peer_slot,
       kind,
       display_name: displayName,
-      ice_servers: turn.ice_servers,
+      ice_servers: [...turn.ice_servers, ...cfIce],
     },
     { status: 201, headers: CORS },
   );

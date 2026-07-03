@@ -21,6 +21,7 @@ describe("parseUsername", () => {
       expiry: 1733765999,
       apiKeyId: "apk_abc123",
       peerTag: "peer_xyz",
+      playerId: null,
     });
   });
 

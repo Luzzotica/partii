@@ -90,6 +90,7 @@ function sanitize(s: string, max: number): string {
 export function generateTurnCredentials(
   apiKeyId: string,
   peerTag: string,
+  playerId?: string,
   ttlSeconds: number = DEFAULT_TTL_SECONDS,
 ): TurnCredentials {
   const secret = process.env.TURN_SHARED_SECRET;
@@ -116,7 +117,10 @@ export function generateTurnCredentials(
   const expiry = Math.floor(Date.now() / 1000) + ttl;
   const safeKey = sanitize(apiKeyId, 48) || "anon";
   const safePeer = sanitize(peerTag, 48) || "peer";
-  const username = `${expiry}:k=${safeKey}:p=${safePeer}`;
+  // Optional identity tag: attributes relay bandwidth to a player, not just a
+  // peer row (usage-reporter's parser strips it into its own column).
+  const safePlayer = (playerId ?? "").replace(/[^a-zA-Z0-9_.:-]/g, "").slice(0, 64);
+  const username = `${expiry}:k=${safeKey}:p=${safePeer}` + (safePlayer ? `:u=${safePlayer}` : "");
   const credential = createHmac("sha1", secret).update(username).digest("base64");
   return {
     username,
@@ -124,4 +128,51 @@ export function generateTurnCredentials(
     ttl_seconds: ttl,
     ice_servers: iceServers(username, credential),
   };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Cloudflare Realtime TURN — the TLS/443 coverage tier.
+//
+// coturn (arcade-turn/-b) stays the cost-floor primary: ICE candidate priority
+// prefers UDP relay over TCP/TLS, so Cloudflare only carries sessions when
+// coturn is unreachable (UDP-blocked / DPI'd networks — the ~15-20% relay slice
+// our 3478-only coturn couldn't serve). Short-TTL creds minted per room join,
+// same as coturn's. Fail-open: any error → coturn-only, room creation never
+// blocks on Cloudflare.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const CF_MINT_TIMEOUT_MS = 2_000;
+
+export async function mintCloudflareIceServers(
+  ttlSeconds: number = DEFAULT_TTL_SECONDS,
+): Promise<IceServer[]> {
+  const keyId = process.env.CF_TURN_KEY_ID;
+  const token = process.env.CF_TURN_API_TOKEN;
+  if (!keyId || !token) return [];
+  try {
+    const ac = new AbortController();
+    const t = setTimeout(() => ac.abort(), CF_MINT_TIMEOUT_MS);
+    const res = await fetch(
+      `https://rtc.live.cloudflare.com/v1/turn/keys/${keyId}/credentials/generate-ice-servers`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ ttl: Math.max(60, Math.min(ttlSeconds, 86_400)) }),
+        signal: ac.signal,
+      },
+    );
+    clearTimeout(t);
+    if (!res.ok) return [];
+    const data = (await res.json()) as { iceServers?: IceServer | IceServer[] };
+    if (!data.iceServers) return [];
+    const servers = Array.isArray(data.iceServers) ? data.iceServers : [data.iceServers];
+    // Drop Cloudflare's bare-STUN entry — we already send two STUN servers; the
+    // value here is the TURN/TURNS credentialed entry.
+    return servers.filter((s) => {
+      const urls = Array.isArray(s.urls) ? s.urls : [s.urls];
+      return urls.some((u) => typeof u === "string" && u.startsWith("turn"));
+    });
+  } catch {
+    return []; // fail-open: coturn-only
+  }
 }
