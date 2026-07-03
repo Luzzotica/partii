@@ -1,0 +1,22 @@
+# arcade-signal — realtime signal push gateway (see server.mjs).
+# Deploy: fly deploy --config fly.toml --remote-only  (from this directory)
+# Secrets: fly secrets set SESSION_TOKEN_SECRET=… SIGNAL_GW_TOKEN=… -a arcade-signal
+app = "arcade-signal"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # Long-lived WebSockets: never scale to zero — a suspended gateway would
+  # silently drop every session's push path (clients fall back to polling,
+  # but that defeats the point).
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

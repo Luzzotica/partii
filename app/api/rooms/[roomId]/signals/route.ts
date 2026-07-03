@@ -154,5 +154,31 @@ export async function POST(
   }
 
   recordUsage(auth.ctx.apiKeyId, "room.signal.post", { roomId });
+
+  // Realtime fast path: forward the stored row to the signal gateway, which
+  // pushes it to the addressed peer's WebSocket instantly. Fire-and-forget —
+  // the recipient's reconciliation poll covers any gateway failure, so this
+  // must never delay or fail the durable POST.
+  const gw = process.env.SIGNAL_GW_URL;
+  const gwToken = process.env.SIGNAL_GW_TOKEN;
+  if (gw && gwToken) {
+    void fetch(`${gw.replace(/\/$/, "")}/push`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${gwToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        room_id: roomId,
+        recipient_peer_id: body.recipient_peer_id,
+        signal: {
+          signal_id: ins.id,
+          sender_peer_id: senderId,
+          signal_type: body.signal_type,
+          payload: body.payload,
+          created_at: new Date().toISOString(),
+        },
+      }),
+      signal: AbortSignal.timeout(1500),
+    }).catch(() => { /* poll path reconciles */ });
+  }
+
   return NextResponse.json({ signal_id: ins.id }, { status: 201, headers: CORS });
 }

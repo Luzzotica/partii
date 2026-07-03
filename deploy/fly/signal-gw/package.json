@@ -1,0 +1,9 @@
+{
+  "name": "arcade-signal",
+  "private": true,
+  "type": "module",
+  "main": "server.mjs",
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

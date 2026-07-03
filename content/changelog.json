@@ -1,16 +1,40 @@
 {
   "entries": [
     {
+      "date": "2026-07-03",
+      "title": "Connections that survive strict firewalls, and a reliability dashboard behind the scenes",
+      "summary": "Multiplayer connections now have a TLS relay path on port 443, so games connect even on corporate, campus, and other UDP-blocking networks that previously failed outright. Relay capacity grew 10×, and every connection attempt now reports what happened — so reliability problems get found and fixed from data instead of bug reports.",
+      "tags": [
+        "developer",
+        "infra"
+      ],
+      "commit": "2444e42"
+    },
+    {
+      "date": "2026-07-01",
+      "title": "Hardened multiplayer API security",
+      "summary": "Game clients now exchange their API key for short-lived session tokens backed by platform attestation (Cloudflare Turnstile on the web, Steam tickets on desktop), with per-project origin allowlists and abuse quotas. A leaked key alone can no longer create rooms or burn relay bandwidth.",
+      "tags": [
+        "developer",
+        "infra"
+      ],
+      "commit": "32d2d8f"
+    },
+    {
       "date": "2026-05-30",
       "title": "Changelog page",
       "summary": "There's now a public /changelog where you can see what's shipped recently across the site, games, and developer platform. Entries are grouped by month and link to the underlying commit.",
-      "tags": ["infra"]
+      "tags": [
+        "infra"
+      ]
     },
     {
       "date": "2026-05-30",
       "title": "One-click \"Copy AI prompt\" for new API keys",
       "summary": "When you create a new developer API key, the reveal panel now has a Copy AI prompt button. It copies a self-contained prompt — your real key inlined plus the full WebRTC signaling spec — that you can paste into ChatGPT, Claude, or Cursor to scaffold a working browser-TS host + controller client in one shot.",
-      "tags": ["developer"],
+      "tags": [
+        "developer"
+      ],
       "commit": "b178808"
     }
   ]

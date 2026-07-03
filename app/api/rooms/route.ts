@@ -80,6 +80,12 @@ export async function POST(request: Request) {
   if (!auth.ok) return auth.response;
 
   // Damage cap: bound how many rooms a (possibly leaked) key can spin up.
+  // Sweep expired rooms BEFORE the quota gate. The concurrent-rooms cap counts
+  // non-ended rooms, so running cleanup only after a successful create used to
+  // deadlock: 50 stale rooms → every create 429s → the post-create sweep never
+  // runs. (The daily cron is too coarse for a 2h room TTL.)
+  await admin.rpc("cleanup_room_data");
+
   const overQuota = await enforceRoomCreateQuota(admin, auth.ctx.projectId, auth.ctx.apiKeyId);
   if (overQuota) return overQuota;
 
@@ -175,7 +181,6 @@ export async function POST(request: Request) {
   }
 
   recordUsage(auth.ctx.apiKeyId, "room.create", { roomId: room.id });
-  void admin.rpc("cleanup_room_data");
 
   const turn = generateTurnCredentials(auth.ctx.apiKeyId, hostPeer.id, auth.ctx.playerId);
   const cfIce = await mintCloudflareIceServers();
@@ -191,6 +196,7 @@ export async function POST(request: Request) {
       // Scoped credential for room-level surfaces (realtime signal gateway):
       // proves "host of THIS room" and nothing else.
       room_token: mintRoomToken(room.id, "host", "host", room.expires_at),
+      signal_gw: process.env.SIGNAL_GW_PUBLIC_URL || undefined,
       ice_servers: [...turn.ice_servers, ...cfIce],
     },
     { status: 201, headers: CORS },

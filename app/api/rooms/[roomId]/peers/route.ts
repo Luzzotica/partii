@@ -96,6 +96,7 @@ export async function POST(
       peer_id: row.peer_id,
       peer_secret: peerSecret,
       room_token: mintRoomToken(roomId, row.peer_id, "peer"),
+      signal_gw: process.env.SIGNAL_GW_PUBLIC_URL || undefined,
       slot: row.peer_slot,
       kind,
       display_name: displayName,
