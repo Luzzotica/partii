@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAuth, recordUsage, corsHeaders as CORS, corsPreflight } from "@/lib/api/auth";
 import { rateLimit, tooManyRequests } from "@/lib/api/quota";
@@ -162,7 +162,10 @@ export async function POST(
   const gw = process.env.SIGNAL_GW_URL;
   const gwToken = process.env.SIGNAL_GW_TOKEN;
   if (gw && gwToken) {
-    void fetch(`${gw.replace(/\/$/, "")}/push`, {
+    // after(): Vercel freezes a serverless function the moment the response is
+    // sent — a bare `void fetch()` never completes in prod. after() keeps the
+    // instance alive until the forward settles, without delaying the response.
+    after(fetch(`${gw.replace(/\/$/, "")}/push`, {
       method: "POST",
       headers: { Authorization: `Bearer ${gwToken}`, "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -177,7 +180,7 @@ export async function POST(
         },
       }),
       signal: AbortSignal.timeout(1500),
-    }).catch(() => { /* poll path reconciles */ });
+    }).catch(() => { /* poll path reconciles */ }));
   }
 
   return NextResponse.json({ signal_id: ins.id }, { status: 201, headers: CORS });
