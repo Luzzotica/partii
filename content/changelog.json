@@ -1,6 +1,25 @@
 {
   "entries": [
     {
+      "date": "2026-07-04",
+      "title": "Match replays — record, save, and rewatch your games",
+      "summary": "Gyrii, Tankii, and Bouncy Blobs now record your matches as tiny deterministic replays you can save to the cloud and watch back from a new My Replays screen. Because the games' physics are deterministic, a replay is just the seed plus the inputs — a few kilobytes for a full match — and it re-simulates to a bit-identical result.",
+      "tags": [
+        "arcade"
+      ],
+      "commit": "a98d93d"
+    },
+    {
+      "date": "2026-07-04",
+      "title": "Sign in to publish — anonymous players save locally",
+      "summary": "Publishing to the cloud (shared levels, saved replays) now requires a quick email sign-in, hosted by Lobbii with zero setup. Anonymous players can still play and save everything locally; signing in is only needed to share or save to the cloud. Every player account and everything they publish stays scoped to the developer's project.",
+      "tags": [
+        "developer",
+        "arcade"
+      ],
+      "commit": "a98d93d"
+    },
+    {
       "date": "2026-07-03",
       "title": "Email sign-up for players — hosted, zero setup",
       "summary": "Games can now offer classic email accounts — sign up, password sign-in, magic links, resets — with nothing to configure: the platform hosts the whole flow. A new provider-discovery endpoint tells your game which sign-in buttons to show. And the dashboard now has a Players panel: every signup in your project (anonymous, Steam, Apple, Google, Discord, or email), with ban/unban moderation.",
