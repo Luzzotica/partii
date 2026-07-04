@@ -5,6 +5,7 @@ import { requireUser } from "@/lib/auth/requireUser";
 import { ProjectKeysManager } from "./ProjectKeysManager";
 import { ProjectSettingsManager } from "./ProjectSettingsManager";
 import { PlanCard } from "./PlanCard";
+import { PlayersPanel } from "./PlayersPanel";
 import { planLimits, accountPlan } from "@/lib/billing/plans";
 import { relayCapStatus } from "@/lib/billing/relayCap";
 
@@ -54,6 +55,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           limits,
         }}
       />
+      <PlayersPanel projectId={project.id} />
       <ProjectSettingsManager
         initial={{
           id: project.id,

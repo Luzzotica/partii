@@ -2,6 +2,15 @@
   "entries": [
     {
       "date": "2026-07-03",
+      "title": "Email sign-up for players — hosted, zero setup",
+      "summary": "Games can now offer classic email accounts — sign up, password sign-in, magic links, resets — with nothing to configure: the platform hosts the whole flow. A new provider-discovery endpoint tells your game which sign-in buttons to show. And the dashboard now has a Players panel: every signup in your project (anonymous, Steam, Apple, Google, Discord, or email), with ban/unban moderation.",
+      "tags": [
+        "developer"
+      ],
+      "commit": "7bc2ed6"
+    },
+    {
+      "date": "2026-07-03",
       "title": "Player accounts: sign in with Steam, Apple, Google, Discord — or nothing at all",
       "summary": "Games can now give players persistent accounts. The zero-friction path needs no login screen: every install silently gets an anonymous player that works across sessions. When a game offers real sign-in, players link Steam, Apple (Game Center or Sign in with Apple), Google, or Discord to the same account — making it recoverable on any device. Developers configure their own provider credentials per project; secrets are encrypted at rest.",
       "tags": [

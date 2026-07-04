@@ -202,6 +202,7 @@ Headers: \`X-API-Key\` (or session token). Body: \`{ "provider", "create": true,
 | \`apple\` | \`id_token\` (Sign in with Apple identity token) | Apple bundle id |
 | \`google\` | \`id_token\` (Sign in with Google ID token) | Google web OAuth client id |
 | \`discord\` | \`code\`, \`redirect_uri\` | Discord client id + secret |
+| \`email\` | \`access_token\` (from the hosted signup/sign-in — §7.4) | — (hosted; zero setup) |
 
 Response \`200\`: \`{ "player_token", "token_type": "Bearer", "expires_in": 86400,
 "player_id", "display_name", "created" }\`. Errors: \`403\` proof rejected or
@@ -214,7 +215,32 @@ silently on expiry. Also valid as ATTESTATION for the session-token exchange:
 binds the multiplayer session to the player (\`player_id: player:<uuid>\` in
 telemetry).
 
-### 7.3 Identity management (Bearer player_token)
+### 7.3 Provider discovery — \`GET /api/players/providers\`
+Headers: \`X-API-Key\`. Returns which sign-in methods the project supports (so
+the game renders the right buttons) plus the hosted-email connection info:
+\`{ "providers": { "anon": true, "email": { "auth_url", "anon_key" },
+"steam": bool, "gamecenter": bool, "apple": bool, "google": bool,
+"discord": { "client_id" } | false } }\`.
+
+### 7.4 Hosted email accounts (zero setup)
+Full email accounts — signup, password sign-in, magic links, password resets —
+hosted by the platform. Use the \`auth_url\` + \`anon_key\` from §7.3 with these
+REST calls (any HTTP client; the \`apikey\` header is the anon key):
+
+- Sign up: \`POST {auth_url}/signup\` \`{ "email", "password" }\`
+- Sign in: \`POST {auth_url}/token?grant_type=password\` \`{ "email", "password" }\`
+  → \`{ "access_token", "refresh_token", ... }\`
+- Refresh: \`POST {auth_url}/token?grant_type=refresh_token\` \`{ "refresh_token" }\`
+- Magic link: \`POST {auth_url}/magiclink\` \`{ "email" }\` (link redirects must be
+  coordinated with the platform; password flow needs no redirects — prefer it
+  for games)
+
+Then trade the access token for a player:
+\`POST /api/players/login { "provider": "email", "access_token": "<token>" }\`.
+The email account is global to the platform, but the resulting PLAYER is
+scoped to your project (the same email in another game is a different player).
+
+### 7.5 Identity management (Bearer player_token)
 - \`GET /api/players/me\` → player + linked identities (subjects masked).
 - \`PATCH /api/players/me\` \`{ display_name }\`.
 - \`POST /api/players/link\` \`{ provider, ...proof }\` — attach another provider.

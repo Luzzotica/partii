@@ -3,6 +3,7 @@ import { verifyGameCenter } from "./gamecenter";
 import { verifySiwa } from "./siwa";
 import { verifyGoogle } from "./google";
 import { verifyDiscord } from "./discord";
+import { verifyEmailToken } from "./email";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Player identity providers.
@@ -14,7 +15,7 @@ import { verifyDiscord } from "./discord";
 // first-party games, same as attestation).
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type ProviderId = "anon" | "steam" | "gamecenter" | "apple" | "google" | "discord" | "dev";
+export type ProviderId = "anon" | "steam" | "gamecenter" | "apple" | "google" | "discord" | "email" | "dev";
 
 export type ProviderResult =
   | { ok: true; subject: string; displayName?: string }
@@ -47,6 +48,8 @@ export type ProviderProof = {
   /** discord */
   code?: string;
   redirect_uri?: string;
+  /** email — a Supabase Auth access token from the hosted signup/sign-in. */
+  access_token?: string;
   /** dev */
   subject?: string;
 };
@@ -90,6 +93,10 @@ export async function verifyProviderProof(
 
     case "discord":
       return verifyDiscord(proof.code, proof.redirect_uri, creds.discordClientId, creds.discordClientSecret);
+
+    case "email":
+      // Hosted accounts — no per-project config needed; scoping is inherent.
+      return verifyEmailToken(proof.access_token);
 
     case "dev": {
       // Local development convenience only — never a real identity in prod.

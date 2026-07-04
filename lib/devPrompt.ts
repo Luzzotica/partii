@@ -231,13 +231,17 @@ The recommended integration ladder:
 2. **Bind multiplayer sessions to the player:** exchange
    \`POST /api/auth/token {"platform":"player","attestation":"<player_token>"}\`
    and use that session token for room/signaling calls.
-3. **Optional "sign in" button:** when the user's game offers real sign-in,
+3. **Email accounts (zero setup):** \`GET /api/players/providers\` returns the
+   hosted auth connection (\`email.auth_url\` + \`anon_key\`); sign up/in via the
+   §7.4 REST calls (password grant — no redirects needed), then
+   \`POST /api/players/login {"provider":"email","access_token":…}\`.
+4. **Optional platform "sign in" button:** when the user's game offers real sign-in,
    call \`POST /api/players/link\` with the platform proof (Steam ticket, Apple
    identity token, Google ID token, Game Center signature, Discord code — see
    the §7.1 table for exact fields and what the developer must configure in
    the dashboard). Linking makes the anonymous account recoverable on other
    devices: logging in there with the same provider returns the SAME player.
-4. Handle \`409 identity_already_linked\` by asking the player whether they want
+5. Handle \`409 identity_already_linked\` by asking the player whether they want
    to switch to their existing account (just \`login\` with that provider instead).
 
 # APPENDIX (OPTIONAL): cloud saves & sharing — SKIP unless the user asks
