@@ -71,3 +71,18 @@ export async function createPlayerWithIdentity(
   }
   return player as PlayerRow;
 }
+
+/** Does the player have at least one non-anonymous linked identity?
+ *  The global publish gate: anonymous device players can play and save
+ *  locally, but must sign in (email/Steam/etc.) to publish to the cloud. */
+export async function playerHasRealIdentity(
+  admin: SupabaseClient,
+  playerId: string,
+): Promise<boolean> {
+  const { count } = await admin
+    .from("player_identities")
+    .select("id", { count: "exact", head: true })
+    .eq("player_id", playerId)
+    .neq("provider", "anon");
+  return (count ?? 0) > 0;
+}

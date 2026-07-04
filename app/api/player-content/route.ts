@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAuth, corsHeaders as CORS, corsPreflight } from "@/lib/api/auth";
 import { rateLimit, tooManyRequests } from "@/lib/api/quota";
 import { verifyPlayerToken } from "@/lib/api/playerToken";
+import { playerHasRealIdentity } from "@/lib/api/identity/store";
 import { checkContentQuota, shareCode } from "@/lib/api/contentQuota";
 
 const admin = createAdminClient();
@@ -54,6 +55,11 @@ export async function POST(request: Request) {
     .from("players").select("id, banned").eq("id", claims.pid).eq("project_id", claims.proj).maybeSingle();
   if (!player || player.banned) {
     return NextResponse.json({ error: "Player not found or banned" }, { status: 403, headers: CORS });
+  }
+  // Global publish gate: anonymous players can save locally but must sign in
+  // to publish to the cloud (maps, replays — everything).
+  if (!(await playerHasRealIdentity(admin, claims.pid))) {
+    return NextResponse.json({ error: "login_required" }, { status: 403, headers: CORS });
   }
 
   const quota = await checkContentQuota(admin, claims.proj, size);
