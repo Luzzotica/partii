@@ -6,6 +6,7 @@ import { verifyAttestation } from "@/lib/api/attest";
 import { mintSessionToken } from "@/lib/api/token";
 import { rateLimit, tooManyRequests } from "@/lib/api/quota";
 import { openSecret } from "@/lib/api/secretBox";
+import { verifyPlayerToken } from "@/lib/api/playerToken";
 
 const admin = createAdminClient();
 
@@ -55,6 +56,40 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: "Origin not allowed for this project" },
       { status: 403, headers: CORS },
+    );
+  }
+
+  // 3a. Player-token attestation: a signed-in player's JWT is the strongest
+  // proof we have (it was minted after provider verification) — accept it as
+  // the attestation for platform 'player' and bind the session to the player.
+  if (platform === "player") {
+    const claims = verifyPlayerToken(body.attestation ?? "");
+    if (!claims || claims.proj !== auth.ctx.projectId) {
+      return NextResponse.json(
+        { error: "Attestation failed: invalid player token" },
+        { status: 403, headers: CORS },
+      );
+    }
+    const { data: player } = await admin
+      .from("players")
+      .select("id, banned")
+      .eq("id", claims.pid)
+      .maybeSingle();
+    if (!player || player.banned) {
+      return NextResponse.json(
+        { error: "Attestation failed: player not found or banned" },
+        { status: 403, headers: CORS },
+      );
+    }
+    const { token, expiresIn } = mintSessionToken({
+      projectId: auth.ctx.projectId,
+      apiKeyId: auth.ctx.apiKeyId,
+      platform,
+      playerId: `player:${claims.pid}`,
+    });
+    return NextResponse.json(
+      { session_token: token, token_type: "Bearer", expires_in: expiresIn, player_id: `player:${claims.pid}` },
+      { headers: CORS },
     );
   }
 

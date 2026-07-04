@@ -2,6 +2,24 @@
   "entries": [
     {
       "date": "2026-07-03",
+      "title": "Player accounts: sign in with Steam, Apple, Google, Discord — or nothing at all",
+      "summary": "Games can now give players persistent accounts. The zero-friction path needs no login screen: every install silently gets an anonymous player that works across sessions. When a game offers real sign-in, players link Steam, Apple (Game Center or Sign in with Apple), Google, or Discord to the same account — making it recoverable on any device. Developers configure their own provider credentials per project; secrets are encrypted at rest.",
+      "tags": [
+        "developer"
+      ],
+      "commit": "f3b9258"
+    },
+    {
+      "date": "2026-07-03",
+      "title": "Cloud saves, shareable levels, and replays",
+      "summary": "Players can now save content to the cloud and share it: levels, replays, save files — anything up to 10 MB. Content belongs to the player, with private/unlisted/public visibility and 8-character share codes for passing creations around. Small JSON saves in one call; big binary replays via direct upload. Included in every plan (Free: 200 items / 100 MB per project; Pro: 10,000 / 5 GB).",
+      "tags": [
+        "developer"
+      ],
+      "commit": "f3b9258"
+    },
+    {
+      "date": "2026-07-03",
       "title": "Lobbii docs, pricing, and the AI build prompt v2",
       "summary": "There's now a public docs site at /docs: paste one AI prompt and your coding assistant builds a working multiplayer client for any engine — browser, Godot, Unity, native. The prompt now covers realtime push signaling, TLS relays for strict networks, and self-healing reconnection. Pricing is live too: free to build, $5/month per project when you grow, with relay bandwidth metered beyond the included allowance.",
       "tags": [

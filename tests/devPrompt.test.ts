@@ -25,6 +25,19 @@ describe("buildWebRTCPrompt (v2)", () => {
     expect(real).not.toContain("re-joining is the refresh");
   });
 
+  it("covers players + content as optional appendices", () => {
+    expect(real).toContain("player accounts & sign-in — SKIP unless the user asks");
+    expect(real).toContain("cloud saves & sharing — SKIP unless the user asks");
+    expect(real).toContain("/api/players/login");
+    expect(real).toContain("/api/player-content");
+    expect(real).toContain("share_code");
+  });
+
+  it("stays within a sane size budget", () => {
+    // The prompt must remain paste-able; appendices can't balloon it.
+    expect(real.length).toBeLessThan(40_000);
+  });
+
   it("keeps hardening strictly optional and skippable", () => {
     expect(real).toContain("APPENDIX (OPTIONAL)");
     expect(real).toContain("SKIP unless the user asks");

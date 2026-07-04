@@ -183,13 +183,85 @@ channel opens; \`recovered\` when a recovery succeeds; \`timeout\`/\`failed\`/\`
 terminally. Selected candidate: from getStats — the nominated succeeded
 candidate-pair's local candidate type (+ its server url when relay).
 
-## 7. Test flags (all clients SHOULD implement)
+## 7. Players — login, linking, identity (OPTIONAL)
+
+Persistent player accounts across sessions/devices. Fully optional — rooms and
+signaling never require a player. The zero-friction path is anonymous:
+\`{"provider":"anon","device_id":"<persisted uuid>"}\` gives every install a
+player with NO login UI; real providers can be LINKED later to make the
+account recoverable.
+
+### 7.1 Login — \`POST /api/players/login\`
+Headers: \`X-API-Key\` (or session token). Body: \`{ "provider", "create": true,
+"display_name"?, ...proof }\`. Providers + proof fields:
+| provider | proof fields | project config (dashboard → Settings) |
+|---|---|---|
+| \`anon\` | \`device_id\` | — |
+| \`steam\` | \`ticket\` (hex auth session ticket), \`steam_id\`? | Steam publisher key + App ID |
+| \`gamecenter\` | \`public_key_url\`, \`signature\` (b64), \`salt\` (b64), \`timestamp\` (ms), \`player_id\` (teamPlayerID) | Apple bundle id |
+| \`apple\` | \`id_token\` (Sign in with Apple identity token) | Apple bundle id |
+| \`google\` | \`id_token\` (Sign in with Google ID token) | Google web OAuth client id |
+| \`discord\` | \`code\`, \`redirect_uri\` | Discord client id + secret |
+
+Response \`200\`: \`{ "player_token", "token_type": "Bearer", "expires_in": 86400,
+"player_id", "display_name", "created" }\`. Errors: \`403\` proof rejected or
+banned; \`404\` when \`create:false\` and no such player.
+
+### 7.2 Player token
+24h HS256 JWT — the game's credential for player-scoped calls. Re-login
+silently on expiry. Also valid as ATTESTATION for the session-token exchange:
+\`POST /api/auth/token { "platform": "player", "attestation": "<player_token>" }\`
+binds the multiplayer session to the player (\`player_id: player:<uuid>\` in
+telemetry).
+
+### 7.3 Identity management (Bearer player_token)
+- \`GET /api/players/me\` → player + linked identities (subjects masked).
+- \`PATCH /api/players/me\` \`{ display_name }\`.
+- \`POST /api/players/link\` \`{ provider, ...proof }\` — attach another provider.
+  \`409 identity_already_linked\` when it belongs to a different player (no
+  force-link).
+- \`POST /api/players/unlink\` \`{ provider }\` — \`400 cannot_unlink_last_identity\`
+  guards the final credential.
+
+## 8. Player content — save & share (OPTIONAL)
+
+Cloud storage for replays, levels, saves — owned by players, shareable by
+visibility (\`private | unlisted | public\`) and an 8-char \`share_code\`.
+
+### 8.1 Create (small JSON, ≤512KB) — \`POST /api/player-content\`
+Bearer player_token. Body: \`{ "content_type": "level"|"replay"|"save"|…,
+"name", "description"?, "game_id"?, "visibility"?, "data": <any JSON> }\`
+→ \`201 { id, share_code, size_bytes }\`. \`402\` on plan quota.
+
+### 8.2 Create (large/binary, ≤10MB) — \`POST /api/player-content/upload-url\`
+Same metadata + \`{ "size_bytes", "content_mime" }\` → \`{ id, share_code,
+upload_url, token }\`. PUT the raw bytes to \`upload_url\`
+(\`x-upsert: true\` header not needed; single-use), then
+\`POST /api/player-content/{id}/finalize\` — verifies the object + real size and
+flips it live. Replays: for deterministic sims, store seed + input stream —
+compact and perfectly reproducible.
+
+### 8.3 Read / browse
+- \`GET /api/player-content?mine=true\` (player token) — own content.
+- \`GET /api/player-content?visibility=public&content_type=level&game_id=…&limit=20\`
+  (API key) — public browse, newest first, \`before\` cursor.
+- \`GET /api/player-content?share_code=AB23CD45\` — fetch shared (public/unlisted).
+- \`GET /api/player-content/{id}\` → metadata + \`download_url\` (1h signed URL);
+  \`?inline=true\` returns small JSON directly as \`{ ..., data }\`.
+
+### 8.4 Manage (owner, Bearer player_token)
+\`PATCH /api/player-content/{id}\` \`{ name?, description?, visibility? }\`;
+\`DELETE /api/player-content/{id}\`.
+
+Plan caps: free 200 items / 100 MB per project; pro 10,000 items / 5 GB.
+
+## 9. Test flags (all clients SHOULD implement)
 - \`relay=1\` → \`iceTransportPolicy: "relay"\` (forces TURN; connectivity matrix).
 - \`turnproto=tcp|tls\` → filter the minted ice_servers to only \`turn:…transport=tcp\`
   / \`turns:\` entries before constructing the peer connection.
 - \`net=debug\` → verbose connection logging.
 
-## 8. Conformance checklist
+## 10. Conformance checklist
 1. Token exchange with refresh-before-expiry, single-flight, 60s failure backoff.
 2. Create/join/list/lookup rooms; secrets + room_token stored.
 3. Signals: send offer/answer/trickle-ICE; poll with cursor; whole-session polling.

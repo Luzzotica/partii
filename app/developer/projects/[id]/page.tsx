@@ -18,7 +18,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const { data: project } = await admin
     .from("projects")
     .select(
-      "id, name, slug, created_at, allowed_origins, require_session_tokens, steam_app_id, plan, relay_included_gb, turnstile_secret_enc, steam_publisher_key_enc",
+      "id, name, slug, created_at, allowed_origins, require_session_tokens, steam_app_id, plan, relay_included_gb, turnstile_secret_enc, steam_publisher_key_enc, apple_bundle_id, google_web_client_id, discord_client_id, discord_client_secret_enc, max_content_items, max_storage_bytes",
     )
     .eq("id", id)
     .eq("user_id", auth.user.userId)
@@ -62,6 +62,10 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           steam_app_id: project.steam_app_id ?? null,
           turnstile_configured: !!project.turnstile_secret_enc,
           steam_configured: !!project.steam_publisher_key_enc,
+          apple_bundle_id: project.apple_bundle_id ?? null,
+          google_web_client_id: project.google_web_client_id ?? null,
+          discord_client_id: project.discord_client_id ?? null,
+          discord_configured: !!project.discord_client_secret_enc,
         }}
       />
     </div>

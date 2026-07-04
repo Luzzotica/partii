@@ -24,6 +24,8 @@ export type PlanLimits = {
   max_concurrent_rooms: number;
   max_signals_per_min: number;
   relay_included_gb: number;
+  max_content_items: number;
+  max_storage_bytes: number;
 };
 
 export const PLAN_LIMITS: Record<PlanId, PlanLimits> = {
@@ -32,12 +34,16 @@ export const PLAN_LIMITS: Record<PlanId, PlanLimits> = {
     max_concurrent_rooms: 50,
     max_signals_per_min: 600,
     relay_included_gb: 5,
+    max_content_items: 200,
+    max_storage_bytes: 100 * 1024 * 1024, // 100 MB
   },
   pro: {
     max_rooms_per_hour: 1_200,
     max_concurrent_rooms: 500,
     max_signals_per_min: 6_000,
     relay_included_gb: 25,
+    max_content_items: 10_000,
+    max_storage_bytes: 5 * 1024 * 1024 * 1024, // 5 GB
   },
 };
 

@@ -49,6 +49,7 @@
     "@tiptap/pm": "^3.22.5",
     "@tiptap/react": "^3.22.5",
     "@tiptap/starter-kit": "^3.22.5",
+    "jose": "^6.2.3",
     "next": "^15.1.6",
     "phaser": "^3.90.0",
     "react": "^19.2.0",

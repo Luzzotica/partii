@@ -16,6 +16,10 @@ export type ProjectSettings = {
   steam_app_id: string | null;
   turnstile_configured: boolean;
   steam_configured: boolean;
+  apple_bundle_id: string | null;
+  google_web_client_id: string | null;
+  discord_client_id: string | null;
+  discord_configured: boolean;
 };
 
 export function ProjectSettingsManager({ initial }: { initial: ProjectSettings }) {
@@ -24,6 +28,10 @@ export function ProjectSettingsManager({ initial }: { initial: ProjectSettings }
   const [turnstileSecret, setTurnstileSecret] = useState("");
   const [steamKey, setSteamKey] = useState("");
   const [steamAppId, setSteamAppId] = useState(initial.steam_app_id ?? "");
+  const [appleBundleId, setAppleBundleId] = useState(initial.apple_bundle_id ?? "");
+  const [googleClientId, setGoogleClientId] = useState(initial.google_web_client_id ?? "");
+  const [discordClientId, setDiscordClientId] = useState(initial.discord_client_id ?? "");
+  const [discordSecret, setDiscordSecret] = useState("");
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -168,6 +176,63 @@ export function ProjectSettingsManager({ initial }: { initial: ProjectSettings }
           }`}
         >
           {settings.require_session_tokens ? "Disable enforcement" : "Enable enforcement"}
+        </button>
+      </div>
+
+      {/* Player sign-in providers */}
+      <div className="space-y-2">
+        <h3 className="text-sm font-semibold text-white/80">4. Player sign-in providers (optional)</h3>
+        <p className="text-xs text-white/50">
+          Lets players log into YOUR game via Apple, Google, or Discord (Steam uses the publisher
+          key above; anonymous sign-in needs no setup at all). Configure only the platforms your
+          game ships on.
+        </p>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <input
+            className="rounded-lg bg-black/30 border border-white/10 p-2 text-sm font-mono"
+            placeholder="Apple bundle id (Game Center + Sign in with Apple)"
+            value={appleBundleId}
+            onChange={(e) => setAppleBundleId(e.target.value)}
+          />
+          <input
+            className="rounded-lg bg-black/30 border border-white/10 p-2 text-sm font-mono"
+            placeholder="Google web OAuth client id"
+            value={googleClientId}
+            onChange={(e) => setGoogleClientId(e.target.value)}
+          />
+          <input
+            className="rounded-lg bg-black/30 border border-white/10 p-2 text-sm font-mono"
+            placeholder="Discord application client id"
+            value={discordClientId}
+            onChange={(e) => setDiscordClientId(e.target.value)}
+          />
+          <input
+            type="password"
+            className="rounded-lg bg-black/30 border border-white/10 p-2 text-sm font-mono"
+            placeholder={settings.discord_configured ? "Discord client secret (configured ✓ — paste to replace)" : "Discord client secret"}
+            value={discordSecret}
+            onChange={(e) => setDiscordSecret(e.target.value)}
+          />
+        </div>
+        <button
+          onClick={() =>
+            patch(
+              {
+                apple_bundle_id: appleBundleId,
+                google_web_client_id: googleClientId,
+                discord_client_id: discordClientId,
+                ...(discordSecret ? { discord_client_secret: discordSecret } : {}),
+              },
+              (p) => {
+                setSettings(p);
+                setDiscordSecret("");
+              },
+            )
+          }
+          disabled={saving}
+          className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-sm disabled:opacity-50"
+        >
+          Save providers
         </button>
       </div>
 

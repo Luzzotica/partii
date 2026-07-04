@@ -48,7 +48,7 @@ The protocol is identical on every platform; only the API calls differ. Produce 
 - A **Client** module — joins a room by code, exchanges messages with the host over WebRTC.
 - A thin **signaling client** wrapping the REST endpoints + the optional push socket.
 
-**Keep it simple.** The API key alone is a complete auth setup — there is no account system, no OAuth, no token dance required to ship a working game. Section 1.2 of the spec and the Hardening appendix at the end are OPTIONAL; skip them unless the user explicitly asks about abuse protection or launch hardening.
+**Keep it simple.** The API key alone is a complete auth setup — there is no account system, no OAuth, no token dance required to ship a working game. Sections 1.2 (token exchange), 7 (players), and 8 (player content) of the spec, plus the appendices at the end, are OPTIONAL; skip them unless the user explicitly asks for sign-in, cloud saves/sharing, or launch hardening.
 
 ---
 
@@ -217,6 +217,44 @@ Content-Type: application/json
 8. Secrets (\`host_secret\`, \`peer_secret\`) never leave the machine that received them; never logged.
 
 ---
+
+# APPENDIX (OPTIONAL): player accounts & sign-in — SKIP unless the user asks
+
+Implement only if the user wants player identity (profiles, cross-device
+accounts, "sign in with Steam/Apple/Google/Discord"). Spec §7 is authoritative.
+The recommended integration ladder:
+
+1. **Silent anonymous account (zero UI):** on first launch, generate + persist
+   a device UUID, then \`POST /api/players/login {"provider":"anon","device_id":…}\`.
+   Store the returned \`player_token\` (24h — re-login silently on 401). Every
+   player now has an identity; cloud saves work with no sign-in screen.
+2. **Bind multiplayer sessions to the player:** exchange
+   \`POST /api/auth/token {"platform":"player","attestation":"<player_token>"}\`
+   and use that session token for room/signaling calls.
+3. **Optional "sign in" button:** when the user's game offers real sign-in,
+   call \`POST /api/players/link\` with the platform proof (Steam ticket, Apple
+   identity token, Google ID token, Game Center signature, Discord code — see
+   the §7.1 table for exact fields and what the developer must configure in
+   the dashboard). Linking makes the anonymous account recoverable on other
+   devices: logging in there with the same provider returns the SAME player.
+4. Handle \`409 identity_already_linked\` by asking the player whether they want
+   to switch to their existing account (just \`login\` with that provider instead).
+
+# APPENDIX (OPTIONAL): cloud saves & sharing — SKIP unless the user asks
+
+Implement only if the user wants replays, shareable levels, or cloud saves.
+Spec §8 is authoritative. Notes that make it good:
+
+- Content is owned by the player (needs a \`player_token\` — the silent
+  anonymous account from the previous appendix is enough; no sign-in UI).
+- Small JSON (levels, most saves): one \`POST /api/player-content\` with the
+  \`data\` inline. Big/binary (replays): \`upload-url\` → PUT bytes → \`finalize\`.
+- **Replays for deterministic games:** store \`{seed, inputsPerTick}\` — a few
+  KB — and replay by re-simulating. Never record per-frame state.
+- Sharing: set \`visibility: "public"\` (browsable by everyone in the game) or
+  \`"unlisted"\` + give players the \`share_code\` to exchange (fetch with
+  \`GET /api/player-content?share_code=XXXX\`).
+- Quotas return 402 — surface "storage full" to the player gracefully.
 
 # APPENDIX (OPTIONAL): hardening for launched games — SKIP unless the user asks
 
