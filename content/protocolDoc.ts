@@ -240,7 +240,37 @@ Then trade the access token for a player:
 The email account is global to the platform, but the resulting PLAYER is
 scoped to your project (the same email in another game is a different player).
 
-### 7.5 Identity management (Bearer player_token)
+### 7.5 Arcade SSO (embedded games)
+
+When a game is embedded in a host page (an arcade website iframe, or a mobile
+webview), the host can pass the signed-in user's session token down so the game
+signs in automatically — no re-typing a password. Arcade accounts share the
+Lobbii auth pool, so an SSO player is the SAME player as an in-game email
+sign-in with that account.
+
+**Game side:** \`initArcadeSso(cloud, { allowedOrigins })\` (party-kit) listens on
+three channels — an iframe \`postMessage\`, a \`window.__ARCADE_TOKEN__\` global
+(mobile webview), and a \`?arcade_token=\` URL param — and calls
+\`POST /api/players/login { provider:"email", access_token }\` with whichever
+arrives. Standalone (itch, direct link) → no token → falls back to anon/email.
+
+**Host page side** (the arcade that embeds the iframe):
+\`\`\`js
+const iframe = document.querySelector("iframe#game");
+const GAME_ORIGIN = "https://tankii.example";
+window.addEventListener("message", (e) => {
+  if (e.origin === GAME_ORIGIN && e.data?.type === "arcadii:ready") {
+    // The player's Arcade session access token (e.g. from Supabase auth).
+    iframe.contentWindow.postMessage(
+      { type: "arcadii:auth", token: session.access_token },
+      GAME_ORIGIN,
+    );
+  }
+});
+// On logout: iframe.contentWindow.postMessage({ type:"arcadii:signout" }, GAME_ORIGIN)
+\`\`\`
+
+### 7.6 Identity management (Bearer player_token)
 - \`GET /api/players/me\` → player + linked identities (subjects masked).
 - \`PATCH /api/players/me\` \`{ display_name }\`.
 - \`POST /api/players/link\` \`{ provider, ...proof }\` — attach another provider.
