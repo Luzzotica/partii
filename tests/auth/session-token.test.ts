@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mintSessionToken, verifySessionToken } from "@/lib/api/token";
-import { originAllowed, isLocalOrigin } from "@/lib/api/origin";
+import { originAllowed, isLocalOrigin, isTauriOrigin } from "@/lib/api/origin";
 
 const NOW_MS = 1_750_000_000_000;
 
@@ -61,6 +61,19 @@ describe("origin allowlist", () => {
 
   it("allows a native client (no Origin) regardless of allowlist", () => {
     expect(originAllowed(null, ["https://play.sterlinglong.me"])).toBe(true);
+  });
+
+  it("allows Tauri app-shell origins (native marker) regardless of allowlist", () => {
+    const allow = ["https://play.sterlinglong.me"];
+    // iOS/macOS custom scheme + Android/Windows host form.
+    expect(originAllowed("tauri://localhost", allow)).toBe(true);
+    expect(originAllowed("http://tauri.localhost", allow)).toBe(true);
+    expect(originAllowed("https://tauri.localhost", allow)).toBe(true);
+    // A lookalike web origin does NOT get the native pass.
+    expect(originAllowed("https://tauri.localhost.evil.com", allow)).toBe(false);
+    expect(isTauriOrigin("tauri://localhost")).toBe(true);
+    expect(isTauriOrigin("https://play.sterlinglong.me")).toBe(false);
+    expect(isTauriOrigin(null)).toBe(false);
   });
 
   it("matches exact host + scheme", () => {

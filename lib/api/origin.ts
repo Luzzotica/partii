@@ -24,11 +24,27 @@ function hostMatches(reqHost: string, pattern: string): boolean {
  *                 Empty array = no Origin restriction.
  * @returns true if the request is permitted on Origin grounds.
  */
+/** Is this the app-shell origin a Tauri webview sends — `tauri://localhost`
+ *  (iOS/macOS custom scheme) or `http(s)://tauri.localhost` (Android/Windows)?
+ *  Browsers can never produce these Origin values for a website, so like a
+ *  MISSING Origin they mark a native client: allowing them adds no attack
+ *  surface (a native client can already omit Origin entirely) and the
+ *  attestation step remains the real gate. */
+export function isTauriOrigin(origin: string | null): boolean {
+  if (!origin) return false;
+  try {
+    const u = new URL(origin);
+    return u.protocol === "tauri:" || u.hostname === "tauri.localhost";
+  } catch {
+    return false;
+  }
+}
+
 export function originAllowed(origin: string | null, allowed: string[]): boolean {
-  // No restriction configured, or a native client with no Origin → defer to
-  // the attestation step.
+  // No restriction configured, or a native client (no Origin, or a Tauri
+  // app-shell Origin) → defer to the attestation step.
   if (!allowed || allowed.length === 0) return true;
-  if (!origin) return true;
+  if (!origin || isTauriOrigin(origin)) return true;
 
   let req: URL;
   try {
