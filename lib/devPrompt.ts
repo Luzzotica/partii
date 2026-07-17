@@ -48,7 +48,7 @@ The protocol is identical on every platform; only the API calls differ. Produce 
 - A **Client** module — joins a room by code, exchanges messages with the host over WebRTC.
 - A thin **signaling client** wrapping the REST endpoints + the optional push socket.
 
-**Keep it simple.** The API key alone is a complete auth setup — there is no account system, no OAuth, no token dance required to ship a working game. Sections 1.2 (token exchange), 7 (players), and 8 (player content) of the spec, plus the appendices at the end, are OPTIONAL; skip them unless the user explicitly asks for sign-in, cloud saves/sharing, or launch hardening.
+**Keep it simple.** The API key alone is a complete auth setup — there is no account system, no OAuth, no token dance required to ship a working game. Sections 1.2 (token exchange), most of §7 (players), and §8 (player content) of the spec, plus the appendices at the end, are OPTIONAL — skip them unless the user asks for sign-in, cloud saves/sharing, or launch hardening. **Exception: §7.5 Presence (online / in-game)** is strongly recommended for multiplayer clients so lobbies and dashboards can show who is live — implement the heartbeat from the build requirements below.
 
 ---
 
@@ -79,7 +79,46 @@ ${PROTOCOL_MD}
 
 Room create/join responses include \`signal_gw\` (a WSS URL) and \`room_token\`. Implement §5 of the spec: hold the socket for the whole session, relax polling to 5000ms while it's open, snap back to 1500ms when it drops, and route BOTH delivery paths through one dedupe-by-\`signal_id\` function. If the platform has no WebSocket client, polling alone is fully correct — just slower to connect.
 
-## 2. Connection recovery (REQUIRED — do not skip)
+## 2. Presence — online / in-game (strongly recommended)
+
+So lobbies and the Partii Studio can show how many people are live, each client should announce itself while the app is open. Spec **§7.5** is authoritative.
+
+1. After you have a **player token** (silent anon is fine — §7.1 / the players appendix), call:
+   \`POST ${baseUrl}/api/presence\` with \`Authorization: Bearer <player_token>\` and body
+   \`{ "status": "online", "game_id": "<your game id>" }\`.
+2. When the player enters a match / active gameplay, heartbeat again with \`"status": "playing"\`.
+3. Heartbeat on a timer about every **30 seconds** while the app is foregrounded (rows go stale after **90s**).
+4. On quit / background / unmount: \`DELETE ${baseUrl}/api/presence\` with the same Bearer token.
+5. To show "N players online" in your UI: \`GET ${baseUrl}/api/presence\` (or \`?game_id=\`) with \`X-API-Key\` **or** the player token — response is
+   \`{ online, playing, by_game, stale_after_sec }\`. The POST response includes the same counts so you often do not need a separate poll.
+
+TypeScript reference (port to your stack):
+
+\`\`\`ts
+// After player login:
+async function heartbeat(playerToken: string, status: "online" | "playing") {
+  const res = await fetch("${baseUrl}/api/presence", {
+    method: "POST",
+    headers: {
+      Authorization: \`Bearer \${playerToken}\`,
+      "Content-Type": "application/json",
+      "X-API-Key": "${apiKey}",
+    },
+    body: JSON.stringify({ status, game_id: "my-game" }),
+  });
+  return res.json(); // { online, playing, by_game, … }
+}
+setInterval(() => void heartbeat(token, inMatch ? "playing" : "online"), 30_000);
+// on exit:
+await fetch("${baseUrl}/api/presence", {
+  method: "DELETE",
+  headers: { Authorization: \`Bearer \${token}\`, "X-API-Key": "${apiKey}" },
+});
+\`\`\`
+
+If the user wants **only** rooms/WebRTC with no identity at all, you may skip presence — but prefer implementing silent anon login + presence so online counts work out of the box.
+
+## 3. Connection recovery (REQUIRED — do not skip)
 
 A live WebRTC connection WILL briefly drop on real networks — phones switching Wi-Fi↔cellular, NAT rebinds, hotel/corporate Wi-Fi. Your platform surfaces this as \`iceConnectionState\`/\`connectionState\` hitting \`disconnected\` or \`failed\`. **These states are RECOVERABLE.** The most common integration bug is treating the first one as fatal and tearing the peer down — turning a one-second blip into a lost session.
 
@@ -160,7 +199,7 @@ function attachRecovery(
 
 Your "incoming offer" handler must run for offers arriving AFTER the channel is open (restart offers), and rebuild the peer connection first when the offer payload carries \`renegotiate: true\`.
 
-## 3. Report connection telemetry (small, do it)
+## 4. Report connection telemetry (small, do it)
 
 After every attempt, fire-and-forget \`POST /api/telemetry/connect\` per §6 of the spec (outcome, connect_ms, selected candidate type from getStats, signaling_path). Never block gameplay on it, never retry it. This is how connection bugs in the wild actually get found and fixed.
 
@@ -215,6 +254,7 @@ Content-Type: application/json
 6. Signals are never applied twice (log dedupe hits while the push socket AND polling are both live).
 7. Telemetry rows appear for every outcome.
 8. Secrets (\`host_secret\`, \`peer_secret\`) never leave the machine that received them; never logged.
+9. If presence is implemented: a client heartbeats \`POST /api/presence\` and \`GET /api/presence\` (or the POST body) shows \`online >= 1\`; after \`DELETE /api/presence\` (or 90s without heartbeat) the count drops.
 
 ---
 

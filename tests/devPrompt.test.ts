@@ -15,6 +15,9 @@ describe("buildWebRTCPrompt (v2)", () => {
       "renegotiate",
       "signal_id",
       "relay=1",
+      "/api/presence",
+      "Presence — online / in-game",
+      "stale_after_sec",
     ]) {
       expect(real, `missing marker: ${marker}`).toContain(marker);
     }
