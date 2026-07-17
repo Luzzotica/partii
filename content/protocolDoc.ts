@@ -241,7 +241,40 @@ Then trade the access token for a player:
 The email account is global to the platform, but the resulting PLAYER is
 scoped to your project (the same email in another game is a different player).
 
-### 7.5 Partii arcade SSO (embedded games)
+### 7.5 Presence — online / in-game
+
+Players announce that they are connected so hosts and dashboards can show live
+counts. Rows go stale after **90 seconds** without a heartbeat.
+
+**Heartbeat** — \`POST /api/presence\`  
+Auth: \`Authorization: Bearer <player_token>\`. Body:
+\`\`\`json
+{ "status": "online" | "playing", "game_id": "optional-tag" }
+\`\`\`
+Upserts the player's presence row and returns project-wide counts:
+\`\`\`json
+{
+  "ok": true,
+  "status": "playing",
+  "game_id": "hexii",
+  "online": 12,
+  "playing": 8,
+  "by_game": { "hexii": { "online": 5, "playing": 4 } },
+  "stale_after_sec": 90
+}
+\`\`\`
+Recommended: heartbeat every **~30s**. Use \`status: "playing"\` in a match,
+\`online\` in menus/lobby. \`CloudContent.setPresence\` / \`startPresenceHeartbeat\`.
+
+**Go offline** — \`DELETE /api/presence\` (Bearer player token). Clears the row.
+
+**Read counts** — \`GET /api/presence?game_id=\`  
+Auth: \`X-API-Key\` **or** player Bearer token. Same counts object (no \`ok\`).
+
+Studio owners can also subscribe to Supabase Realtime \`postgres_changes\` on
+\`player_presence\` filtered by \`project_id\` for live dashboards.
+
+### 7.6 Partii arcade SSO (embedded games)
 
 When a game is embedded in a host page (a Partii arcade iframe, or a mobile
 webview), the host can pass the signed-in user's session token down so the game
@@ -282,7 +315,7 @@ window.addEventListener("message", (e) => {
 // On logout: iframe.contentWindow.postMessage({ type:"partii:signout" }, GAME_ORIGIN)
 \`\`\`
 
-### 7.6 Identity management (Bearer player_token)
+### 7.7 Identity management (Bearer player_token)
 - \`GET /api/players/me\` → player + linked identities (subjects masked).
 - \`PATCH /api/players/me\` \`{ display_name }\`.
 - \`POST /api/players/link\` \`{ provider, ...proof }\` — attach another provider.
