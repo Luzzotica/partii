@@ -6,7 +6,7 @@ This is the surface to integrate against if you're building a real-time multipla
 
 ## Auth
 
-Every request needs `X-API-Key: <key>` (or `Authorization: Bearer <key>`). One-time API keys are issued from the hexii developer dashboard. Rate-limited and metered.
+Every request needs `X-API-Key: <key>` (or `Authorization: Bearer <key>`). One-time API keys are issued from Partii Studio (`/developer`). Rate-limited and metered.
 
 ## Concepts
 

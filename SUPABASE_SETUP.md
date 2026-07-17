@@ -1,13 +1,13 @@
 # Supabase Setup Guide
 
-This document explains how to set up Supabase for the Hexii arcade.
+This document explains how to set up Supabase for the Partii platform.
 
 ## 1. Create a Supabase Project
 
 1. Go to [supabase.com](https://supabase.com) and sign in
 2. Click "New Project"
 3. Fill in your project details:
-   - **Name**: `hexii-arcade` (or whatever you prefer)
+   - **Name**: `partii-platform` (or whatever you prefer)
    - **Database Password**: Generate a strong password and save it
    - **Region**: Choose the closest to your users
 4. Click "Create new project" and wait for it to be ready

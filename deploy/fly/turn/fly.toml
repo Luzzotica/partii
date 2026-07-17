@@ -15,8 +15,8 @@
 #   # Vercel→Fly usage-reporting auth (same value goes on Vercel as TURN_USAGE_TOKEN):
 #   fly secrets set USAGE_API_TOKEN="$(openssl rand -hex 32)" -a arcade-turn
 #
-#   # Where to POST usage events — your Hexii deployment:
-#   fly secrets set USAGE_API_URL="https://hexii.vercel.app" -a arcade-turn
+#   # Where to POST usage events — your Partii deployment:
+#   fly secrets set USAGE_API_URL="https://www.sterlinglong.me" -a arcade-turn
 #
 #   # Optional: custom realm if you point a hostname at this app.
 #   fly secrets set TURN_REALM="turn.sterlinglong.me" -a arcade-turn

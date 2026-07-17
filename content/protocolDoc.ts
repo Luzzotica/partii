@@ -1,10 +1,11 @@
 // GENERATED from packages/party-kit/PROTOCOL.md — edit there, then run scripts/sync-party-kit.mjs
-export const PROTOCOL_MD = `# Arcadii Multiplayer Protocol — engine-neutral wire spec (v1)
+export const PROTOCOL_MD = `# Lobbii Multiplayer Protocol — engine-neutral wire spec (v1)
 
-This document specifies everything a client needs to implement arcadii multiplayer
-on ANY platform (web, Godot, Unreal, Unity, native). The TypeScript reference
-implementation lives in \`packages/party-kit/src/\`; this spec is authoritative for
-non-TS clients. See \`CLIENT_PROMPT.md\` for generating a client with an LLM.
+This document specifies everything a client needs to implement **Lobbii** multiplayer
+(the multiplayer backend for the **Partii** platform) on ANY platform (web, Godot,
+Unreal, Unity, native). The TypeScript reference implementation lives in
+\`packages/party-kit/src/\`; this spec is authoritative for non-TS clients. See
+\`CLIENT_PROMPT.md\` for generating a client with an LLM.
 
 Base URL: configured per game (\`PARTY_API_URL\`, e.g. \`https://www.sterlinglong.me\`).
 All bodies are JSON. All responses include permissive CORS headers.
@@ -240,12 +241,12 @@ Then trade the access token for a player:
 The email account is global to the platform, but the resulting PLAYER is
 scoped to your project (the same email in another game is a different player).
 
-### 7.5 Arcade SSO (embedded games)
+### 7.5 Partii arcade SSO (embedded games)
 
-When a game is embedded in a host page (an arcade website iframe, or a mobile
+When a game is embedded in a host page (a Partii arcade iframe, or a mobile
 webview), the host can pass the signed-in user's session token down so the game
 signs in automatically — no re-typing a password. Arcade accounts share the
-Lobbii auth pool, so an SSO player is the SAME player as an in-game email
+Partii auth pool, so an SSO player is the SAME player as an in-game email
 sign-in with that account.
 
 **Game side:** \`initArcadeSso(cloud, { allowedOrigins })\` (party-kit) listens on
@@ -254,20 +255,31 @@ three channels — an iframe \`postMessage\`, a \`window.__ARCADE_TOKEN__\` glob
 \`POST /api/players/login { provider:"email", access_token }\` with whichever
 arrives. Standalone (itch, direct link) → no token → falls back to anon/email.
 
+**Wire type names** — games accept both current and legacy aliases:
+
+| Intent | Prefer (Partii) | Legacy (still accepted) |
+|--------|-----------------|-------------------------|
+| Ready  | \`partii:ready\`  | \`arcadii:ready\` |
+| Auth   | \`partii:auth\`   | \`arcadii:auth\` |
+| Sign out | \`partii:signout\` | \`arcadii:signout\` |
+
+Hosts should send **\`partii:*\`**. Games also still accept \`arcadii:*\` forever.
+
 **Host page side** (the arcade that embeds the iframe):
 \`\`\`js
 const iframe = document.querySelector("iframe#game");
 const GAME_ORIGIN = "https://tankii.example";
 window.addEventListener("message", (e) => {
-  if (e.origin === GAME_ORIGIN && e.data?.type === "arcadii:ready") {
-    // The player's Arcade session access token (e.g. from Supabase auth).
+  const t = e.data?.type;
+  if (e.origin === GAME_ORIGIN && (t === "partii:ready" || t === "arcadii:ready")) {
+    // The player's Partii session access token (e.g. from Supabase auth).
     iframe.contentWindow.postMessage(
-      { type: "arcadii:auth", token: session.access_token },
+      { type: "partii:auth", token: session.access_token },
       GAME_ORIGIN,
     );
   }
 });
-// On logout: iframe.contentWindow.postMessage({ type:"arcadii:signout" }, GAME_ORIGIN)
+// On logout: iframe.contentWindow.postMessage({ type:"partii:signout" }, GAME_ORIGIN)
 \`\`\`
 
 ### 7.6 Identity management (Bearer player_token)

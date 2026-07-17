@@ -1,5 +1,5 @@
 // Coturn stdout parser — shared between the live wrapper (usage-reporter.mjs)
-// and the unit tests in hexii/tests/turn/parser.test.ts. Keep this file pure
+// and the unit tests in partii/tests/turn/parser.test.ts. Keep this file pure
 // (no I/O, no globals) so both can rely on the same regexes.
 //
 // Two relevant log shapes:
@@ -17,7 +17,7 @@ export const CLOSE_RE = /session\s+(\d+):\s+closed/;
  * Extract `{apiKeyId, peerTag}` from a TURN username of the shape
  * `<expiry>:k=<apiKeyId>:p=<peerTag>`. Returns null if the username
  * doesn't match — that's typical for hand-rolled credentials made
- * outside of hexii/lib/api/turn.ts (e.g. the Trickle ICE manual test).
+ * outside of partii/lib/api/turn.ts (e.g. the Trickle ICE manual test).
  */
 export function parseUsername(username) {
   // `p=` may be followed by an optional `:u=<playerId>` identity tag.

@@ -85,7 +85,10 @@ export function ProjectKeysManager({ projectId, initial }: { projectId: string; 
 
   return (
     <div className="space-y-6">
-      <h2 className="text-lg font-semibold">API Keys</h2>
+      <h2 className="text-lg font-semibold">Lobbii API keys</h2>
+      <p className="text-sm text-white/50 -mt-4">
+        Keys unlock rooms, signaling, and TURN for this Partii project. Ship one in your game client.
+      </p>
 
       <form onSubmit={create} className="rounded border border-white/10 p-4 bg-white/[0.02] space-y-3">
         <div className="font-medium">Create new key</div>

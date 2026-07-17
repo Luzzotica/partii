@@ -6,6 +6,7 @@ type PlayerRow = {
   id: string;
   display_name: string | null;
   banned: boolean;
+  role: "player" | "admin";
   created_at: string;
   last_seen_at: string;
   providers: string[];
@@ -28,13 +29,13 @@ export function PlayersPanel({ projectId }: { projectId: string }) {
   };
   useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [projectId]);
 
-  const setBanned = async (playerId: string, banned: boolean) => {
+  const patchPlayer = async (playerId: string, patch: { banned?: boolean; role?: "player" | "admin" }) => {
     setBusy(playerId);
     try {
       await fetch(`/api/developer/players`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ project_id: projectId, player_id: playerId, banned }),
+        body: JSON.stringify({ project_id: projectId, player_id: playerId, ...patch }),
       });
       await load();
     } finally {
@@ -70,13 +71,24 @@ export function PlayersPanel({ projectId }: { projectId: string }) {
                 <tr key={p.id} className={`border-t border-white/5 ${p.banned ? "opacity-50" : ""}`}>
                   <td className="p-2">
                     <span className="text-white/85">{p.display_name ?? "—"}</span>
+                    {p.role === "admin" && (
+                      <span className="ml-1.5 rounded bg-[#3742fa]/25 text-[#aab2ff] px-1.5 py-0.5 text-[10px]">admin</span>
+                    )}
                     <span className="block font-mono text-[10px] text-white/35">{p.id}</span>
                   </td>
                   <td className="p-2 text-white/60">{p.providers.join(", ") || "—"}</td>
                   <td className="p-2 font-mono text-xs text-white/50">{p.last_seen_at.slice(0, 16).replace("T", " ")}</td>
-                  <td className="p-2 text-right">
+                  <td className="p-2 text-right space-x-2">
                     <button
-                      onClick={() => setBanned(p.id, !p.banned)}
+                      onClick={() => patchPlayer(p.id, { role: p.role === "admin" ? "player" : "admin" })}
+                      disabled={busy === p.id}
+                      className="px-2 py-1 rounded text-xs disabled:opacity-50 bg-white/10 hover:bg-white/20"
+                      title="Admins see dev functionality inside the game (⌥D debug reporter)"
+                    >
+                      {p.role === "admin" ? "Revoke admin" : "Make admin"}
+                    </button>
+                    <button
+                      onClick={() => patchPlayer(p.id, { banned: !p.banned })}
                       disabled={busy === p.id}
                       className={`px-2 py-1 rounded text-xs disabled:opacity-50 ${
                         p.banned

@@ -50,14 +50,14 @@ rsync -az --delete \
   --exclude ".git" \
   --exclude "node_modules" \
   --exclude ".next" \
-  ./ root@<DROPLET_PUBLIC_IP>:/opt/hexii
+  ./ root@<DROPLET_PUBLIC_IP>:/opt/partii
 ```
 
 ## 5) Set production server env on Droplet
 
 ```bash
-cp /opt/hexii/games/gyrii/server/.env.prod.example /opt/hexii/games/gyrii/server/.env.prod
-nano /opt/hexii/games/gyrii/server/.env.prod
+cp /opt/partii/games/gyrii/server/.env.prod.example /opt/partii/games/gyrii/server/.env.prod
+nano /opt/partii/games/gyrii/server/.env.prod
 ```
 
 Set real values for:
@@ -68,7 +68,7 @@ Set real values for:
 ## 6) Bring up services
 
 ```bash
-cd /opt/hexii/deploy/digitalocean
+cd /opt/partii/deploy/digitalocean
 docker compose up -d --build
 docker compose logs -f
 ```
@@ -100,7 +100,7 @@ rsync -az --delete \
   --exclude ".git" \
   --exclude "node_modules" \
   --exclude ".next" \
-  ./ root@<DROPLET_PUBLIC_IP>:/opt/hexii
+  ./ root@<DROPLET_PUBLIC_IP>:/opt/partii
 
-ssh root@<DROPLET_PUBLIC_IP> "cd /opt/hexii/deploy/digitalocean && docker compose up -d --build"
+ssh root@<DROPLET_PUBLIC_IP> "cd /opt/partii/deploy/digitalocean && docker compose up -d --build"
 ```

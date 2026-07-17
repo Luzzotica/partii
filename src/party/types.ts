@@ -62,7 +62,7 @@ export interface PollSignalsResult {
 // ─── Client config + callbacks ────────────────────────────────────────────────
 
 export interface PartyClientConfig {
-  /** Base URL of the Next.js deployment, e.g. "https://hexii.vercel.app". */
+  /** Base URL of the Next.js deployment, e.g. "https://www.sterlinglong.me". */
   baseUrl: string;
   /** REST API key (X-API-Key). */
   apiKey: string;

@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-export const metadata = { title: "Lobbii Pricing" };
+export const metadata = { title: "Lobbii Pricing — Partii multiplayer" };
 
 const TIERS = [
   {
@@ -85,8 +85,8 @@ export default function PricingPage() {
       </section>
 
       <p className="text-sm text-white/50">
-        Ready? <Link href="/developer" className="text-blue-300 hover:underline">Create a project</Link> and{" "}
-        <Link href="/docs" className="text-blue-300 hover:underline">copy the AI prompt</Link>.
+        Ready? <Link href="/developer" className="text-blue-300 hover:underline">Open Partii Studio</Link> and{" "}
+        <Link href="/docs" className="text-blue-300 hover:underline">copy the Lobbii AI prompt</Link>.
       </p>
     </div>
   );

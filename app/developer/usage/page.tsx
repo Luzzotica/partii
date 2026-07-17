@@ -115,13 +115,18 @@ export default async function DeveloperUsagePage() {
 
   return (
     <div className="space-y-8">
-      <h1 className="text-2xl font-semibold">Usage (last 30 days)</h1>
+      <div>
+        <h1 className="text-2xl font-semibold">Usage (last 30 days)</h1>
+        <p className="text-white/60 text-sm mt-1">
+          Account-wide Lobbii multiplayer telemetry across all Partii projects.
+        </p>
+      </div>
 
       <section className="space-y-2">
         <h2 className="text-lg font-semibold">Connection health</h2>
         <p className="text-sm text-white/50">
-          Reported by game clients on every connection attempt — the numbers that tell you whether
-          players are actually getting into matches.
+          Reported by game clients on every Lobbii connection attempt — whether players are
+          actually getting into matches.
         </p>
         <div className="rounded border border-white/10 overflow-hidden">
           <table className="w-full text-sm">
@@ -157,10 +162,10 @@ export default async function DeveloperUsagePage() {
       </section>
 
       <section className="space-y-2">
-        <h2 className="text-lg font-semibold">Relay bandwidth (TURN)</h2>
+        <h2 className="text-lg font-semibold">Lobbii relay bandwidth (TURN)</h2>
         <p className="text-sm text-white/50">
           Only connections that couldn&apos;t go direct use the relay — this is the metered
-          component of the Pro plan.
+          component of Lobbii Pro.
         </p>
         <div className="rounded border border-white/10 overflow-hidden">
           <table className="w-full text-sm">

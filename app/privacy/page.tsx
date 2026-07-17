@@ -22,10 +22,13 @@ export default function PrivacyPage() {
         </Link>
         <div className="flex items-center gap-3">
           <Link href="/arcade" className="text-sm text-white/60 hover:text-white transition-colors">
-            Arcade
+            Partii
           </Link>
           <Link href="/developer" className="text-sm text-white/60 hover:text-white transition-colors">
-            Developer
+            Studio
+          </Link>
+          <Link href="/docs" className="text-sm text-white/60 hover:text-white transition-colors">
+            Lobbii
           </Link>
         </div>
       </header>

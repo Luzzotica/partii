@@ -69,7 +69,7 @@ export async function GET(request: Request) {
     await resend.emails.send({
       from: RESEND_FROM,
       to: ALERT_TO,
-      subject: `⚠️ arcadii usage spike — ${alerts.length} alert(s)`,
+      subject: `⚠️ Lobbii usage spike — ${alerts.length} alert(s)`,
       text:
         "Possible API-key abuse detected:\n\n" +
         alerts.map((a) => `• ${a}`).join("\n") +

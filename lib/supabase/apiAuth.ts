@@ -3,7 +3,7 @@ import type { User } from '@supabase/supabase-js';
 
 /**
  * Extract the authenticated user from either:
- * 1. Cookie-based session (same-origin hexii requests)
+ * 1. Cookie-based session (same-origin Partii requests)
  * 2. Authorization: Bearer <jwt> header (cross-origin requests)
  */
 export async function getApiUser(request: Request): Promise<User | null> {

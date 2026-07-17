@@ -25,12 +25,12 @@ export function buildWebRTCPrompt(opts: { apiKey: string; baseUrl: string }): st
     ? "## Credentials (you must fill in the API key)"
     : "## Credentials (already filled in for you)";
   const credentialsFooter = isPlaceholder
-    ? `Before running anything, replace \`${API_KEY_PLACEHOLDER}\` with a real API key from the developer dashboard at \`${baseUrl}/developer\`. If the user hasn't given you one, ask for it before writing code.`
+    ? `Before running anything, replace \`${API_KEY_PLACEHOLDER}\` with a real API key from a Partii project in the studio at \`${baseUrl}/developer\`. If the user hasn't given you one, ask for it before writing code.`
     : "Hard-code these into a config module or accept them via constructor — the user does not need to provide them again.";
 
   return `# Build a multiplayer game client (WebRTC + Lobbii signaling)
 
-You are a senior engineer. Build a working multiplayer client against the signaling API specified below. The model is host-authoritative: one **host** creates a room and accepts connections from one or more **clients** over peer-to-peer WebRTC data channels. This is general-purpose multiplayer — co-op, competitive, lobby-based, drop-in/drop-out — on any stack; the wire protocol is HTTP/JSON + an optional WebSocket push channel, so host and clients can run on entirely different platforms and interoperate.
+You are a senior engineer. Build a working multiplayer client against **Lobbii** — the multiplayer backend for the **Partii** platform — using the signaling API specified below. The model is host-authoritative: one **host** creates a room and accepts connections from one or more **clients** over peer-to-peer WebRTC data channels. This is general-purpose multiplayer — co-op, competitive, lobby-based, drop-in/drop-out — on any stack; the wire protocol is HTTP/JSON + an optional WebSocket push channel, so host and clients can run on entirely different platforms and interoperate.
 
 **First, before writing any code:** if the user has not told you what target they want, ask: *"What language and platform are you building for — browser TypeScript, Godot, Rust, Unity, native Swift/Kotlin, something else? And are you building the host, the client, or both?"* Then write idiomatic code for that target using its standard WebRTC API:
 - **Browser / TypeScript / JavaScript** → \`RTCPeerConnection\` + \`fetch\` + \`WebSocket\`

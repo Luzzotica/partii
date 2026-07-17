@@ -1,6 +1,15 @@
 {
   "entries": [
     {
+      "date": "2026-07-17",
+      "title": "Partii Studio — project switcher, Tasks-first nav, Lobbii multiplayer",
+      "summary": "The developer dashboard is now Partii Studio: pick a project from a Vercel-style dropdown and the whole shell (Tasks, Overview, Players, Settings) updates with it. Opening a project lands on Tasks. Lobbii remains the multiplayer backend — keys, protocol docs, relay plan — nested inside each Partii project. Arcade floor branding and dual-accept Partii/legacy SSO wire types land with this release.",
+      "tags": [
+        "developer",
+        "arcade"
+      ]
+    },
+    {
       "date": "2026-07-04",
       "title": "Match replays — record, save, and rewatch your games",
       "summary": "Gyrii, Tankii, and Bouncy Blobs now record your matches as tiny deterministic replays you can save to the cloud and watch back from a new My Replays screen. Because the games' physics are deterministic, a replay is just the seed plus the inputs — a few kilobytes for a full match — and it re-simulates to a bit-identical result.",

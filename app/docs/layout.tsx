@@ -3,7 +3,7 @@ import Link from "next/link";
 export const metadata = {
   title: "Lobbii Docs — multiplayer for any engine",
   description:
-    "Rooms, signaling, and TURN relays for browser, Godot, Unity, Unreal, and native games. Paste one AI prompt, get a working multiplayer client.",
+    "Lobbii is Partii's multiplayer backend: rooms, signaling, and TURN relays for browser, Godot, Unity, Unreal, and native games. Paste one AI prompt, get a working multiplayer client.",
 };
 
 export default function DocsLayout({ children }: { children: React.ReactNode }) {
@@ -20,12 +20,15 @@ export default function DocsLayout({ children }: { children: React.ReactNode }) 
             <Link href="/docs/pricing" className="hover:text-white transition-colors">Pricing</Link>
           </nav>
         </div>
-        <Link
-          href="/developer"
-          className="text-sm px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 transition-colors"
-        >
-          Dashboard
-        </Link>
+        <div className="flex items-center gap-3">
+          <span className="hidden sm:inline text-xs text-white/40">Partii multiplayer</span>
+          <Link
+            href="/developer"
+            className="text-sm px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 transition-colors"
+          >
+            Partii Studio
+          </Link>
+        </div>
       </header>
       <main className="px-6 py-10 max-w-3xl mx-auto">{children}</main>
     </div>

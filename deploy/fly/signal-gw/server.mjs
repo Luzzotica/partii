@@ -9,10 +9,10 @@
 //
 //   Client:  WSS /rooms/<roomId>?token=<room_token>
 //            → server pushes {"type":"signal","signal":{…}} frames
-//   hexii:   POST /push  (Authorization: Bearer $SIGNAL_GW_TOKEN)
+//   partii:   POST /push  (Authorization: Bearer $SIGNAL_GW_TOKEN)
 //            {room_id, recipient_peer_id, signal} → fan out to that peer
 //
-// Auth: room tokens are per-room per-peer scoped HS256 JWTs minted by hexii
+// Auth: room tokens are per-room per-peer scoped HS256 JWTs minted by partii
 // (lib/api/roomToken.ts) and verified here with the same shared secret. A
 // token authorizes exactly ONE peer's channel in ONE room — no global key ever
 // reaches this service. Expiry is checked at connect; rooms live ≲2h and
@@ -33,7 +33,7 @@ if (!SECRET || !PUSH_TOKEN) {
 
 const HEARTBEAT_MS = 15_000;
 
-// ─── Room-token verification (mirror of hexii lib/api/roomToken.ts) ─────────
+// ─── Room-token verification (mirror of partii lib/api/roomToken.ts) ─────────
 
 function verifyRoomToken(token) {
   const parts = String(token ?? "").split(".");

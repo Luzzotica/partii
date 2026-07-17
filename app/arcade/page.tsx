@@ -143,9 +143,15 @@ export default function ArcadePage() {
           href="/"
           className="inline-block text-white/60 no-underline text-sm tracking-wider transition-colors hover:text-white/90"
         >
-          ← Back to Home
+          ← Home
         </Link>
         <div className="flex items-center gap-4">
+          <Link
+            href="/developer"
+            className="text-sm text-white/50 hover:text-white transition-colors hidden sm:inline"
+          >
+            Studio
+          </Link>
           <DiscordLink />
           <YouTubeLink />
           <UserMenu />
@@ -153,10 +159,10 @@ export default function ArcadePage() {
       </div>
       <div className="relative z-10 max-w-[1200px] mx-auto">
         <h1 className="font-orbitron text-4xl md:text-5xl lg:text-6xl font-black tracking-[12px] mb-2 text-center bg-gradient-to-r from-white via-[#a8a8ff] to-white bg-clip-text text-transparent drop-shadow-[0_0_40px_rgba(100,100,255,0.5)]">
-          Arcade
+          Partii
         </h1>
         <p className="font-orbitron text-base text-white/50 tracking-[4px] text-center mb-15 uppercase">
-          Select a game to play
+          Arcade floor · pick a cabinet
         </p>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mt-15">
           {sortedGames.map((game) => {

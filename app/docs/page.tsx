@@ -11,10 +11,10 @@ export default function DocsPage() {
           <span className="text-emerald-300">in under an hour.</span>
         </h1>
         <p className="text-white/70 text-lg leading-relaxed max-w-xl">
-          Lobbii is rooms, matchmaking, WebRTC signaling, and TURN relays for games on any
-          engine — browser, Godot, Unity, Unreal, native. You don&apos;t read these docs; your AI
-          does. Paste one prompt into Claude, Cursor, or ChatGPT and it builds the whole
-          multiplayer client for your stack.
+          Lobbii is Partii&apos;s multiplayer backend — rooms, matchmaking, WebRTC signaling, and
+          TURN relays for games on any engine — browser, Godot, Unity, Unreal, native. You
+          don&apos;t read these docs; your AI does. Paste one prompt into Claude, Cursor, or
+          ChatGPT and it builds the whole multiplayer client for your stack.
         </p>
       </section>
 

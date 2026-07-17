@@ -35,7 +35,8 @@ export function PlanCard({ info }: { info: PlanInfo }) {
     <section className="rounded-xl border border-white/10 bg-white/[0.03] p-5 space-y-3">
       <div className="flex items-baseline justify-between">
         <h2 className="text-lg font-semibold">
-          Plan: <span className={pro ? "text-emerald-300" : "text-white/80"}>{pro ? "Pro" : "Free"}</span>
+          Lobbii plan:{" "}
+          <span className={pro ? "text-emerald-300" : "text-white/80"}>{pro ? "Pro" : "Free"}</span>
         </h2>
         {pro ? (
           <button onClick={() => go("/api/billing/portal")} disabled={busy}

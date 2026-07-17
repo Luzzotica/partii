@@ -18,7 +18,7 @@ export function GameHeader({ className = "" }: GameHeaderProps) {
         href="/arcade"
         className="font-orbitron inline-block text-white/60 no-underline text-sm tracking-wider transition-colors hover:text-white/90"
       >
-        ← Back to Arcade
+        ← Partii
       </Link>
       <div className="flex items-center gap-4">
         <DiscordLink />

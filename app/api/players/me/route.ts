@@ -18,7 +18,7 @@ export async function GET(request: Request) {
 
   const { data: player } = await admin
     .from("players")
-    .select("id, display_name, banned, created_at, last_seen_at")
+    .select("id, display_name, banned, role, created_at, last_seen_at")
     .eq("id", claims.pid)
     .eq("project_id", claims.proj)
     .maybeSingle();
@@ -35,6 +35,7 @@ export async function GET(request: Request) {
       player_id: player.id,
       display_name: player.display_name,
       banned: player.banned,
+      role: player.role,
       created_at: player.created_at,
       identities: (identities ?? []).map((i) => ({
         provider: i.provider,

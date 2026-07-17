@@ -63,8 +63,19 @@ export default function Home() {
             href="/arcade"
             className="text-lg font-bold tracking-widest px-16 py-5 bg-gradient-to-r from-[#ff4757] to-[#ff6b81] rounded-lg text-white no-underline transition-all duration-300 inline-block shadow-[0_10px_40px_rgba(255,71,87,0.4)] hover:bg-gradient-to-r hover:from-[#ff6b81] hover:to-[#ff4757] hover:-translate-y-1 hover:shadow-[0_15px_50px_rgba(255,71,87,0.5)]"
           >
-            Enter Arcade
+            Enter Partii
           </Link>
+          <div className="flex items-center gap-4 text-sm">
+            <Link href="/developer" className="text-white/50 hover:text-white transition-colors">
+              Partii Studio
+            </Link>
+            <span className="text-white/25" aria-hidden>
+              ·
+            </span>
+            <Link href="/docs" className="text-white/50 hover:text-white transition-colors">
+              Lobbii Docs
+            </Link>
+          </div>
           {totalOnline > 0 && (
             <div className="flex items-center gap-2 text-sm text-white/60">
               <span className="w-2 h-2 rounded-full bg-[#2ed573] shadow-[0_0_8px_#2ed573] animate-pulse" />
@@ -76,7 +87,9 @@ export default function Home() {
 
       {/* Footer */}
       <footer className="absolute bottom-4 inset-x-0 flex items-center justify-center gap-4 text-xs text-white/35">
-        <Link href="/docs" className="hover:text-white/70 transition-colors">Docs</Link>
+        <Link href="/arcade" className="hover:text-white/70 transition-colors">Arcade</Link>
+        <span aria-hidden>·</span>
+        <Link href="/docs" className="hover:text-white/70 transition-colors">Lobbii</Link>
         <span aria-hidden>·</span>
         <Link href="/changelog" className="hover:text-white/70 transition-colors">Changelog</Link>
         <span aria-hidden>·</span>
