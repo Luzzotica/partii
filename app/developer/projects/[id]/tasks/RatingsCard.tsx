@@ -38,8 +38,9 @@ export function RatingsCard({ projectId }: { projectId: string }) {
       <section className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
         <h2 className="text-lg font-semibold">Ratings</h2>
         <p className="text-sm text-white/40 mt-1">
-          No player ratings yet. They appear here when your game calls{" "}
+          No star ratings yet. They appear when your game calls{" "}
           <code className="text-white/60">cloud.submitFeedback(&#123; rating &#125;)</code> after a match.
+          Written comments go to the Feedback tab separately.
         </p>
       </section>
     );

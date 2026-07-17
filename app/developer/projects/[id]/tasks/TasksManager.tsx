@@ -28,26 +28,7 @@ type Milestone = {
   done: number;
 };
 
-type Feedback = {
-  id: string;
-  game_id: string | null;
-  rating: number | null;
-  text: string | null;
-  context: string | null;
-  match_id: string | null;
-  status: string;
-  created_at: string;
-  player_name: string | null;
-};
-
 const json = { "Content-Type": "application/json" };
-
-function age(iso: string): string {
-  const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60_000);
-  if (mins < 60) return `${Math.max(1, mins)}m`;
-  if (mins < 60 * 24) return `${Math.floor(mins / 60)}h`;
-  return `${Math.floor(mins / (60 * 24))}d`;
-}
 
 function ContextChip({ value }: { value: string | null }) {
   if (!value) return null;
@@ -58,12 +39,11 @@ function ContextChip({ value }: { value: string | null }) {
   );
 }
 
-// The per-project task board: Inbox (untriaged player feedback + tasks with no
-// milestone) → active milestones → collapsed done list.
+// Per-project task board: unassigned Inbox → milestones → done.
+// Player text feedback lives under Feedback; star ratings under Ratings.
 export function TasksManager({ projectId }: { projectId: string }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [milestones, setMilestones] = useState<Milestone[]>([]);
-  const [inboxFeedback, setInboxFeedback] = useState<Feedback[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [quickTitle, setQuickTitle] = useState("");
@@ -75,14 +55,12 @@ export function TasksManager({ projectId }: { projectId: string }) {
   const [showDone, setShowDone] = useState(false);
 
   const load = useCallback(async () => {
-    const [t, m, f] = await Promise.all([
+    const [t, m] = await Promise.all([
       fetch(`/api/developer/tasks?project_id=${projectId}`),
       fetch(`/api/developer/milestones?project_id=${projectId}`),
-      fetch(`/api/developer/feedback?project_id=${projectId}&status=new&has_text=true&limit=50`),
     ]);
     if (t.ok) setTasks((await t.json()).tasks);
     if (m.ok) setMilestones((await m.json()).milestones);
-    if (f.ok) setInboxFeedback((await f.json()).feedback);
     setLoaded(true);
   }, [projectId]);
   useEffect(() => { void load(); }, [load]);
@@ -120,21 +98,6 @@ export function TasksManager({ projectId }: { projectId: string }) {
     setEditing(null);
     if (title) void patchTask(id, { title });
   };
-
-  // ── feedback actions ──────────────────────────────────────────────────────
-  const convertFeedback = (id: string) =>
-    act(id, () =>
-      fetch("/api/developer/feedback/convert", {
-        method: "POST", headers: json,
-        body: JSON.stringify({ project_id: projectId, feedback_id: id }),
-      }));
-
-  const dismissFeedback = (id: string) =>
-    act(id, () =>
-      fetch("/api/developer/feedback", {
-        method: "PATCH", headers: json,
-        body: JSON.stringify({ project_id: projectId, id, status: "dismissed" }),
-      }));
 
   // ── milestone actions ─────────────────────────────────────────────────────
   const addMilestone = () =>
@@ -251,8 +214,7 @@ export function TasksManager({ projectId }: { projectId: string }) {
         <div className="flex items-baseline justify-between">
           <h2 className="text-lg font-semibold">Inbox</h2>
           <span className="text-sm text-white/50">
-            {inboxFeedback.length > 0 && `${inboxFeedback.length} new feedback · `}
-            {inboxTasks.length} task{inboxTasks.length === 1 ? "" : "s"}
+            {inboxTasks.length} unassigned task{inboxTasks.length === 1 ? "" : "s"}
           </span>
         </div>
 
@@ -281,46 +243,9 @@ export function TasksManager({ projectId }: { projectId: string }) {
           </button>
         </form>
 
-        {inboxFeedback.length > 0 && (
-          <ul className="rounded border border-yellow-300/20 bg-yellow-300/[0.04] divide-y divide-white/5">
-            {inboxFeedback.map((f) => (
-              <li key={f.id} className="p-3 flex items-start gap-3">
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-white/85 whitespace-pre-wrap break-words">{f.text}</p>
-                  <div className="mt-1 flex items-center gap-2 text-[11px] text-white/40">
-                    {f.rating !== null && (
-                      <span className="text-yellow-300/90">{"★".repeat(f.rating)}<span className="opacity-25">{"★".repeat(5 - f.rating)}</span></span>
-                    )}
-                    <ContextChip value={f.context} />
-                    {f.game_id && <span className="font-mono">{f.game_id}</span>}
-                    <span>{f.player_name ?? "anonymous"}</span>
-                    <span>{age(f.created_at)} ago</span>
-                  </div>
-                </div>
-                <div className="flex gap-2 shrink-0">
-                  <button
-                    onClick={() => void convertFeedback(f.id)}
-                    disabled={busy === f.id}
-                    className="px-2 py-1 rounded text-xs bg-[#3742fa] hover:bg-[#5a67fa] disabled:opacity-50"
-                  >
-                    → Task
-                  </button>
-                  <button
-                    onClick={() => void dismissFeedback(f.id)}
-                    disabled={busy === f.id}
-                    className="px-2 py-1 rounded text-xs bg-white/10 hover:bg-white/20 disabled:opacity-50"
-                  >
-                    Dismiss
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-
-        {inboxTasks.length === 0 && inboxFeedback.length === 0 ? (
+        {inboxTasks.length === 0 ? (
           <p className="text-sm text-white/40">
-            Inbox zero. New tasks land here, as does player feedback submitted from inside the game.
+            Inbox zero. New tasks land here until you assign them to a milestone.
           </p>
         ) : (
           <ul>{inboxTasks.map(taskRow)}</ul>

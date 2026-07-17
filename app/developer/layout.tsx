@@ -21,9 +21,13 @@ export default async function DeveloperLayout({ children }: { children: React.Re
 
   const list = projects ?? [];
   const ids = list.map((p) => p.id);
-  const taskBadges: Record<string, { open: number; inbox: number }> = {};
+  const taskBadges: Record<string, number> = {};
+  const feedbackBadges: Record<string, number> = {};
   if (ids.length > 0) {
-    for (const id of ids) taskBadges[id] = { open: 0, inbox: 0 };
+    for (const id of ids) {
+      taskBadges[id] = 0;
+      feedbackBadges[id] = 0;
+    }
     const [{ data: openRows }, { data: fbRows }] = await Promise.all([
       admin.from("tasks").select("project_id").in("project_id", ids).eq("status", "open"),
       admin
@@ -33,8 +37,8 @@ export default async function DeveloperLayout({ children }: { children: React.Re
         .eq("status", "new")
         .not("text", "is", null),
     ]);
-    for (const r of openRows ?? []) taskBadges[r.project_id].open += 1;
-    for (const r of fbRows ?? []) taskBadges[r.project_id].inbox += 1;
+    for (const r of openRows ?? []) taskBadges[r.project_id] = (taskBadges[r.project_id] ?? 0) + 1;
+    for (const r of fbRows ?? []) feedbackBadges[r.project_id] = (feedbackBadges[r.project_id] ?? 0) + 1;
   }
 
   return (
@@ -43,7 +47,7 @@ export default async function DeveloperLayout({ children }: { children: React.Re
         <Link href="/developer" className="font-semibold tracking-tight shrink-0">
           Partii
         </Link>
-        <StudioHeader projects={list} taskBadges={taskBadges} />
+        <StudioHeader projects={list} taskBadges={taskBadges} feedbackBadges={feedbackBadges} />
         <div className="flex items-center gap-3 shrink-0 ml-auto">
           <a
             href="/docs"

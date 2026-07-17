@@ -51,6 +51,7 @@ export async function GET(request: Request) {
 }
 
 // PATCH /api/developer/players — moderation: ban/unban and/or set role.
+// Anonymous-only players cannot be banned or promoted (no durable identity).
 export async function PATCH(request: Request) {
   const auth = await requireUser();
   if (!auth.ok) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -70,6 +71,20 @@ export async function PATCH(request: Request) {
   }
   if (!(await ownedProject(auth.user.userId, body.project_id))) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  const { data: identities } = await admin
+    .from("player_identities")
+    .select("provider")
+    .eq("player_id", body.player_id);
+  const providers = (identities ?? []).map((i) => i.provider as string);
+  const isAnon =
+    providers.length === 0 || providers.every((p) => p === "anon");
+  if (isAnon) {
+    return NextResponse.json(
+      { error: "Anonymous players cannot be banned or made admin — they need a linked identity first" },
+      { status: 400 },
+    );
   }
 
   const { data, error } = await admin

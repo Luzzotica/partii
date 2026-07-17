@@ -10,11 +10,13 @@ export type StudioProject = {
   slug: string;
 };
 
-const SECTIONS = ["tasks", "overview", "players", "settings", "usage"] as const;
+const SECTIONS = ["tasks", "feedback", "ratings", "overview", "players", "settings", "usage"] as const;
 type Section = (typeof SECTIONS)[number];
 
 const TABS: { slug: Section; label: string }[] = [
   { slug: "tasks", label: "Tasks" },
+  { slug: "feedback", label: "Feedback" },
+  { slug: "ratings", label: "Ratings" },
   { slug: "overview", label: "Overview" },
   { slug: "players", label: "Players" },
   { slug: "settings", label: "Settings" },
@@ -47,10 +49,13 @@ function setLastProjectCookie(id: string) {
 export function StudioHeader({
   projects,
   taskBadges = {},
+  feedbackBadges = {},
 }: {
   projects: StudioProject[];
-  /** open task count / inbox per project id */
-  taskBadges?: Record<string, { open: number; inbox: number }>;
+  /** open task count per project id */
+  taskBadges?: Record<string, number>;
+  /** new text-feedback count per project id */
+  feedbackBadges?: Record<string, number>;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -86,7 +91,8 @@ export function StudioHeader({
     router.push(`/developer/projects/${id}/${section}`);
   };
 
-  const badge = current ? taskBadges[current.id] : null;
+  const openTasks = current ? (taskBadges[current.id] ?? 0) : 0;
+  const newFeedback = current ? (feedbackBadges[current.id] ?? 0) : 0;
 
   return (
     <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -158,8 +164,8 @@ export function StudioHeader({
           {TABS.map((tab) => {
             const href = `/developer/projects/${current.id}/${tab.slug}`;
             const active = section === tab.slug;
-            const showBadge =
-              tab.slug === "tasks" && badge && (badge.open > 0 || badge.inbox > 0);
+            const taskBadge = tab.slug === "tasks" && openTasks > 0;
+            const fbBadge = tab.slug === "feedback" && newFeedback > 0;
             return (
               <Link
                 key={tab.slug}
@@ -171,14 +177,12 @@ export function StudioHeader({
                 }`}
               >
                 {tab.label}
-                {showBadge && (
-                  <span className="ml-1 text-[10px] tabular-nums text-white/45">
-                    {badge.open}
-                    {badge.inbox > 0 && (
-                      <span className="ml-1 rounded bg-yellow-300/15 text-yellow-200 px-1 py-px">
-                        {badge.inbox}
-                      </span>
-                    )}
+                {taskBadge && (
+                  <span className="ml-1 text-[10px] tabular-nums text-white/45">{openTasks}</span>
+                )}
+                {fbBadge && (
+                  <span className="ml-1 rounded bg-yellow-300/15 text-yellow-200 px-1 py-px text-[10px]">
+                    {newFeedback}
                   </span>
                 )}
               </Link>
