@@ -1,0 +1,22 @@
+# Keep Vercel CLI upload under the body size limit.
+node_modules
+.next
+out
+dist
+.vercel
+.git
+.k2
+.k2so
+.claude
+.cursor
+.opencode
+.pi
+marketing
+test-results
+playwright-report
+games/gyrii/server/target
+games/gyrii/spacetimedb/target
+**/target
+**/*.o
+**/*.rmeta
+**/*.d
