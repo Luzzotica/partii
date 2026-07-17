@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 type Project = {
@@ -13,6 +14,7 @@ type Project = {
 type Badge = { open: number; inbox: number };
 
 export function ProjectsManager({ initial, badges = {} }: { initial: Project[]; badges?: Record<string, Badge> }) {
+  const router = useRouter();
   const [projects, setProjects] = useState<Project[]>(initial);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -35,6 +37,9 @@ export function ProjectsManager({ initial, badges = {} }: { initial: Project[]; 
     const j = await res.json();
     setProjects([j.project, ...projects]);
     setName("");
+    // Jump straight into the new project's Tasks board.
+    router.push(`/developer/projects/${j.project.id}/tasks`);
+    router.refresh();
   }
 
   async function rename(id: string, current: string) {

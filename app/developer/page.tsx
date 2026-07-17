@@ -1,9 +1,13 @@
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireUser } from "@/lib/auth/requireUser";
 import { ProjectsManager } from "./ProjectsManager";
 
 const admin = createAdminClient();
+const LAST_PROJECT_COOKIE = "partii_last_project";
 
+/** Studio home: jump into the last (or first) project's Tasks board. */
 export default async function DeveloperDashboardPage() {
   const auth = await requireUser();
   if (!auth.ok) return null;
@@ -14,28 +18,25 @@ export default async function DeveloperDashboardPage() {
     .eq("user_id", auth.user.userId)
     .order("created_at", { ascending: false });
 
-  // Per-project "N open · M inbox" badges for the table.
-  const ids = (projects ?? []).map((p) => p.id);
-  const badges: Record<string, { open: number; inbox: number }> = {};
-  if (ids.length > 0) {
-    const [{ data: openRows }, { data: fbRows }] = await Promise.all([
-      admin.from("tasks").select("project_id").in("project_id", ids).eq("status", "open"),
-      admin.from("feedback").select("project_id").in("project_id", ids).eq("status", "new").not("text", "is", null),
-    ]);
-    for (const id of ids) badges[id] = { open: 0, inbox: 0 };
-    for (const r of openRows ?? []) badges[r.project_id].open += 1;
-    for (const r of fbRows ?? []) badges[r.project_id].inbox += 1;
+  const list = projects ?? [];
+  if (list.length === 0) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-semibold">Welcome to Partii Studio</h1>
+          <p className="text-white/60 text-sm mt-1">
+            Create a project to track tasks, players, and Lobbii multiplayer usage.
+          </p>
+        </div>
+        <ProjectsManager initial={[]} badges={{}} />
+      </div>
+    );
   }
 
-  return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Projects</h1>
-        <p className="text-white/60 text-sm">
-          Partii Studio — each project has tasks, players, settings, and Lobbii multiplayer keys.
-        </p>
-      </div>
-      <ProjectsManager initial={projects ?? []} badges={badges} />
-    </div>
-  );
+  const jar = await cookies();
+  const last = jar.get(LAST_PROJECT_COOKIE)?.value;
+  const preferred =
+    (last && list.find((p) => p.id === last)) || list[0];
+
+  redirect(`/developer/projects/${preferred.id}/tasks`);
 }

@@ -26,7 +26,7 @@ export default function DocsLayout({ children }: { children: React.ReactNode }) 
             href="/developer"
             className="text-sm px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 transition-colors"
           >
-            Partii Studio
+            Open Studio
           </Link>
         </div>
       </header>
