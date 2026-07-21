@@ -1,0 +1,239 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tankii.local/schemas/balance-v1.schema.json",
+  "title": "Tankii balance table v1",
+  "description": "OTA-tunable gameplay constants. Protocol/wire fields are intentionally excluded.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "id",
+    "semver",
+    "player",
+    "bullet",
+    "grenade",
+    "powerups",
+    "match",
+    "ai",
+    "geometry"
+  ],
+  "properties": {
+    "schema": {
+      "const": "tankii.balance/v1"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "Stable ops id, e.g. 2026-07-21.nerf-bullets"
+    },
+    "semver": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "notes": {
+      "type": "string",
+      "maxLength": 2000
+    },
+    "player": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "speed",
+        "turning_speed_factor",
+        "max_live_bullets",
+        "fire_cooldown",
+        "spawn_shield_time",
+        "fire_recoil_stop"
+      ],
+      "properties": {
+        "speed": { "$ref": "#/$defs/positiveNumber" },
+        "turning_speed_factor": { "$ref": "#/$defs/unitInterval" },
+        "max_live_bullets": { "$ref": "#/$defs/positiveInt" },
+        "fire_cooldown": { "$ref": "#/$defs/nonNegativeNumber" },
+        "spawn_shield_time": { "$ref": "#/$defs/nonNegativeNumber" },
+        "fire_recoil_stop": { "$ref": "#/$defs/nonNegativeNumber" }
+      }
+    },
+    "bullet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["speed", "fast_speed", "max_bounces", "max_age", "vs_bullet_dist"],
+      "properties": {
+        "speed": { "$ref": "#/$defs/positiveNumber" },
+        "fast_speed": { "$ref": "#/$defs/positiveNumber" },
+        "max_bounces": { "$ref": "#/$defs/nonNegativeInt" },
+        "max_age": { "$ref": "#/$defs/positiveNumber" },
+        "vs_bullet_dist": { "$ref": "#/$defs/positiveNumber" }
+      }
+    },
+    "grenade": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "range",
+        "flight_time",
+        "arc_height",
+        "fuse",
+        "rest_y",
+        "roll_speed",
+        "gravity",
+        "bounce",
+        "friction",
+        "mine_radius",
+        "prox_radius",
+        "prox_fuse",
+        "dome_max_r",
+        "dome_expand_t",
+        "dome_shrink_t"
+      ],
+      "properties": {
+        "range": { "$ref": "#/$defs/positiveNumber" },
+        "flight_time": { "$ref": "#/$defs/positiveNumber" },
+        "arc_height": { "$ref": "#/$defs/positiveNumber" },
+        "fuse": { "$ref": "#/$defs/positiveNumber" },
+        "rest_y": { "$ref": "#/$defs/nonNegativeNumber" },
+        "roll_speed": { "$ref": "#/$defs/positiveNumber" },
+        "gravity": { "$ref": "#/$defs/positiveNumber" },
+        "bounce": { "$ref": "#/$defs/unitInterval" },
+        "friction": { "$ref": "#/$defs/nonNegativeNumber" },
+        "mine_radius": { "$ref": "#/$defs/positiveNumber" },
+        "prox_radius": { "$ref": "#/$defs/positiveNumber" },
+        "prox_fuse": { "$ref": "#/$defs/positiveNumber" },
+        "dome_max_r": { "$ref": "#/$defs/positiveNumber" },
+        "dome_expand_t": { "$ref": "#/$defs/positiveNumber" },
+        "dome_shrink_t": { "$ref": "#/$defs/positiveNumber" }
+      }
+    },
+    "powerups": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "crate_drop_chance",
+        "pickup_radius",
+        "buff_duration",
+        "respawn_seconds"
+      ],
+      "properties": {
+        "crate_drop_chance": { "$ref": "#/$defs/unitInterval" },
+        "pickup_radius": { "$ref": "#/$defs/positiveNumber" },
+        "buff_duration": { "$ref": "#/$defs/positiveNumber" },
+        "respawn_seconds": { "$ref": "#/$defs/positiveNumber" }
+      }
+    },
+    "match": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "countdown_seconds",
+        "round_end_seconds",
+        "respawn_seconds",
+        "tdm_kill_target",
+        "ctf_capture_target",
+        "ffa_kill_target",
+        "match_time_limit",
+        "flag_auto_return_seconds",
+        "flag_pickup_radius",
+        "flag_capture_radius",
+        "koth_score_target",
+        "koth_hill_radius",
+        "koth_move_min",
+        "koth_move_max"
+      ],
+      "properties": {
+        "countdown_seconds": { "$ref": "#/$defs/nonNegativeNumber" },
+        "round_end_seconds": { "$ref": "#/$defs/nonNegativeNumber" },
+        "respawn_seconds": { "$ref": "#/$defs/nonNegativeNumber" },
+        "tdm_kill_target": { "$ref": "#/$defs/positiveInt" },
+        "ctf_capture_target": { "$ref": "#/$defs/positiveInt" },
+        "ffa_kill_target": { "$ref": "#/$defs/positiveInt" },
+        "match_time_limit": { "$ref": "#/$defs/positiveNumber" },
+        "flag_auto_return_seconds": { "$ref": "#/$defs/positiveNumber" },
+        "flag_pickup_radius": { "$ref": "#/$defs/positiveNumber" },
+        "flag_capture_radius": { "$ref": "#/$defs/positiveNumber" },
+        "koth_score_target": { "$ref": "#/$defs/positiveInt" },
+        "koth_hill_radius": { "$ref": "#/$defs/positiveNumber" },
+        "koth_move_min": { "$ref": "#/$defs/positiveNumber" },
+        "koth_move_max": { "$ref": "#/$defs/positiveNumber" }
+      }
+    },
+    "ai": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "speed",
+        "turret_turn_rate",
+        "max_live_bullets",
+        "offense_bullets",
+        "aim_jitter",
+        "fire_interval_min",
+        "fire_interval_max",
+        "range_close",
+        "range_far",
+        "powerup_seek_radius",
+        "grenade_aim_hold",
+        "grenade_interval_min",
+        "grenade_interval_max"
+      ],
+      "properties": {
+        "speed": { "$ref": "#/$defs/positiveNumber" },
+        "turret_turn_rate": { "$ref": "#/$defs/positiveNumber" },
+        "max_live_bullets": { "$ref": "#/$defs/positiveInt" },
+        "offense_bullets": { "$ref": "#/$defs/positiveInt" },
+        "aim_jitter": { "$ref": "#/$defs/nonNegativeNumber" },
+        "fire_interval_min": { "$ref": "#/$defs/positiveNumber" },
+        "fire_interval_max": { "$ref": "#/$defs/positiveNumber" },
+        "range_close": { "$ref": "#/$defs/positiveNumber" },
+        "range_far": { "$ref": "#/$defs/positiveNumber" },
+        "powerup_seek_radius": { "$ref": "#/$defs/positiveNumber" },
+        "grenade_aim_hold": { "$ref": "#/$defs/nonNegativeNumber" },
+        "grenade_interval_min": { "$ref": "#/$defs/positiveNumber" },
+        "grenade_interval_max": { "$ref": "#/$defs/positiveNumber" }
+      }
+    },
+    "geometry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tank_radius", "tank_y", "bullet_y", "muzzle_offset", "pit_block_height"],
+      "description": "Sim-coupled geometry. Prefer rare changes; keep shell previews in sync.",
+      "properties": {
+        "tank_radius": { "$ref": "#/$defs/positiveNumber" },
+        "tank_y": { "$ref": "#/$defs/nonNegativeNumber" },
+        "bullet_y": { "$ref": "#/$defs/nonNegativeNumber" },
+        "muzzle_offset": { "$ref": "#/$defs/positiveNumber" },
+        "pit_block_height": { "$ref": "#/$defs/nonNegativeNumber" }
+      }
+    }
+  },
+  "$defs": {
+    "positiveNumber": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "maximum": 1.0e6
+    },
+    "nonNegativeNumber": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1.0e6
+    },
+    "unitInterval": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "positiveInt": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000000
+    },
+    "nonNegativeInt": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000000
+    }
+  }
+}
