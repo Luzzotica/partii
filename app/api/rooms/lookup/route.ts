@@ -8,9 +8,13 @@ export async function OPTIONS() {
   return corsPreflight();
 }
 
-// GET /api/rooms/lookup?code=ABC123
+// GET /api/rooms/lookup?code=ABCDEF
 // Resolve a join code to a room summary. Used by both phone-pairing
 // (controller scanned a QR code) and laptop-join-by-code flows.
+//
+// Codes are case-insensitive (normalized to uppercase). New rooms mint
+// letter-only codes (A–Z minus I/L/O); digit-mixed legacy codes still resolve
+// until those rooms expire. We do NOT reject letter-only or mixed input here.
 export async function GET(request: Request) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
@@ -33,11 +37,13 @@ export async function GET(request: Request) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500, headers: CORS });
   if (!room) return NextResponse.json({ error: "Room not found" }, { status: 404, headers: CORS });
 
+  // Match room_join capacity: non-host, non-disconnected only.
   const { data: peers } = await admin
     .from("room_peers")
     .select("id")
     .eq("room_id", room.id)
-    .in("status", ["joined", "connected"]);
+    .in("status", ["joined", "connected"])
+    .eq("is_host", false);
 
   return NextResponse.json(
     {

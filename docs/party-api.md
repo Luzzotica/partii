@@ -130,7 +130,7 @@ Create a new party session. Call this when your game starts and wants to accept 
 ```json
 {
   "session_id": "550e8400-e29b-41d4-a716-446655440000",
-  "join_code": "XKZ9Q2",
+  "join_code": "XKZMPQ",
   "host_secret": "a3f2c1b4-...",
   "expires_at": "2026-04-19T02:00:00Z"
 }
@@ -148,7 +148,7 @@ Read the current state of a session, including the player list.
 ```json
 {
   "session_id": "550e...",
-  "join_code": "XKZ9Q2",
+  "join_code": "XKZMPQ",
   "game_id": "my-game",
   "status": "waiting",
   "max_players": 4,

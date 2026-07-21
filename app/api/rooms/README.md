@@ -12,7 +12,7 @@ Every request needs `X-API-Key: <key>` (or `Authorization: Bearer <key>`). One-t
 
 | Concept | Role |
 |---|---|
-| Room | Host-owned container for a multiplayer session. Has a join code, a visibility flag, a peer cap. |
+| Room | Host-owned container for a multiplayer session. Has a join code (6 uppercase letters, no digits), a visibility flag, a peer cap. |
 | Peer | A participant in a room. Has a `kind` (app-defined string), a slot, optional metadata. Host gets a peer row too. |
 | Signal | A WebRTC offer / answer / ICE candidate sent between two peers. Polled from the backend on a since_id cursor. |
 

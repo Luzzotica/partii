@@ -43,11 +43,13 @@ export async function GET(request: Request) {
   const ids = (rooms ?? []).map((r) => r.id);
   const counts: Record<string, number> = {};
   if (ids.length > 0) {
+    // Match room_join capacity: non-host, non-disconnected only.
     const { data: peers } = await admin
       .from("room_peers")
       .select("room_id")
       .in("room_id", ids)
-      .in("status", ["joined", "connected"]);
+      .in("status", ["joined", "connected"])
+      .eq("is_host", false);
     for (const p of peers ?? []) counts[p.room_id] = (counts[p.room_id] ?? 0) + 1;
   }
 
@@ -123,7 +125,9 @@ export async function POST(request: Request) {
   const visibility = body.visibility === "public" ? "public" : "private";
   const hostSecret = crypto.randomUUID();
 
-  // Find a unique join code among non-ended rooms.
+  // Unique join code among non-ended rooms. generate_join_code() mints 6
+  // uppercase letters only (A–Z minus I/L/O — no digits). See migration
+  // 20260721010000_join_code_letters_only.
   let joinCode: string | null = null;
   for (let attempt = 0; attempt < 5; attempt++) {
     const { data: code } = await admin.rpc("generate_join_code");

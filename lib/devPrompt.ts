@@ -217,7 +217,7 @@ Response (note the FULL ice_servers ladder — STUN, self-hosted TURN, and Cloud
 
 \`\`\`json
 {
-  "room_id": "e742f30d-…", "join_code": "AB12CD",
+  "room_id": "e742f30d-…", "join_code": "ABKMPQ",
   "host_secret": "…", "host_peer_id": "…", "host_peer_secret": "…",
   "room_token": "eyJ…", "signal_gw": "wss://arcade-signal.fly.dev",
   "expires_at": "2026-07-03T20:00:00Z",

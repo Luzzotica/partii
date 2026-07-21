@@ -58,12 +58,14 @@ Body:
 \`\`\`
 Response \`201\`:
 \`\`\`json
-{ "room_id": "<uuid>", "join_code": "ABCD", "host_secret": "…",
+{ "room_id": "<uuid>", "join_code": "ABKMPQ", "host_secret": "…",
   "host_peer_id": "<uuid>", "host_peer_secret": "…", "expires_at": "<iso>",
   "room_token": "<jwt: {t:'room', rid, peer:'host', role:'host', exp}>",
   "ice_servers": [ { "urls": [ "stun:…", "turn:…?transport=udp", … ],
                      "username": "…", "credential": "…" } ] }
 \`\`\`
+Join codes are **6 uppercase letters only** (A–Z minus ambiguous I/L/O — **no digits**).
+Display uppercase; lookup is case-insensitive.
 
 ### 2.2 Join — \`POST /api/rooms/{roomId}/peers\`
 Body: \`{ "kind": "screen"|"phone", "display_name": "…", "password": "…", "metadata": {} }\`
@@ -74,13 +76,25 @@ Errors: \`404\` not found, \`409\` full, \`423\` not joinable.
 ### 2.3 Discovery
 - \`GET /api/rooms?game_id=X\` → \`{ rooms: [{ room_id, join_code, display_name,
   status, max_peers, peer_count, … }] }\` (public+joinable only, max 50).
-- \`GET /api/rooms/lookup?code=ABCD\` → single room by join code (uppercase).
+- \`GET /api/rooms/lookup?code=ABKMPQ\` → single room by join code (uppercase; letter-only
+  and legacy digit-mixed codes both accepted until old rooms expire).
 
 ### 2.4 Lifecycle
 - \`PATCH /api/rooms/{roomId}\` body \`{ host_secret, status|visibility|joinable|max_peers|metadata }\`.
 - \`DELETE /api/rooms/{roomId}\` body \`{ host_secret }\` ends the room. Send with
   keepalive semantics on shutdown; a server cron sweeps stragglers at \`expires_at\`.
-- \`DELETE /api/rooms/{roomId}/peers/{peerId}\` body \`{ peer_secret }\` on leave.
+- \`DELETE /api/rooms/{roomId}/peers/{peerId}?peer_secret=…\` self-leave (keepalive on tab close).
+- **Host seat free (required for drop-in/drop-out):** when a guest's WebRTC drops
+  or the host removes them from the in-game roster, free the seat so \`max_peers\`
+  does not stick full with ghost rows:
+  - Single: \`DELETE /api/rooms/{roomId}/peers/{peerId}?host_secret=…\`
+  - Absolute roster ping (preferred on every host roster delta):
+    \`POST /api/rooms/{roomId}/peers/reconcile\`
+    body \`{ "host_secret": "…", "active_peer_ids": ["<guest peer uuid>", …] }\`
+    → disconnects every non-host peer **not** in the list; returns
+    \`{ ok, peer_count, disconnected_peer_ids }\`.
+  \`peer_count\` / \`room_join\` capacity count **non-host, non-disconnected** only
+  (host's own peer row never consumes a seat).
 
 ## 3. Signaling (WebRTC handshake relay)
 

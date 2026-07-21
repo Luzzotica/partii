@@ -10,8 +10,8 @@
 -- ─────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS public.party_sessions (
   id            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  -- Human-readable 6-character join code (e.g. "XKZQ91").
-  -- Uppercase alphanumeric, no ambiguous chars (0/O, 1/I/L).
+  -- Human-readable 6-character join code (e.g. "XKZMPQ").
+  -- Letters only (A–Z minus I/L/O); no digits. See later migration for alphabet.
   join_code     TEXT        NOT NULL,
   -- Opaque token the host must supply on every mutating request.
   -- Generated server-side; never returned after initial creation response.
