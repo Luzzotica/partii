@@ -48,6 +48,8 @@ enum Io {
 pub struct Engine {
     cmd: async_channel::Sender<Cmd>,
     events: async_channel::Receiver<Event>,
+    /// Closed when the actor has finished (after a goodbye on shutdown).
+    done: std::sync::Mutex<std::sync::mpsc::Receiver<()>>,
     _rt: Arc<tokio::runtime::Runtime>,
 }
 
@@ -64,8 +66,12 @@ impl Engine {
         );
         let (cmd_tx, cmd_rx) = async_channel::unbounded();
         let (ev_tx, ev_rx) = async_channel::unbounded();
-        rt.spawn(actor(cfg, cmd_rx, ev_tx));
-        Self { cmd: cmd_tx, events: ev_rx, _rt: rt }
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        rt.spawn(async move {
+            actor(cfg, cmd_rx, ev_tx).await;
+            drop(done_tx);
+        });
+        Self { cmd: cmd_tx, events: ev_rx, done: std::sync::Mutex::new(done_rx), _rt: rt }
     }
 
     /// A fresh random connection id (one per launch).
@@ -125,8 +131,13 @@ impl Engine {
 }
 
 impl Drop for Engine {
+    /// Leaves the room (so others see it at once, not after the seat grace)
+    /// and gives the actor a moment to say so before the runtime stops.
     fn drop(&mut self) {
         let _ = self.cmd.try_send(Cmd::Shutdown);
+        if let Ok(done) = self.done.lock() {
+            let _ = done.recv_timeout(Duration::from_millis(400));
+        }
     }
 }
 
@@ -155,6 +166,7 @@ async fn actor(cfg: Config, cmds: async_channel::Receiver<Cmd>, events: async_ch
     let mut pcs: HashMap<(u16, PathId), PcHandle> = HashMap::new();
     let mut tick = tokio::time::interval(Duration::from_millis(TICK_MS as u64));
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut quitting = false;
     loop {
         // Biased: commands, then inbound data, then the timer. After a
         // freeze (a backgrounded app) the socket holds frames that must be
@@ -189,7 +201,13 @@ async fn actor(cfg: Config, cmds: async_channel::Receiver<Cmd>, events: async_ch
                 }
                 Ok(Cmd::Report(m)) => core.report(m),
                 Ok(Cmd::Stats(reply)) => { let _ = reply.try_send(core.stats()); }
-                Ok(Cmd::Shutdown) | Err(_) => break,
+                Ok(Cmd::Shutdown) | Err(_) => {
+                    if core.room().is_none() || sock_out.is_none() {
+                        break;
+                    }
+                    core.leave();
+                    quitting = true;
+                }
             },
             io = io_rx.recv() => {
                 let Ok(io) = io else { break };
@@ -259,6 +277,11 @@ async fn actor(cfg: Config, cmds: async_channel::Receiver<Cmd>, events: async_ch
                     let _ = events.try_send(e);
                 }
             }
+        }
+        if quitting {
+            // Let the socket writer send the goodbye.
+            tokio::time::sleep(Duration::from_millis(150)).await;
+            break;
         }
     }
 }
