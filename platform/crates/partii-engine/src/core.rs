@@ -361,8 +361,9 @@ impl Core {
                         r.members.retain(|x| x.mid != member.mid);
                         r.members.push(member.clone());
                     }
-                    self.add_peer(member.mid, now);
+                    let mid = member.mid;
                     self.emit(Event::MemberJoined { member });
+                    self.add_peer(mid, now);
                 }
             }
             "member_left" => {
@@ -523,10 +524,13 @@ impl Core {
         if matches!(kind, Req::Create | Req::Join) {
             let Ok(room) = serde_json::from_value::<Room>(m["room"].clone()) else { return };
             self.room = Some(room.clone());
-            for member in room.members.iter().filter(|x| x.mid != room.you) {
-                self.add_peer(member.mid, now);
-            }
+            // The room first, then its peers: games learn who is who from
+            // Joined before any PeerConnected arrives.
+            let others: Vec<u16> = room.members.iter().filter(|x| x.mid != room.you).map(|x| x.mid).collect();
             self.emit(if kind == Req::Create { Event::Created { req: id, room } } else { Event::Joined { req: id, room } });
+            for mid in others {
+                self.add_peer(mid, now);
+            }
         } else if let Ok(room) = serde_json::from_value::<Room>(m["room"].clone()) {
             self.room = Some(room);
         }
@@ -659,6 +663,9 @@ impl Core {
         let gen = data["gen"].as_u64().unwrap_or(0) as u32;
         if !self.peers.contains_key(&from) {
             // A signal can beat member_joined; the room says who is here.
+            if !self.room.as_ref().is_some_and(|r| r.members.iter().any(|m| m.mid == from)) {
+                return;
+            }
             self.add_peer(from, now);
         }
         if self.cfg.no_webrtc {

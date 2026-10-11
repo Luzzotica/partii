@@ -258,3 +258,21 @@ fn a_resume_restarts_unopened_paths_at_once() {
     let asks: Vec<Value> = texts(&g.drain()).into_iter().filter(|t| t["t"] == "signal" && t["data"]["type"] == "restart").collect();
     assert_eq!(asks.len(), 2, "turn and direct");
 }
+
+#[test]
+fn the_room_comes_before_its_peers() {
+    let mut c = core(true);
+    online(&mut c, "ws");
+    let id = c.join("ABCDE", "game", "", Value::Null);
+    c.drain();
+    c.on_text(&json!({"t": "ok", "id": id, "room": room(2, &[1, 2])}).to_string(), 0.0);
+    let ev = events(&c.drain());
+    let joined = ev.iter().position(|e| matches!(e, Event::Joined { .. })).unwrap();
+    let peer = ev.iter().position(|e| matches!(e, Event::PeerConnected { mid: 1, .. })).unwrap();
+    assert!(joined < peer, "{ev:?}");
+    c.on_text(&json!({"t": "member_joined", "member": {"mid": 3, "kind": "game", "name": "", "meta": null, "status": "active"}}).to_string(), 1.0);
+    let ev = events(&c.drain());
+    let joined = ev.iter().position(|e| matches!(e, Event::MemberJoined { .. })).unwrap();
+    let peer = ev.iter().position(|e| matches!(e, Event::PeerConnected { mid: 3, .. })).unwrap();
+    assert!(joined < peer, "{ev:?}");
+}
