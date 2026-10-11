@@ -5,6 +5,9 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[lib]
+crate-type = ["rlib", "cdylib"]
+
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
@@ -27,3 +30,15 @@ async-trait = { version = "0.1", optional = true }
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"], optional = true }
 log = "0.4"
 getrandom = "0.3"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "=0.2.122"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+getrandom = { version = "0.3", features = ["wasm_js"] }
+web-sys = { version = "0.3", features = [
+  "Window", "WebSocket", "MessageEvent", "BinaryType", "CloseEvent",
+  "RtcPeerConnection", "RtcConfiguration", "RtcIceTransportPolicy", "RtcDataChannel", "RtcDataChannelInit",
+  "RtcDataChannelEvent", "RtcDataChannelState", "RtcDataChannelType", "RtcSessionDescriptionInit", "RtcSdpType",
+  "RtcIceCandidate", "RtcIceCandidateInit", "RtcPeerConnectionIceEvent", "RtcPeerConnectionState",
+] }

@@ -1,0 +1,30 @@
+<!doctype html><meta charset="utf-8"><title>engine-web test</title>
+<script type="module">
+// Join a room with the wasm engine and ping the host; report as JSON lines.
+import init, { WebEngine } from "../partii_engine.js";
+const q = new URLSearchParams(location.search);
+const out = (v) => console.log(JSON.stringify(v));
+await init();
+const t0 = performance.now();
+const e = new WebEngine(JSON.stringify({ edge: q.get("edge"), key: q.get("key"), conn: "", client: "web-test", player_token: null, no_webrtc: q.get("ws") === "1" }));
+let host = null, joined = false, sent = 0, echoed = 0, path = null, connectedAt = 0;
+const paths = [];
+setInterval(() => {
+  for (const ev of JSON.parse(e.poll())) {
+    if (ev.ev === "online" && !joined) { joined = true; e.join(q.get("code"), "phone", "Web", "null"); }
+    if (ev.ev === "joined") { host = ev.room.host; out({ ev: "joined", ms: Math.round(performance.now() - t0) }); }
+    if (ev.ev === "failed") out({ ev: "error", msg: ev.message });
+    if (ev.ev === "peer_connected" || ev.ev === "path_changed") { path = ev.path ?? ev.to; paths.push(path); }
+    if (ev.ev === "message") {
+      echoed++;
+      if (!connectedAt) { connectedAt = performance.now(); out({ ev: "connected", ms: Math.round(connectedAt - t0), path }); }
+    }
+  }
+  if (host !== null) { e.send(host, false, new Uint8Array(8)); sent++; }
+  if (connectedAt && performance.now() - connectedAt > Number(q.get("secs") ?? 6) * 1000) {
+    out({ ev: "summary", sent, echoed, paths, stats: JSON.parse(e.stats()) });
+    out({ ev: "done" });
+    connectedAt = Infinity;
+  }
+}, 50);
+</script>

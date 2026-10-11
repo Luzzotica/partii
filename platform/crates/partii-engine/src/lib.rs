@@ -10,3 +10,5 @@ pub mod native;
 pub use native::Engine;
 pub use core::{Config, Event, Member, Room, BROADCAST};
 pub use link::PathId;
+#[cfg(target_arch = "wasm32")]
+pub mod web;
