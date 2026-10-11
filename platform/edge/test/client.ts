@@ -33,7 +33,15 @@ export class Client {
     (this.ws as any).binaryType = "arraybuffer";
     this.ws.accept();
     this.ws.addEventListener("message", (e) => {
-      const f = typeof e.data === "string" ? JSON.parse(e.data) : { __bin: Array.from(new Uint8Array(e.data as ArrayBuffer)) };
+      let f: Frame;
+      if (typeof e.data !== "string") f = { __bin: Array.from(new Uint8Array(e.data as ArrayBuffer)) };
+      else {
+        try {
+          f = JSON.parse(e.data);
+        } catch {
+          f = { __text: e.data };
+        }
+      }
       const i = this.waiters.findIndex((w) => w.pred(f));
       if (i >= 0) this.waiters.splice(i, 1)[0].resolve(f);
       else this.frames.push(f);

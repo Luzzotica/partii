@@ -11,6 +11,11 @@ use std::collections::{BTreeMap, VecDeque};
 
 /// How often the driver should call `tick` (ms).
 pub const TICK_MS: f64 = 10.0;
+/// Keepalive: send "ping" when the socket has been quiet this long…
+const SOCK_PING_MS: f64 = 1000.0;
+/// …and give the socket up when nothing has arrived for this long (a phone
+/// that changed networks leaves a socket that never errors).
+const SOCK_DEAD_MS: f64 = 2500.0;
 const RECONNECT_BACKOFF_MS: [f64; 6] = [0.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0];
 const PC_RETRY_MS: [f64; 5] = [1000.0, 2000.0, 4000.0, 8000.0, 10000.0];
 /// A WebRTC path that has not opened by now is rebuilt.
@@ -156,6 +161,8 @@ pub struct Core {
     next_req: u32,
     reqs: BTreeMap<u32, Req>,
     out: VecDeque<Action>,
+    last_rx: f64,
+    last_ping: f64,
 }
 
 impl Core {
@@ -172,6 +179,8 @@ impl Core {
             next_req: 1,
             reqs: BTreeMap::new(),
             out: VecDeque::new(),
+            last_rx: 0.0,
+            last_ping: 0.0,
         }
     }
 
@@ -186,6 +195,25 @@ impl Core {
     }
     pub fn online(&self) -> bool {
         matches!(self.sock, Sock::Up)
+    }
+
+    /// Per-member link state: the path in use and what each path measures.
+    pub fn stats(&self) -> Value {
+        let peers: serde_json::Map<String, Value> = self
+            .peers
+            .iter()
+            .map(|(mid, p)| {
+                let paths: serde_json::Map<String, Value> = PathId::ALL
+                    .iter()
+                    .map(|id| {
+                        let s = p.link.path(*id);
+                        (id.name().to_string(), json!({"open": s.open, "rtt": s.rtt, "pings": s.pings, "pongs": s.pongs}))
+                    })
+                    .collect();
+                (mid.to_string(), json!({"current": p.link.current(), "retransmits": p.link.retransmits(), "paths": paths}))
+            })
+            .collect();
+        json!({"online": self.online(), "relay": self.relay, "peers": peers})
     }
 
     /// Everything the driver should do now.
@@ -267,6 +295,15 @@ impl Core {
     // ── Driver input ──
 
     pub fn tick(&mut self, now: f64) {
+        if matches!(self.sock, Sock::Up | Sock::Hello) {
+            if now - self.last_rx > SOCK_DEAD_MS {
+                // Silent socket: drop it and reconnect (the session resumes).
+                self.on_socket_closed(now);
+            } else if now - self.last_rx > SOCK_PING_MS && now - self.last_ping > SOCK_PING_MS {
+                self.last_ping = now;
+                self.out.push_back(Action::SendText("ping".into()));
+            }
+        }
         if let Sock::Down { retry_at } = self.sock {
             if now >= retry_at {
                 self.sock = Sock::Connecting;
@@ -281,8 +318,9 @@ impl Core {
         }
     }
 
-    pub fn on_socket_open(&mut self) {
+    pub fn on_socket_open(&mut self, now: f64) {
         self.sock = Sock::Hello;
+        self.last_rx = now;
         let mut hello = json!({"t": "hello", "v": 1, "key": self.cfg.key, "client": self.cfg.client});
         if let Some(t) = &self.cfg.player_token {
             hello["player_token"] = json!(t);
@@ -309,6 +347,10 @@ impl Core {
     }
 
     pub fn on_text(&mut self, text: &str, now: f64) {
+        self.last_rx = now;
+        if text == "pong" {
+            return;
+        }
         let Ok(m) = serde_json::from_str::<Value>(text) else { return };
         match m["t"].as_str().unwrap_or("") {
             "welcome" => self.welcome(&m, now),
@@ -375,6 +417,7 @@ impl Core {
     }
 
     pub fn on_binary(&mut self, b: &[u8], now: f64) {
+        self.last_rx = now;
         if b.len() < 3 || b[0] != RELAY_FRAME {
             return;
         }

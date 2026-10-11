@@ -63,7 +63,7 @@ fn up(a: &UpArgs) -> CliResult {
     if let Some(t) = &a.turn {
         for v in [
             "TURN_MODE:static".to_string(),
-            format!("TURN_STATIC_URLS:turn:{t}:3478?transport=udp,turn:{t}:3478?transport=tcp"),
+            format!("TURN_STATIC_URLS:stun:{t}:3478,turn:{t}:3478?transport=udp,turn:{t}:3478?transport=tcp"),
             "TURN_STATIC_USERNAME:partii".into(),
             "TURN_STATIC_CREDENTIAL:partii".into(),
         ] {

@@ -12,6 +12,35 @@ use std::process::Command;
 
 pub const CLIENT_IMAGE: &str = "partii-torture-client";
 pub const ROUTER_IMAGE: &str = "partii-torture-router";
+/// The shared "internet" every scenario's routers sit on (like the real
+/// one), with a coturn standing in for Cloudflare TURN in local runs.
+pub const INTERNET: &str = "pt-internet";
+pub const INTERNET_SUBNET: &str = "10.200.0.0/16";
+pub const COTURN: &str = "pt-coturn";
+pub const COTURN_IP: &str = "10.200.0.5";
+
+/// Create the shared internet and its coturn if they are missing.
+pub fn ensure_internet() -> Result<(), CliError> {
+    if docker(&["network", "inspect", INTERNET]).is_err() {
+        docker(&["network", "create", "--subnet", INTERNET_SUBNET, INTERNET])?;
+    }
+    let running = docker(&["ps", "-q", "--filter", &format!("name=^{COTURN}$")])?;
+    if running.is_empty() {
+        let _ = docker(&["rm", "-f", COTURN]);
+        docker(&[
+            "run", "-d", "--name", COTURN, "--network", INTERNET, "--ip", COTURN_IP, "coturn/coturn:latest",
+            "-n", "--listening-port=3478", "--external-ip", COTURN_IP, "--relay-ip", COTURN_IP, "--lt-cred-mech",
+            "--user=partii:partii", "--realm=partii", "--fingerprint", "--no-tls",
+            "--min-port=49152", "--max-port=49400", "--no-cli", "--log-file=stdout",
+        ])?;
+    }
+    Ok(())
+}
+
+pub fn remove_internet() {
+    let _ = docker(&["rm", "-f", COTURN]);
+    let _ = docker(&["network", "rm", INTERNET]);
+}
 
 pub fn docker(args: &[&str]) -> Result<String, CliError> {
     let o = Command::new("docker").args(args).output().map_err(|e| {
@@ -53,8 +82,7 @@ impl Topo {
 
     pub fn up(&self, s: &Scenario) -> Result<(), CliError> {
         self.down();
-        let wan = format!("{}-wan", self.prefix);
-        docker(&["network", "create", &wan])?;
+        let wan = INTERNET.to_string();
         self.side(&self.host.clone(), s.host_net, 1, &wan)?;
         self.side(&self.guest.clone(), s.guest_net, 2, &wan)?;
         if matches!(s.disruption, Some(Disruption::SwitchNetwork)) {

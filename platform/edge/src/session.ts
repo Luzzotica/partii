@@ -46,6 +46,13 @@ function unwrap<T>(r: RoomResult<T>): T {
 export class Session extends DurableObject<Env> {
   private st: SessState | null | undefined;
 
+  constructor(ctx: DurableObjectState, env: Env) {
+    super(ctx, env);
+    // Keepalive answered by the runtime without waking the object: clients
+    // send "ping" each second and treat silence as a dead socket.
+    ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair("ping", "pong"));
+  }
+
   private load(): SessState | null {
     if (this.st === undefined) this.st = (this.ctx.storage.kv.get("s") as SessState | undefined) ?? null;
     return this.st;

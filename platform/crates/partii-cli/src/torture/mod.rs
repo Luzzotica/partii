@@ -47,6 +47,9 @@ pub enum TortureCmd {
         /// The platform/ directory (holds torture/ and the Linux bot build).
         #[arg(long, default_value = ".")]
         platform_dir: PathBuf,
+        /// Leave the topologies up afterwards (for debugging with docker exec).
+        #[arg(long)]
+        keep: bool,
     },
     /// Rebuild a report from raw trial files (later files replace earlier
     /// trials of the same scenario).
@@ -90,9 +93,10 @@ pub fn run(cli: &Cli, cmd: &TortureCmd) -> CliResult {
             for (i, s) in scenario::all().iter().enumerate() {
                 topo::Topo::new(&format!("pt-{}", s.name), 60 + i as u8, vec![]).down();
             }
+            topo::remove_internet();
             Ok(json!({ "cleaned": true }))
         }
-        TortureCmd::Run { client, scenario: only, trials, jobs, key, label, out, platform_dir } => {
+        TortureCmd::Run { client, scenario: only, trials, jobs, key, label, out, platform_dir, keep } => {
             let scenarios: Vec<_> = scenario::all().into_iter().filter(|s| only.is_empty() || only.iter().any(|o| o == s.name)).collect();
             if scenarios.is_empty() {
                 return Err(CliError::usage(format!("no scenario named {:?}", only), "run `partii torture scenarios` for the names"));
@@ -106,6 +110,7 @@ pub fn run(cli: &Cli, cmd: &TortureCmd) -> CliResult {
             if cli.dry_run {
                 return Ok(json!({ "dry_run": true, "scenarios": scenarios.iter().map(|s| s.name).collect::<Vec<_>>(), "trials": trials, "client": client }));
             }
+            topo::ensure_internet()?;
             let target = trial::BotTarget { client: *client, api: cli.api.clone(), key };
             let all_idx: Vec<(usize, &str)> = scenario::all().iter().enumerate().map(|(i, s)| (i, s.name)).collect();
             let results = std::sync::Mutex::new(Vec::new());
@@ -127,7 +132,9 @@ pub fn run(cli: &Cli, cmd: &TortureCmd) -> CliResult {
                             progress(serde_json::to_value(&r).unwrap());
                             results.lock().unwrap().push(r);
                         }
-                        topo.down();
+                        if !*keep {
+                            topo.down();
+                        }
                     });
                 }
             });

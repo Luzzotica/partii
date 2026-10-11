@@ -51,6 +51,10 @@ pub enum Cmd {
 }
 
 fn main() {
+    // Library logs only on request (RUST_LOG), always to stderr.
+    if std::env::var_os("RUST_LOG").is_some() {
+        let _ = env_logger::Builder::from_default_env().format_timestamp_millis().try_init();
+    }
     let cli = match Cli::try_parse() {
         Ok(c) => c,
         Err(e) => {

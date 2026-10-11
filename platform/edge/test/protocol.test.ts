@@ -30,6 +30,12 @@ describe("hello", () => {
     expect(Math.abs(r.server_time - Date.now())).toBeLessThan(5000);
   });
 
+  it("answers the keepalive without a round trip through the session", async () => {
+    const c = await connected();
+    c.ws.send("ping");
+    expect(await c.next((f) => f.__text === "pong")).toEqual({ __text: "pong" });
+  });
+
   it("rejects unknown messages and non-JSON", async () => {
     const c = await connected();
     expect(await c.req({ t: "nope" })).toMatchObject({ t: "err", code: "bad_request" });

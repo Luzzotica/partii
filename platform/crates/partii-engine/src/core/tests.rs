@@ -6,7 +6,7 @@ fn core(no_webrtc: bool) -> Core {
 
 fn online(c: &mut Core, relay: &str) {
     c.tick(0.0);
-    c.on_socket_open();
+    c.on_socket_open(0.0);
     let ice = if relay == "turn" {
         json!([{"urls": ["stun:s:3478", "turn:t:3478", "turns:t:443"], "username": "u", "credential": "p"}])
     } else {
@@ -43,7 +43,7 @@ fn connects_then_says_hello_then_goes_online() {
     let mut c = core(true);
     c.tick(0.0);
     assert!(matches!(c.drain()[..], [Action::Connect { .. }]));
-    c.on_socket_open();
+    c.on_socket_open(0.0);
     let hello = texts(&c.drain());
     assert_eq!(hello[0]["t"], "hello");
     assert_eq!(hello[0]["v"], 1);
@@ -177,7 +177,7 @@ fn a_dropped_socket_reconnects_and_resumes_the_room() {
     assert!(c.drain().is_empty(), "second retry waits");
     c.tick(400.0);
     assert!(matches!(c.drain()[..], [Action::Connect { .. }]));
-    c.on_socket_open();
+    c.on_socket_open(0.0);
     c.drain();
     c.on_text(&json!({"t": "welcome", "resumed": true, "relay": "ws", "ice_servers": [], "room": room(2, &[1, 2])}).to_string(), 450.0);
     assert!(events(&c.drain()).contains(&Event::Online { resumed: true, relay: "ws".into() }));
@@ -194,7 +194,7 @@ fn a_fresh_session_after_a_long_drop_closes_the_room() {
     c.on_text(&json!({"t": "ok", "id": id, "room": room(2, &[1, 2])}).to_string(), 0.0);
     c.on_socket_closed(1.0);
     c.tick(2.0);
-    c.on_socket_open();
+    c.on_socket_open(0.0);
     c.drain();
     c.on_text(r#"{"t":"welcome","resumed":false,"relay":"ws","ice_servers":[]}"#, 3.0);
     assert!(events(&c.drain()).contains(&Event::RoomClosed { reason: "expired".into() }));
@@ -213,4 +213,19 @@ fn suspended_members_lose_the_ws_path_until_they_resume() {
     c.on_text(r#"{"t":"member_resumed","mid":2}"#, 2.0);
     assert!(c.link(2).unwrap().path(PathId::Ws).open);
     assert_eq!(c.room().unwrap().members[1].status, "active");
+}
+
+#[test]
+fn a_silent_socket_is_pinged_then_replaced() {
+    let mut c = core(true);
+    online(&mut c, "ws");
+    c.tick(1200.0);
+    assert!(c.drain().contains(&Action::SendText("ping".into())));
+    c.on_text("pong", 1300.0);
+    c.tick(3000.0);
+    assert!(c.online(), "a pong keeps it alive");
+    c.tick(5000.0);
+    let acts = c.drain();
+    assert!(acts.iter().any(|a| matches!(a, Action::Emit(Event::Offline))));
+    assert!(acts.iter().any(|a| matches!(a, Action::Connect { .. })), "reconnects at once");
 }

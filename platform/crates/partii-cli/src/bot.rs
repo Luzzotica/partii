@@ -108,6 +108,9 @@ fn guest(cli: &Cli, key: &Option<String>, code: &str, secs: u64, ws_only: bool) 
         return Ok(json!({"role": "guest", "error": m}));
     }
     let online_ms = ms();
+    // Apps open their socket at launch; timings run from the join itself.
+    let t_join = Instant::now();
+    let jms = || t_join.elapsed().as_millis() as u64;
     let req = e.join(code, "game", "bot-guest", Value::Null);
     let mut host: Option<u16> = None;
     let mut path: Option<PathId> = None;
@@ -145,7 +148,7 @@ fn guest(cli: &Cli, key: &Option<String>, code: &str, secs: u64, ws_only: bool) 
         let Some(ev) = e.next_event(Duration::from_millis(5)) else { continue };
         match ev {
             Event::Joined { req: r, room } if r == req => {
-                line(json!({"ev": "joined", "ms": ms(), "online_ms": online_ms}));
+                line(json!({"ev": "joined", "ms": jms(), "online_ms": online_ms}));
                 host = Some(room.host);
             }
             Event::Failed { req: r, code: c, message } if r == req => {
@@ -173,7 +176,7 @@ fn guest(cli: &Cli, key: &Option<String>, code: &str, secs: u64, ws_only: bool) 
                 if connected_at.is_none() {
                     connected_at = Some(Instant::now());
                     end = Some(Instant::now() + Duration::from_secs(secs));
-                    line(json!({"ev": "connected", "ms": ms(), "rung": path}));
+                    line(json!({"ev": "connected", "ms": jms(), "rung": path}));
                 }
                 rtts.push(rtt);
             }
@@ -185,7 +188,8 @@ fn guest(cli: &Cli, key: &Option<String>, code: &str, secs: u64, ws_only: bool) 
     rtts.sort_by(|a, b| a.total_cmp(b));
     let pct = |p: f64| rtts.get(((rtts.len() as f64 - 1.0) * p).round() as usize).copied();
     let tail = echo_times.iter().filter(|t| t.elapsed() < Duration::from_secs(3)).count();
-    let summary = json!({"ev": "summary", "sent": sent, "echoed": rtts.len(), "tail_echoes": tail, "rtt_p50": pct(0.5), "rtt_p95": pct(0.95), "longest_gap_ms": longest_gap as u64, "rung": path, "paths": paths});
+    let stats = e.stats();
+    let summary = json!({"ev": "summary", "stats": stats, "sent": sent, "echoed": rtts.len(), "tail_echoes": tail, "rtt_p50": pct(0.5), "rtt_p95": pct(0.95), "longest_gap_ms": longest_gap as u64, "rung": path, "paths": paths});
     line(summary.clone());
     line(json!({"ev": "done"}));
     Ok(json!({"role": "guest", "error": err, "summary": summary}))

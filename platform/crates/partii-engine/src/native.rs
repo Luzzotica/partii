@@ -18,7 +18,7 @@ use tokio_tungstenite::tungstenite::Message;
 use webrtc::data_channel::{DataChannel, DataChannelEvent, RTCDataChannelInit};
 use webrtc::peer_connection::{
     PeerConnection, PeerConnectionBuilder, PeerConnectionEventHandler, RTCConfigurationBuilder, RTCIceCandidateInit, RTCIceServer,
-    RTCIceTransportPolicy, RTCPeerConnectionIceEvent, RTCPeerConnectionState, RTCSessionDescription,
+    RTCIceTransportPolicy, RTCPeerConnectionIceEvent, RTCPeerConnectionState, RTCSessionDescription, SettingEngineBuilder,
 };
 
 enum Cmd {
@@ -29,6 +29,7 @@ enum Cmd {
     Kick(u16),
     Send { to: u16, reliable: bool, bytes: Vec<u8> },
     Report(Value),
+    Stats(async_channel::Sender<Value>),
     Shutdown,
 }
 
@@ -115,6 +116,12 @@ impl Engine {
     pub fn report(&self, metrics: Value) {
         let _ = self.cmd.try_send(Cmd::Report(metrics));
     }
+    /// Link state per member (path in use, RTT per path).
+    pub fn stats(&self) -> Value {
+        let (tx, rx) = async_channel::bounded(1);
+        let _ = self.cmd.try_send(Cmd::Stats(tx));
+        rx.recv_blocking().unwrap_or(Value::Null)
+    }
 }
 
 impl Drop for Engine {
@@ -125,6 +132,11 @@ impl Drop for Engine {
 
 fn trace() -> bool {
     std::env::var_os("PARTII_TRACE").is_some()
+}
+
+fn t_ms() -> u128 {
+    static T0: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+    T0.get_or_init(Instant::now).elapsed().as_millis()
 }
 
 struct PcHandle {
@@ -153,6 +165,7 @@ async fn actor(cfg: Config, cmds: async_channel::Receiver<Cmd>, events: async_ch
                 Ok(Cmd::Kick(m)) => { core.kick(m); }
                 Ok(Cmd::Send { to, reliable, bytes }) => core.send(to, reliable, &bytes, now()),
                 Ok(Cmd::Report(m)) => core.report(m),
+                Ok(Cmd::Stats(reply)) => { let _ = reply.try_send(core.stats()); }
                 Ok(Cmd::Shutdown) | Err(_) => break,
             },
             io = io_rx.recv() => {
@@ -160,14 +173,14 @@ async fn actor(cfg: Config, cmds: async_channel::Receiver<Cmd>, events: async_ch
                 let t = now();
                 if trace() {
                     match &io {
-                        Io::PcOpen { mid, path, gen } => eprintln!("[partii] pc open {mid}/{} g{gen}", path.name()),
-                        Io::PcClosed { mid, path, gen } => eprintln!("[partii] pc closed {mid}/{} g{gen}", path.name()),
-                        Io::PcSignal { mid, path, gen, signal } => eprintln!("[partii] pc signal out {mid}/{} g{gen} {}", path.name(), signal["type"]),
+                        Io::PcOpen { mid, path, gen } => eprintln!("[partii {}ms] pc open {mid}/{} g{gen}", t_ms(), path.name()),
+                        Io::PcClosed { mid, path, gen } => eprintln!("[partii {}ms] pc closed {mid}/{} g{gen}", t_ms(), path.name()),
+                        Io::PcSignal { mid, path, gen, signal } => eprintln!("[partii {}ms] pc signal out {mid}/{} g{gen} {}", t_ms(), path.name(), signal["type"]),
                         _ => {}
                     }
                 }
                 match io {
-                    Io::SockOpen(e) if e == sock_epoch => core.on_socket_open(),
+                    Io::SockOpen(e) if e == sock_epoch => core.on_socket_open(t),
                     Io::SockText(e, s) if e == sock_epoch => core.on_text(&s, t),
                     Io::SockBinary(e, b) if e == sock_epoch => core.on_binary(&b, t),
                     Io::SockClosed(e) if e == sock_epoch => { sock_out = None; core.on_socket_closed(t); }
@@ -199,14 +212,14 @@ async fn actor(cfg: Config, cmds: async_channel::Receiver<Cmd>, events: async_ch
                     }
                 }
                 Action::CreatePc { mid, path, gen, offerer, ice, relay_only } => {
-                    if trace() { eprintln!("[partii] create pc {mid}/{} g{gen} offerer={offerer} relay_only={relay_only} ice={}", path.name(), ice.len()); }
+                    if trace() { eprintln!("[partii {}ms] create pc {mid}/{} g{gen} offerer={offerer} relay_only={relay_only} ice={}", t_ms(), path.name(), ice.len()); }
                     let (sig_tx, sig_rx) = async_channel::unbounded();
                     let (data_tx, data_rx) = async_channel::unbounded();
                     pcs.insert((mid, path), PcHandle { gen, signals: sig_tx, data: data_tx });
                     tokio::spawn(peer(mid, path, gen, offerer, ice, relay_only, sig_rx, data_rx, io_tx.clone()));
                 }
                 Action::PcSignal { mid, path, gen, signal } => {
-                    if trace() { eprintln!("[partii] pc signal in {mid}/{} g{gen} {} known={:?}", path.name(), signal["type"], pcs.get(&(mid, path)).map(|h| h.gen)); }
+                    if trace() { eprintln!("[partii {}ms] pc signal in {mid}/{} g{gen} {} known={:?}", t_ms(), path.name(), signal["type"], pcs.get(&(mid, path)).map(|h| h.gen)); }
                     if let Some(h) = pcs.get(&(mid, path)).filter(|h| h.gen == gen) {
                         let _ = h.signals.try_send(signal);
                     }
@@ -305,8 +318,19 @@ async fn peer(
     let policy = if relay_only { RTCIceTransportPolicy::Relay } else { RTCIceTransportPolicy::All };
     let config = RTCConfigurationBuilder::new().with_ice_servers(servers).with_ice_transport_policy(policy).build();
     let (ev_tx, ev_rx) = async_channel::unbounded();
+    // Each connection has one job (relay-only, or never-relay), so there is
+    // nothing better to wait for: accept the first working pair at once.
+    // Health is the link's call (pings), so ICE's own timers stay short.
+    let settings = SettingEngineBuilder::default()
+        .with_host_acceptance_min_wait(Some(Duration::ZERO))
+        .with_srflx_acceptance_min_wait(Some(Duration::ZERO))
+        .with_prflx_acceptance_min_wait(Some(Duration::ZERO))
+        .with_relay_acceptance_min_wait(Some(Duration::ZERO))
+        .with_ice_timeouts(Some(Duration::from_secs(3)), Some(Duration::from_secs(8)), Some(Duration::from_secs(1)))
+        .build();
     let pc = match PeerConnectionBuilder::new()
         .with_configuration(config)
+        .with_setting_engine(settings)
         .with_handler(Arc::new(Handler(ev_tx)))
         .with_udp_addrs(vec!["0.0.0.0:0".to_string()])
         .with_data_channel_send_buffer_limit(256 * 1024)

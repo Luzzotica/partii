@@ -39,6 +39,9 @@ impl PathId {
 pub const PING_MS: f64 = 250.0;
 pub const DEAD_MS: f64 = 1000.0;
 pub const SWITCH_HOLD_MS: f64 = 1000.0;
+/// Leaving the ws relay for WebRTC needs less proof (the relay is the
+/// expensive last rung, and a flap back costs nothing but a few packets).
+pub const LEAVE_WS_HOLD_MS: f64 = 250.0;
 /// The ws relay is the last rung: every packet is an edge request and it
 /// rides TCP. Score it this much worse so play leaves it for any healthy
 /// WebRTC path that is not clearly slower.
@@ -275,7 +278,8 @@ impl Link {
         }
         match self.candidate {
             Some((c, since)) if c == b => {
-                if now - since >= SWITCH_HOLD_MS || rc.is_none() {
+                let hold = if cur == PathId::Ws { LEAVE_WS_HOLD_MS } else { SWITCH_HOLD_MS };
+                if now - since >= hold || rc.is_none() {
                     self.switch(b, now);
                 }
             }
@@ -386,9 +390,9 @@ mod tests {
         s.open(PathId::Ws, true);
         s.step(500.0);
         s.open(PathId::Turn, true);
-        s.step(300.0);
-        assert_eq!(s.a.current(), PathId::Ws, "holds for a second before switching");
-        s.step(1200.0);
+        s.step(100.0);
+        assert_eq!(s.a.current(), PathId::Ws, "holds briefly before leaving the relay");
+        s.step(600.0);
         assert_eq!(s.a.current(), PathId::Turn);
         s.open(PathId::Direct, true);
         s.step(1500.0);

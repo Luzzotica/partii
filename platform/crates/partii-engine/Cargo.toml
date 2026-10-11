@@ -20,7 +20,7 @@ optional = true
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio-tungstenite = { version = "0.30", features = ["rustls-tls-webpki-roots"], optional = true }
-webrtc = { version = "0.21", optional = true }
+webrtc = { package = "partii-webrtc", path = "../../vendor/webrtc", optional = true }
 async-channel = { version = "2", optional = true }
 bytes = { version = "1", optional = true }
 async-trait = { version = "0.1", optional = true }

@@ -26,8 +26,10 @@ pub fn summarize(results: &[TrialResult], name: &str) -> Value {
     let n = rs.len();
     let ok = rs.iter().filter(|r| r.connected).count();
     let mut rungs: BTreeMap<String, usize> = BTreeMap::new();
+    let mut settled: BTreeMap<String, usize> = BTreeMap::new();
     for r in rs.iter().filter(|r| r.connected) {
         *rungs.entry(r.rung.clone().unwrap_or_else(|| "unknown".into())).or_default() += 1;
+        *settled.entry(r.settled.clone().or(r.rung.clone()).unwrap_or_else(|| "unknown".into())).or_default() += 1;
     }
     let col = |f: &dyn Fn(&TrialResult) -> Option<f64>| rs.iter().filter_map(|r| f(r)).collect::<Vec<f64>>();
     let create = col(&|r| r.create_ms.map(|x| x as f64));
@@ -46,6 +48,7 @@ pub fn summarize(results: &[TrialResult], name: &str) -> Value {
         "connected": ok,
         "success_rate": if n > 0 { ok as f64 / n as f64 } else { 0.0 },
         "rungs": rungs,
+        "settled": settled,
         "create_ms": {"p50": pct(create.clone(), 0.5), "p95": pct(create, 0.95)},
         "join_ms": {"p50": pct(join.clone(), 0.5), "p95": pct(join, 0.95)},
         "connect_ms": {"p50": pct(connect.clone(), 0.5), "p95": pct(connect, 0.95)},
@@ -76,19 +79,21 @@ pub fn write(dir: &Path, label: &str, client: Client, api: &str, scenarios: &[Sc
     let _ = writeln!(md, "- When: {}", chrono_now());
     let _ = writeln!(md, "- Overall: {ok}/{total} trials connected ({:.1}%)\n", if total > 0 { 100.0 * ok as f64 / total as f64 } else { 0.0 });
     let _ = writeln!(md, "Times are milliseconds. *Create* is the host's create call until it has a room code. *Join* is the guest's join call until it is in the room. *Connect* is from the guest starting until its first message comes back from the host. *Rung* is the path the connection used.\n");
-    let _ = writeln!(md, "| Scenario | Connected | Rungs | Create p50 / p95 | Join p50 / p95 | Connect p50 / p95 | RTT p50 | Longest stall p95 | Recovered |");
-    let _ = writeln!(md, "|---|---|---|---|---|---|---|---|---|");
+    let _ = writeln!(md, "| Scenario | Connected | Connected on | Settled on | Create p50 / p95 | Join p50 / p95 | Connect p50 / p95 | RTT p50 | Longest stall p95 | Recovered |");
+    let _ = writeln!(md, "|---|---|---|---|---|---|---|---|---|---|");
     for (s, v) in scenarios.iter().zip(&sums) {
-        let rungs = v["rungs"].as_object().map(|m| m.iter().map(|(k, n)| format!("{k} {n}")).collect::<Vec<_>>().join(", ")).unwrap_or_default();
+        let tally = |k: &str| v[k].as_object().map(|m| m.iter().map(|(k, n)| format!("{k} {n}")).collect::<Vec<_>>().join(", ")).filter(|s| !s.is_empty()).unwrap_or_else(|| "–".into());
+        let (rungs, settled) = (tally("rungs"), tally("settled"));
         let pair = |k: &str| format!("{} / {}", fmt_ms(v[k]["p50"].as_f64()), fmt_ms(v[k]["p95"].as_f64()));
         let rec = if v["recovered"].is_null() { "–".to_string() } else { format!("{}/{}", v["recovered"]["yes"], v["recovered"]["of"]) };
         let _ = writeln!(
             md,
-            "| {} | {}/{} | {} | {} | {} | {} | {} | {} | {} |",
+            "| {} | {}/{} | {} | {} | {} | {} | {} | {} | {} | {} |",
             s.name,
             v["connected"],
             v["trials"],
-            if rungs.is_empty() { "–".into() } else { rungs },
+            rungs,
+            settled,
             pair("create_ms"),
             pair("join_ms"),
             pair("connect_ms"),

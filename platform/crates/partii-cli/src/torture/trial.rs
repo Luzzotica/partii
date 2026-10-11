@@ -36,6 +36,9 @@ pub struct TrialResult {
     pub join_ms: Option<u64>,
     pub connect_ms: Option<u64>,
     pub rung: Option<String>,
+    /// The path in use at the end of the trial (engine: after upgrades).
+    #[serde(default)]
+    pub settled: Option<String>,
     pub rtt_p50: Option<f64>,
     pub rtt_p95: Option<f64>,
     pub longest_gap_ms: Option<u64>,
@@ -150,8 +153,9 @@ fn run_inner(topo: &Topo, s: &Scenario, t: &BotTarget, secs: u64, r: &mut TrialR
                 r.rtt_p50 = v["rtt_p50"].as_f64();
                 r.rtt_p95 = v["rtt_p95"].as_f64();
                 r.longest_gap_ms = v["longest_gap_ms"].as_u64();
+                r.settled = v["rung"].as_str().map(str::to_string);
                 if r.rung.is_none() {
-                    r.rung = v["rung"].as_str().map(str::to_string);
+                    r.rung = r.settled.clone();
                 }
                 if s.disruption.is_some() && r.connected {
                     r.recovered = Some(v["tail_echoes"].as_u64().unwrap_or(0) > 0);
