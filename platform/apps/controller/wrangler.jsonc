@@ -1,0 +1,8 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "partii-controller",
+  "compatibility_date": "2026-09-01",
+  // A static single-page app: every path serves index.html.
+  "assets": { "directory": "./dist", "not_found_handling": "single-page-application" },
+  "env": { "staging": { "name": "partii-controller-staging" } }
+}
