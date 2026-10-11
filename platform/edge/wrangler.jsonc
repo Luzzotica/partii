@@ -11,11 +11,22 @@
     ]
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Session", "Room"] }],
-  "vars": { "PARTII_ENV": "dev", "KEY_SECRET": "dev-only-key-secret", "TURN_MODE": "none" },
+  "vars": {
+    "PARTII_ENV": "dev",
+    "KEY_SECRET": "dev-only-key-secret",
+    "TURN_MODE": "none",
+    "ADMIN_TOKEN": "dev-admin-token",
+    "PLAYER_TOKEN_SECRET": "dev-only-player-secret",
+    "ALLOW_FAKE_LOGIN": "1",
+    "ALLOW_FAKE_STORE": "1",
+    "EMAIL_MODE": "dev"
+  },
+  "d1_databases": [{ "binding": "DB", "database_name": "partii-dev", "database_id": "local-dev", "migrations_dir": "migrations" }],
+  "r2_buckets": [{ "binding": "FILES", "bucket_name": "partii-dev-files" }],
   "env": {
     "staging": {
       "name": "partii-edge-staging",
-      "vars": { "PARTII_ENV": "staging", "TURN_MODE": "cloudflare" },
+      "vars": { "PARTII_ENV": "staging", "TURN_MODE": "cloudflare", "ALLOW_FAKE_LOGIN": "1", "ALLOW_FAKE_STORE": "1", "EMAIL_MODE": "dev", "STORE_URL": "https://partii-store-staging.partii-games.workers.dev" },
       "durable_objects": {
         "bindings": [
           { "name": "SESSION", "class_name": "Session" },

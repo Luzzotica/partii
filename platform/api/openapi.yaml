@@ -1,0 +1,587 @@
+openapi: 3.1.0
+info:
+  title: partii platform API
+  version: 1.0.0
+  description: |
+    The one source of truth for partii's HTTP API. `api/gen.mjs` generates the
+    edge's route table, the Rust client the CLI uses, the TypeScript client
+    the web apps use, and docs/API.md. Every response is JSON:
+    `{"ok":true,...}` or `{"ok":false,"error":{"code","message","hint"}}`.
+
+    Auth (`x-auth`):
+    - `public`: nothing.
+    - `key`: a publishable key in `X-Partii-Key` (games and web pages).
+    - `player`: `X-Partii-Key` plus `Authorization: Bearer <player token>`.
+    - `developer`: `Authorization: Bearer <developer token>` (`PARTII_TOKEN`).
+    - `admin`: `Authorization: Bearer <admin token>` (platform operators).
+    - `stripe`: a Stripe-signed webhook.
+
+    `x-cli` is the `partii` command that calls the operation.
+servers:
+  - url: http://127.0.0.1:8787
+  - url: https://partii-edge-staging.partii-games.workers.dev
+
+components:
+  schemas:
+    Error:
+      type: object
+      properties:
+        code: { type: string }
+        message: { type: string }
+        hint: { type: string }
+    Developer:
+      type: object
+      properties:
+        id: { type: string }
+        email: { type: string }
+        name: { type: string }
+        created_at: { type: integer }
+    Token:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        created_at: { type: integer }
+        token: { type: string, description: "Only in the create response." }
+    Project:
+      type: object
+      properties:
+        id: { type: string, pattern: "^[a-z0-9]{1,32}$" }
+        name: { type: string }
+        plan: { type: string, enum: [free, pro] }
+        created_at: { type: integer }
+    Key:
+      type: object
+      properties:
+        project: { type: string }
+        key_id: { type: string }
+        name: { type: string }
+        key: { type: string, description: "The publishable key (pk_...). Safe to ship in a client." }
+        revoked_at: { type: [integer, "null"] }
+    Game:
+      type: object
+      properties:
+        id: { type: string, pattern: "^[a-z0-9-]{1,40}$" }
+        project: { type: string }
+        title: { type: string }
+        tagline: { type: string }
+        description: { type: string }
+        price_cents: { type: integer }
+        currency: { type: string }
+        sale: { type: [object, "null"], properties: { percent: { type: integer }, starts_at: { type: integer }, ends_at: { type: integer } } }
+        demo: { type: [object, "null"], description: "The demo gate, e.g. {\"free_levels\": 20}. Null means no free part." }
+        platforms: { type: array, items: { type: string, enum: [macos, windows, linux, ios, android, web] } }
+        store: { type: object, description: "Store page media and links: cover, screenshots, trailer, app store links." }
+        status: { type: string, enum: [draft, published] }
+        updated_at: { type: integer }
+    Build:
+      type: object
+      properties:
+        id: { type: string }
+        game: { type: string }
+        platform: { type: string }
+        version: { type: string }
+        channel: { type: string }
+        size: { type: integer }
+        sha256: { type: string }
+        created_at: { type: integer }
+    Player:
+      type: object
+      properties:
+        id: { type: string }
+        display_name: { type: string }
+        providers: { type: array, items: { type: string } }
+        test: { type: boolean }
+        created_at: { type: integer }
+    Entitlement:
+      type: object
+      properties:
+        game: { type: string }
+        sku: { type: string }
+        source: { type: string, enum: [stripe, steam, appstore, play, grant, test, code] }
+        ref: { type: string }
+        created_at: { type: integer }
+    Save:
+      type: object
+      properties:
+        slot: { type: string }
+        rev: { type: integer }
+        size: { type: integer }
+        updated_at: { type: integer }
+        data: { description: "The save's JSON (on reads of one slot)." }
+    ContentManifest:
+      type: object
+      properties:
+        game: { type: string }
+        channel: { type: string }
+        version: { type: string }
+        files: { type: object, additionalProperties: { type: object, properties: { sha256: { type: string }, size: { type: integer } } } }
+
+paths:
+  /health:
+    get:
+      operationId: health
+      summary: Is the edge up?
+      x-auth: public
+      x-cli: status
+      responses: { "200": { description: ok } }
+
+  /v1/admin/developers:
+    post:
+      operationId: adminCreateDeveloper
+      summary: Create a developer and their first token (platform operators).
+      x-auth: admin
+      x-cli: admin developers create
+      requestBody: { content: { application/json: { schema: { type: object, required: [email], properties: { email: { type: string }, name: { type: string } } } } } }
+      responses: { "200": { description: "{developer, token}" } }
+
+  /v1/me:
+    get:
+      operationId: me
+      summary: The developer this token belongs to.
+      x-auth: developer
+      x-cli: whoami
+      responses: { "200": { description: "{developer}" } }
+
+  /v1/tokens:
+    get:
+      operationId: tokensList
+      summary: Your developer tokens (without secrets).
+      x-auth: developer
+      x-cli: tokens list
+      responses: { "200": { description: "{tokens}" } }
+    post:
+      operationId: tokensCreate
+      summary: Make another developer token (shown once).
+      x-auth: developer
+      x-cli: tokens create
+      requestBody: { content: { application/json: { schema: { type: object, properties: { name: { type: string } } } } } }
+      responses: { "200": { description: "{token}" } }
+  /v1/tokens/{token_id}:
+    delete:
+      operationId: tokensRevoke
+      summary: Revoke a developer token.
+      x-auth: developer
+      x-cli: tokens revoke
+      parameters: [{ name: token_id, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: "{revoked}" } }
+
+  /v1/projects:
+    get:
+      operationId: projectsList
+      summary: Your projects.
+      x-auth: developer
+      x-cli: projects list
+      responses: { "200": { description: "{projects}" } }
+  /v1/projects/{project}:
+    put:
+      operationId: projectsPut
+      summary: Create or update a project (idempotent on its id).
+      x-auth: developer
+      x-cli: projects put
+      parameters: [{ name: project, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { name: { type: string } } } } } }
+      responses: { "200": { description: "{project}" } }
+    get:
+      operationId: projectsGet
+      summary: One project.
+      x-auth: developer
+      x-cli: projects get
+      parameters: [{ name: project, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: "{project}" } }
+
+  /v1/projects/{project}/keys:
+    get:
+      operationId: keysList
+      summary: A project's publishable keys.
+      x-auth: developer
+      x-cli: keys list
+      parameters: [{ name: project, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: "{keys}" } }
+    post:
+      operationId: keysCreate
+      summary: Make a publishable key (idempotent on key_id).
+      x-auth: developer
+      x-cli: keys create
+      parameters: [{ name: project, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { key_id: { type: string }, name: { type: string } } } } } }
+      responses: { "200": { description: "{key}" } }
+  /v1/projects/{project}/keys/{key_id}:
+    delete:
+      operationId: keysRevoke
+      summary: Revoke a publishable key (clients using it are refused within a minute).
+      x-auth: developer
+      x-cli: keys revoke
+      parameters:
+        - { name: project, in: path, required: true, schema: { type: string } }
+        - { name: key_id, in: path, required: true, schema: { type: string } }
+      responses: { "200": { description: "{revoked}" } }
+
+  /v1/projects/{project}/timings:
+    get:
+      operationId: timingsList
+      summary: Recent connection timings clients reported (create, join, connect, path).
+      x-auth: developer
+      x-cli: timings
+      parameters:
+        - { name: project, in: path, required: true, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer } }
+      responses: { "200": { description: "{timings, summary}" } }
+
+  /v1/games:
+    get:
+      operationId: gamesList
+      summary: Your games.
+      x-auth: developer
+      x-cli: games list
+      responses: { "200": { description: "{games}" } }
+  /v1/games/{game}:
+    put:
+      operationId: gamesPut
+      summary: Create or update a game's store page and settings (idempotent).
+      x-auth: developer
+      x-cli: games put
+      parameters: [{ name: game, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { $ref: "#/components/schemas/Game" } } } }
+      responses: { "200": { description: "{game}" } }
+    get:
+      operationId: gamesGet
+      summary: One of your games (drafts too).
+      x-auth: developer
+      x-cli: games get
+      parameters: [{ name: game, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: "{game}" } }
+  /v1/games/{game}/publish:
+    post:
+      operationId: gamesPublish
+      summary: Put the game on the store.
+      x-auth: developer
+      x-cli: games publish
+      parameters: [{ name: game, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: "{game}" } }
+  /v1/games/{game}/unpublish:
+    post:
+      operationId: gamesUnpublish
+      summary: Take the game off the store (owners keep it).
+      x-auth: developer
+      x-cli: games unpublish
+      parameters: [{ name: game, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: "{game}" } }
+  /v1/games/{game}/price:
+    put:
+      operationId: gamesPrice
+      summary: Set the price.
+      x-auth: developer
+      x-cli: games price
+      parameters: [{ name: game, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [price_cents], properties: { price_cents: { type: integer }, currency: { type: string } } } } } }
+      responses: { "200": { description: "{game}" } }
+  /v1/games/{game}/sale:
+    put:
+      operationId: gamesSale
+      summary: Start a sale (percent off between two times).
+      x-auth: developer
+      x-cli: games sale
+      parameters: [{ name: game, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [percent], properties: { percent: { type: integer }, starts_at: { type: integer }, ends_at: { type: integer } } } } } }
+      responses: { "200": { description: "{game}" } }
+    delete:
+      operationId: gamesSaleEnd
+      summary: End the sale.
+      x-auth: developer
+      x-cli: games sale-end
+      parameters: [{ name: game, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: "{game}" } }
+
+  /v1/games/{game}/builds:
+    get:
+      operationId: buildsList
+      summary: A game's uploaded builds.
+      x-auth: developer
+      x-cli: builds list
+      parameters: [{ name: game, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: "{builds}" } }
+    post:
+      operationId: buildsUpload
+      summary: Upload a build (the request body is the file).
+      x-auth: developer
+      x-cli: builds upload
+      x-body: binary
+      parameters:
+        - { name: game, in: path, required: true, schema: { type: string } }
+        - { name: platform, in: query, required: true, schema: { type: string } }
+        - { name: version, in: query, required: true, schema: { type: string } }
+        - { name: channel, in: query, schema: { type: string } }
+        - { name: filename, in: query, schema: { type: string } }
+      responses: { "200": { description: "{build}" } }
+
+  /v1/games/{game}/codes:
+    get:
+      operationId: codesList
+      summary: The game's redeemable keys.
+      x-auth: developer
+      x-cli: codes list
+      parameters: [{ name: game, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: "{codes}" } }
+    post:
+      operationId: codesCreate
+      summary: Make redeemable keys (for press, bundles, friends).
+      x-auth: developer
+      x-cli: codes create
+      parameters: [{ name: game, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { count: { type: integer }, note: { type: string } } } } } }
+      responses: { "200": { description: "{codes}" } }
+
+  /v1/games/{game}/entitlements:
+    get:
+      operationId: entitlementsList
+      summary: Who owns the game, and how.
+      x-auth: developer
+      x-cli: entitlements list
+      parameters: [{ name: game, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: "{entitlements}" } }
+    post:
+      operationId: entitlementsGrant
+      summary: Give a player the game (support, gifts, testers).
+      x-auth: developer
+      x-cli: entitlements grant
+      parameters: [{ name: game, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [player], properties: { player: { type: string }, note: { type: string } } } } } }
+      responses: { "200": { description: "{entitlement}" } }
+  /v1/games/{game}/entitlements/{player}:
+    delete:
+      operationId: entitlementsRevoke
+      summary: Take the game back from a player (refunds).
+      x-auth: developer
+      x-cli: entitlements revoke
+      parameters:
+        - { name: game, in: path, required: true, schema: { type: string } }
+        - { name: player, in: path, required: true, schema: { type: string } }
+      responses: { "200": { description: "{revoked}" } }
+
+  /v1/games/{game}/sales:
+    get:
+      operationId: salesList
+      summary: Purchases of the game.
+      x-auth: developer
+      x-cli: sales
+      parameters: [{ name: game, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: "{purchases, totals}" } }
+
+  /v1/games/{game}/content:
+    post:
+      operationId: contentPush
+      summary: Publish a live content version (levels, data, scripts) to a channel.
+      x-auth: developer
+      x-cli: content push
+      parameters: [{ name: game, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [version, files], properties: { version: { type: string }, channel: { type: string }, files: { type: object, additionalProperties: { type: string, description: "base64" } } } } } } }
+      responses: { "200": { description: "{manifest}" } }
+
+  /v1/test/players:
+    post:
+      operationId: testPlayersCreate
+      summary: Make a test player and its token (for your own games' tests).
+      x-auth: developer
+      x-cli: test players create
+      requestBody: { content: { application/json: { schema: { type: object, properties: { name: { type: string } } } } } }
+      responses: { "200": { description: "{player, player_token}" } }
+  /v1/test/purchases:
+    post:
+      operationId: testPurchase
+      summary: Buy a game as a test player through Stripe test mode (or the fake store in dev).
+      x-auth: developer
+      x-cli: test purchase
+      requestBody: { content: { application/json: { schema: { type: object, required: [game, player], properties: { game: { type: string }, player: { type: string } } } } } }
+      responses: { "200": { description: "{purchase, entitlement}" } }
+
+  /v1/players/guest:
+    post:
+      operationId: playersGuest
+      summary: Sign in as a guest (one per device; no form to fill).
+      x-auth: key
+      x-cli: player guest
+      requestBody: { content: { application/json: { schema: { type: object, required: [device_id], properties: { device_id: { type: string }, display_name: { type: string } } } } } }
+      responses: { "200": { description: "{player, player_token}" } }
+  /v1/players/email/start:
+    post:
+      operationId: playersEmailStart
+      summary: Send a sign-in code to an email address.
+      x-auth: key
+      x-cli: player email-start
+      requestBody: { content: { application/json: { schema: { type: object, required: [email], properties: { email: { type: string } } } } } }
+      responses: { "200": { description: "{sent} (dev: also {code})" } }
+  /v1/players/login:
+    post:
+      operationId: playersLogin
+      summary: Sign in with a provider (email code, apple, google, discord, steam, fake in dev). With a guest token, the guest is merged in.
+      x-auth: key
+      x-cli: player login
+      requestBody: { content: { application/json: { schema: { type: object, required: [provider], properties: { provider: { type: string }, email: { type: string }, code: { type: string }, id_token: { type: string }, ticket: { type: string }, subject: { type: string } } } } } }
+      responses: { "200": { description: "{player, player_token, merged}" } }
+  /v1/players/me:
+    get:
+      operationId: playersMe
+      summary: The signed-in player.
+      x-auth: player
+      x-cli: player me
+      responses: { "200": { description: "{player}" } }
+    patch:
+      operationId: playersUpdate
+      summary: Change the display name.
+      x-auth: player
+      x-cli: player rename
+      requestBody: { content: { application/json: { schema: { type: object, properties: { display_name: { type: string } } } } } }
+      responses: { "200": { description: "{player}" } }
+    delete:
+      operationId: playersDelete
+      summary: Delete the account and its data (saves, identities). Purchases are kept as anonymous records.
+      x-auth: player
+      x-cli: player delete
+      responses: { "200": { description: "{deleted}" } }
+  /v1/players/me/entitlements:
+    get:
+      operationId: playersEntitlements
+      summary: What the player owns, plus a signed copy a game can trust offline for a week.
+      x-auth: player
+      x-cli: player entitlements
+      parameters: [{ name: game, in: query, schema: { type: string } }]
+      responses: { "200": { description: "{entitlements, signed}" } }
+  /v1/players/me/redeem:
+    post:
+      operationId: playersRedeem
+      summary: Redeem a key.
+      x-auth: player
+      x-cli: player redeem
+      requestBody: { content: { application/json: { schema: { type: object, required: [code], properties: { code: { type: string } } } } } }
+      responses: { "200": { description: "{entitlement}" } }
+  /v1/players/me/receipts:
+    post:
+      operationId: playersReceipt
+      summary: Record a purchase made in a platform store (App Store, Google Play, Steam) after verifying it.
+      x-auth: player
+      x-cli: player receipt
+      requestBody: { content: { application/json: { schema: { type: object, required: [store, game], properties: { store: { type: string, enum: [appstore, play, steam] }, game: { type: string }, transaction: { type: string }, purchase_token: { type: string }, product_id: { type: string }, steam_id: { type: string }, ticket: { type: string } } } } } }
+      responses: { "200": { description: "{entitlement}" } }
+
+  /v1/saves/{game}:
+    get:
+      operationId: savesList
+      summary: The player's save slots for a game.
+      x-auth: player
+      x-cli: saves list
+      parameters: [{ name: game, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: "{saves}" } }
+  /v1/saves/{game}/{slot}:
+    get:
+      operationId: savesGet
+      summary: One save slot.
+      x-auth: player
+      x-cli: saves get
+      parameters:
+        - { name: game, in: path, required: true, schema: { type: string } }
+        - { name: slot, in: path, required: true, schema: { type: string } }
+      responses: { "200": { description: "{save}" } }
+    put:
+      operationId: savesPut
+      summary: Write a save. Pass the rev you read; a newer save elsewhere returns 409 with both copies so the game can merge.
+      x-auth: player
+      x-cli: saves put
+      parameters:
+        - { name: game, in: path, required: true, schema: { type: string } }
+        - { name: slot, in: path, required: true, schema: { type: string } }
+      requestBody: { content: { application/json: { schema: { type: object, required: [data], properties: { base_rev: { type: integer }, data: {} } } } } }
+      responses: { "200": { description: "{save}" }, "409": { description: "{error, theirs, yours}" } }
+  /v1/saves/{game}/{slot}/history:
+    get:
+      operationId: savesHistory
+      summary: Earlier revisions of a save (backups).
+      x-auth: player
+      x-cli: saves history
+      parameters:
+        - { name: game, in: path, required: true, schema: { type: string } }
+        - { name: slot, in: path, required: true, schema: { type: string } }
+      responses: { "200": { description: "{revisions}" } }
+  /v1/saves/{game}/{slot}/restore:
+    post:
+      operationId: savesRestore
+      summary: Make an earlier revision current again.
+      x-auth: player
+      x-cli: saves restore
+      parameters:
+        - { name: game, in: path, required: true, schema: { type: string } }
+        - { name: slot, in: path, required: true, schema: { type: string } }
+      requestBody: { content: { application/json: { schema: { type: object, required: [rev], properties: { rev: { type: integer } } } } } }
+      responses: { "200": { description: "{save}" } }
+
+  /v1/content/{game}/manifest:
+    get:
+      operationId: contentManifest
+      summary: The current live content for a channel.
+      x-auth: key
+      x-cli: content manifest
+      parameters:
+        - { name: game, in: path, required: true, schema: { type: string } }
+        - { name: channel, in: query, schema: { type: string } }
+      responses: { "200": { description: "{manifest}" } }
+  /v1/content/{game}/files/{sha}:
+    get:
+      operationId: contentFile
+      summary: One content file, addressed by its hash (cache forever).
+      x-auth: key
+      x-cli: content file
+      x-response: binary
+      parameters:
+        - { name: game, in: path, required: true, schema: { type: string } }
+        - { name: sha, in: path, required: true, schema: { type: string } }
+      responses: { "200": { description: "the file" } }
+
+  /v1/store/games:
+    get:
+      operationId: storeGames
+      summary: Every published game.
+      x-auth: public
+      x-cli: store list
+      responses: { "200": { description: "{games}" } }
+  /v1/store/games/{game}:
+    get:
+      operationId: storeGame
+      summary: A published game's store page.
+      x-auth: public
+      x-cli: store get
+      parameters: [{ name: game, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: "{game, builds}" } }
+  /v1/store/games/{game}/checkout:
+    post:
+      operationId: storeCheckout
+      summary: Start a Stripe Checkout for the game; returns the URL to send the buyer to.
+      x-auth: player
+      x-cli: store checkout
+      parameters: [{ name: game, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { success_url: { type: string }, cancel_url: { type: string } } } } } }
+      responses: { "200": { description: "{url, session}" } }
+  /v1/store/games/{game}/download/{platform}:
+    get:
+      operationId: storeDownload
+      summary: Download the current build for a platform (owners, or anyone when the game has a demo).
+      x-auth: player
+      x-cli: store download
+      x-response: binary
+      parameters:
+        - { name: game, in: path, required: true, schema: { type: string } }
+        - { name: platform, in: path, required: true, schema: { type: string } }
+      responses: { "200": { description: "the build" } }
+  /v1/store/library:
+    get:
+      operationId: storeLibrary
+      summary: The player's games.
+      x-auth: player
+      x-cli: store library
+      responses: { "200": { description: "{games}" } }
+
+  /v1/webhooks/stripe:
+    post:
+      operationId: webhookStripe
+      summary: Stripe events (checkout completed, payment succeeded, refunds).
+      x-auth: stripe
+      responses: { "200": { description: "{received}" } }

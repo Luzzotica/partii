@@ -1,4 +1,6 @@
 import { Hono } from "hono";
+import { cors } from "hono/cors";
+import { registerApi } from "./api";
 import type { IceEnv } from "./ice";
 export { Session } from "./session";
 export { Room } from "./room";
@@ -11,11 +13,37 @@ export interface Env extends IceEnv {
   PARTII_ENV: string;
   KEY_SECRET: string;
   GRACE_MS?: string;
+  DB: D1Database;
+  FILES: R2Bucket;
+  ADMIN_TOKEN?: string;
+  PLAYER_TOKEN_SECRET: string;
+  ALLOW_FAKE_LOGIN?: string;
+  ALLOW_FAKE_STORE?: string;
+  EMAIL_MODE?: string;
+  EMAIL_FROM?: string;
+  RESEND_API_KEY?: string;
+  STORE_URL?: string;
+  STRIPE_SECRET_KEY?: string;
+  STRIPE_WEBHOOK_SECRET?: string;
+  APPLE_CLIENT_IDS?: string;
+  GOOGLE_CLIENT_IDS?: string;
+  DISCORD_CLIENT_ID?: string;
+  DISCORD_CLIENT_SECRET?: string;
+  STEAM_WEBAPI_KEY?: string;
+  STEAM_APP_ID?: string;
+  APPSTORE_ISSUER_ID?: string;
+  APPSTORE_KEY_ID?: string;
+  APPSTORE_PRIVATE_KEY?: string;
+  APPSTORE_BUNDLE_ID?: string;
+  PLAY_SERVICE_ACCOUNT?: string;
+  PLAY_PACKAGE_NAME?: string;
 }
 
 const app = new Hono<{ Bindings: Env }>();
 
-app.get("/health", (c) => c.json({ ok: true, env: c.env.PARTII_ENV }));
+// Web apps (store, controller) call the API from other origins; auth is by
+// key and token headers, never cookies, so open CORS is safe.
+app.use("/v1/*", cors({ origin: "*", allowHeaders: ["authorization", "content-type", "x-partii-key", "x-partii-dry-run"], allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"] }));
 
 // The persistent session socket (docs/PROTOCOL.md).
 app.get("/v1/connect", async (c) => {
@@ -25,5 +53,7 @@ app.get("/v1/connect", async (c) => {
   const stub = c.env.SESSION.get(c.env.SESSION.idFromName(conn));
   return stub.fetch(c.req.raw);
 });
+
+registerApi(app);
 
 export default app;

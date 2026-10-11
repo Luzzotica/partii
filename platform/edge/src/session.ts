@@ -202,9 +202,15 @@ export class Session extends DurableObject<Env> {
       }
       case "ping":
         return { server_time: Date.now() };
-      case "report":
-        // Connection timings land in D1 through the control plane (later).
+      case "report": {
+        // Connection timings from the client, recorded off the live path.
+        const s = this.need();
+        const metrics = typeof m.metrics === "object" && m.metrics ? JSON.stringify(m.metrics).slice(0, 4000) : null;
+        if (metrics) {
+          this.env.DB.prepare("INSERT INTO timings (project_id, metrics, created_at) VALUES (?, ?, ?)").bind(s.project, metrics, Date.now()).run().catch(() => {});
+        }
         return null;
+      }
       default:
         throw new ProtoError("bad_request", `unknown message type ${JSON.stringify(m.t)}`);
     }
