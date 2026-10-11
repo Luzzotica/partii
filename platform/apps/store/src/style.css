@@ -1,0 +1,182 @@
+:root {
+  --bg: #faf7f2;
+  --ink: #1f1a14;
+  --muted: #7a7064;
+  --line: #e7e0d5;
+  --accent: #2563eb;
+  --card: #ffffff;
+  font-family: ui-rounded, system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--ink);
+  background: var(--bg);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #15130f;
+    --ink: #f3efe8;
+    --muted: #a39a8e;
+    --line: #2c2822;
+    --card: #1d1a16;
+    --accent: #60a5fa;
+  }
+}
+body {
+  margin: 0;
+}
+nav {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+}
+nav a {
+  color: var(--muted);
+  text-decoration: none;
+  font-weight: 600;
+}
+nav a.on,
+nav a:hover {
+  color: var(--ink);
+}
+nav .brand {
+  color: var(--accent);
+  font-weight: 900;
+  font-size: 20px;
+  letter-spacing: -0.02em;
+}
+.spacer {
+  flex: 1;
+}
+main {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 24px;
+}
+.muted {
+  color: var(--muted);
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 20px;
+}
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 12px;
+  color: inherit;
+  text-decoration: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.card:hover {
+  border-color: var(--accent);
+}
+.card h3 {
+  margin: 6px 0 0;
+}
+.card p {
+  margin: 0;
+}
+.cover {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #3b82f6, #10b981);
+}
+.cover.placeholder {
+  display: grid;
+  place-items: center;
+  color: white;
+  font-size: 48px;
+  font-weight: 900;
+}
+.price s {
+  color: var(--muted);
+}
+.price em {
+  color: #16a34a;
+  font-style: normal;
+  font-weight: 700;
+}
+.game {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 28px;
+}
+@media (max-width: 760px) {
+  .game {
+    grid-template-columns: 1fr;
+  }
+}
+.game h1 {
+  margin: 0 0 4px;
+}
+.tagline {
+  font-size: 18px;
+  color: var(--muted);
+  margin-top: 0;
+}
+.demo {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+button {
+  font: inherit;
+  font-weight: 700;
+  border: 0;
+  border-radius: 12px;
+  padding: 12px 20px;
+  background: var(--accent);
+  color: white;
+  cursor: pointer;
+}
+button.secondary {
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--line);
+}
+button:disabled {
+  opacity: 0.5;
+}
+.buy {
+  margin: 18px 0;
+}
+.downloads {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.owned {
+  font-weight: 700;
+  color: #16a34a;
+}
+.note {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--card);
+  border: 1px solid var(--line);
+}
+.signin {
+  max-width: 380px;
+  margin: 40px auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.signin input {
+  font: inherit;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--ink);
+}
