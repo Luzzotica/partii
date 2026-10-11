@@ -2090,6 +2090,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "partii-content"
+version = "0.1.0"
+dependencies = [
+ "partii-api",
+ "serde",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "partii-engine"
 version = "0.1.0"
 dependencies = [

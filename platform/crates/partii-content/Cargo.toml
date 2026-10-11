@@ -1,0 +1,12 @@
+[package]
+name = "partii-content"
+description = "Live content for a game: mirror a partii content channel (levels, data, scripts) into a local folder, fetching only changed files."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+partii-api = { path = "../partii-api" }
+serde.workspace = true
+serde_json.workspace = true
+sha2 = "0.10"
