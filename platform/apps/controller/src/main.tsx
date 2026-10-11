@@ -5,6 +5,7 @@ import { StrictMode, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { BUTTON, inputFrame, startEngine, type Engine } from "./engine";
 import { Stick, type Vec } from "./stick";
+import { fetchProfile, finishEmail, signOut, startEmail, storedPlayer } from "./account";
 import "./style.css";
 
 const DEFAULT_EDGE = "https://partii-edge-staging.partii-games.workers.dev";
@@ -50,8 +51,14 @@ function Controller({ code, keyStr, edge, name }: { code: string; keyStr: string
               e.join(code, "phone", name, { name });
             } else if (ev.ev === "joined") {
               host = ev.room.host;
-              setPhase({ kind: "joined", host: ev.room.host });
-              e.send(ev.room.host, true, new TextEncoder().encode(JSON.stringify({ t: "hello", name, player: null })));
+              const to = ev.room.host;
+              setPhase({ kind: "joined", host: to });
+              // Signed in: bring the player's own name and look for this game.
+              const player = storedPlayer();
+              const hello = (profile: Record<string, unknown> | null) =>
+                e.send(to, true, new TextEncoder().encode(JSON.stringify({ t: "hello", name, player: player?.id ?? null, profile })));
+              if (player) fetchProfile(edge, keyStr, ev.room.game, player).then(hello);
+              else hello(null);
             } else if (ev.ev === "failed") {
               setPhase({ kind: "error", message: ev.code === "not_found" ? `No room ${code}. Check the code on the game's screen.` : ev.message });
             } else if (ev.ev === "room_closed") {
@@ -106,6 +113,11 @@ function Controller({ code, keyStr, edge, name }: { code: string; keyStr: string
     <div className="pad" style={{ ["--tint" as string]: tint }}>
       <header>
         <span className="status" data-testid="status">{phase.kind === "joined" ? `${seat?.label ?? "Connected"} · ${code}` : `Joining ${code}…`}</span>
+        {!storedPlayer() && (
+          <a className="signin-link" data-testid="signin-link" href={`/signin?back=${encodeURIComponent(location.pathname + location.search)}`}>
+            Sign in
+          </a>
+        )}
         <button className="start" data-testid="start" {...hold(BUTTON.START)}>START</button>
       </header>
       <Stick label="MOVE" onChange={(v) => (move.current = v)} testId="move" />
@@ -151,10 +163,58 @@ function Join() {
   );
 }
 
+/** Email sign-in; returns to `?back=` (the controller) when done. */
+function SignIn() {
+  const p = params();
+  const back = new URLSearchParams(location.search).get("back") ?? "/";
+  const backQ = new URLSearchParams(back.split("?")[1] ?? "");
+  const edge = backQ.get("e") ?? p.edge;
+  const key = backQ.get("k") ?? p.key;
+  const [email, setEmail] = useState("");
+  const [code, setCode] = useState("");
+  const [sent, setSent] = useState(false);
+  const [err, setErr] = useState("");
+  const send = async () => {
+    setErr("");
+    const r = await startEmail(edge, key, email);
+    if (!r.ok) return setErr(r.error ?? "");
+    setSent(true);
+    if (r.code) setCode(r.code); // dev/staging: no mail provider, the code comes back
+  };
+  const finish = async () => {
+    setErr("");
+    const r = await finishEmail(edge, key, email, code);
+    if (!r.ok) return setErr(r.error ?? "");
+    location.href = back;
+  };
+  const me = storedPlayer();
+  if (me)
+    return (
+      <div className="message">
+        <h1>Signed in</h1>
+        <p data-testid="signed-in">{me.name || me.id}</p>
+        <button onClick={() => (signOut(), location.reload())}>Sign out</button>
+        <a href={back}>Back</a>
+      </div>
+    );
+  return (
+    <form className="join" onSubmit={(e) => (e.preventDefault(), sent ? finish() : send())}>
+      <h1>Sign in</h1>
+      <p>Your name and look come with you into the game.</p>
+      <input aria-label="Email" type="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+      {sent && <input aria-label="Code" placeholder="6-digit code" value={code} inputMode="numeric" onChange={(e) => setCode(e.target.value)} />}
+      <button disabled={!email.includes("@") || (sent && code.length < 6)}>{sent ? "Sign in" : "Send code"}</button>
+      {err && <p className="error">{err}</p>}
+      <a href={back}>Skip</a>
+    </form>
+  );
+}
+
 function App() {
   const p = params();
+  if (location.pathname.startsWith("/signin")) return <SignIn />;
   if (!p.code) return <Join />;
-  return <Controller code={p.code} keyStr={p.key} edge={p.edge} name={storedName() || "Phone"} />;
+  return <Controller code={p.code} keyStr={p.key} edge={p.edge} name={storedPlayer()?.name || storedName() || "Phone"} />;
 }
 
 createRoot(document.getElementById("root")!).render(

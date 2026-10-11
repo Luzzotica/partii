@@ -38,7 +38,9 @@ Buttons:
 | 4 | confirm |
 | 5 | back |
 
-**Hello** goes once, reliable, as JSON: `{"t": "hello", "name": "Sam", "player": "<player id or null>"}`.
+**Hello** goes once, reliable, as JSON: `{"t": "hello", "name": "Sam", "player": "<player id or null>", "profile": {…} | null}`.
+
+A phone can sign in (email code; `/signin` on the controller page). A signed-in phone sends its player id and the player's `profile` save for the room's game: whatever JSON the game keeps in the `profile` slot (tankii: `{name, color, skin_id, hat_id, tread_id}`). Write that slot from the game (`acct.write_save("profile", …)`) and apply it to the phone's seat when the hello arrives. The phone's login token never leaves the phone.
 
 ## Game to phone
 

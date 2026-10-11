@@ -145,3 +145,7 @@ button:active {
 .message a {
   color: var(--tint);
 }
+
+.signin-link { color: inherit; opacity: 0.8; font-size: 0.85rem; margin-left: auto; margin-right: 0.75rem; }
+.join p, .message p { opacity: 0.8; }
+.error { color: #f87171; }
