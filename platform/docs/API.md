@@ -282,6 +282,8 @@ Parameters:
 - `channel` (query)
 - `filename` (query)
 
+Body: the file's bytes.
+
 ### codesList
 
 `GET /v1/games/{game}/codes` (auth: developer) · `partii codes list`

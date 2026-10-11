@@ -12,11 +12,13 @@ pub fn tree() -> Value {
             "output": "one JSON document on stdout: {\"ok\":true,...} or {\"ok\":false,\"error\":{\"code\",\"message\",\"hint\"}}",
             "progress": "long commands write JSON lines to stderr",
             "exit": {"0": "ok", "1": "error", "2": "usage"},
-            "auth": "PARTII_TOKEN (developer token), PARTII_API (base URL)",
+            "auth": "PARTII_API (base URL); PARTII_TOKEN (developer), PARTII_KEY (publishable key), PARTII_PLAYER_TOKEN (player), PARTII_ADMIN_TOKEN (operators)",
+            "api_commands": "one per API operation, generated from api/openapi.yaml: path params positional, body fields as --kebab-flags, --body for a whole JSON body",
             "mutations": "idempotent; --dry-run shows the change without making it"
         },
         "global_args": args(&cmd),
         "commands": cmd.get_subcommands().filter(|c| c.get_name() != "help").map(command).collect::<Vec<_>>(),
+        "api_commands": crate::api_cmd::help_entries(),
     })
 }
 

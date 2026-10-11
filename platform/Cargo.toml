@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/partii-engine", "crates/partii-cli"]
+members = ["crates/partii-engine", "crates/partii-cli", "crates/partii-api"]
 
 [workspace.package]
 version = "0.1.0"

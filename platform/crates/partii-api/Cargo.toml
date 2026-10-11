@@ -1,0 +1,11 @@
+[package]
+name = "partii-api"
+description = "Client for the partii platform API, generated from api/openapi.yaml (the operation table) plus a small HTTP runner."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+ureq = { version = "3", features = ["json"] }

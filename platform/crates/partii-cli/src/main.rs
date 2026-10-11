@@ -3,6 +3,7 @@
 //! mutations, the token from `PARTII_TOKEN`, and `partii help --json` for
 //! the full command tree (docs/DESIGN.md, "The CLI").
 
+mod api_cmd;
 mod bot;
 mod dev;
 mod help;
@@ -54,6 +55,11 @@ fn main() {
     // Library logs only on request (RUST_LOG), always to stderr.
     if std::env::var_os("RUST_LOG").is_some() {
         let _ = env_logger::Builder::from_default_env().format_timestamp_millis().try_init();
+    }
+    // API operations (generated from the spec) first, then the built-in commands.
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if let Some((op, n)) = api_cmd::find(&args) {
+        std::process::exit(api_cmd::run(op, &args[n..]));
     }
     let cli = match Cli::try_parse() {
         Ok(c) => c,

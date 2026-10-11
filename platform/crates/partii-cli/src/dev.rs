@@ -61,6 +61,16 @@ fn up(a: &UpArgs) -> CliResult {
     if !edge.join("wrangler.jsonc").exists() {
         return Err(CliError::usage("no edge/ here", "run from platform/ or pass --platform-dir"));
     }
+    // The local database follows the schema (idempotent).
+    let migrate = Command::new("npx")
+        .args(["wrangler", "d1", "migrations", "apply", "partii-dev", "--local"])
+        .current_dir(&edge)
+        .env("CI", "1")
+        .output()
+        .map_err(|e| CliError::new("spawn", format!("npx wrangler: {e}"), "install Node.js and run `npm install` in platform/edge"))?;
+    if !migrate.status.success() {
+        return Err(CliError::new("migrate", String::from_utf8_lossy(&migrate.stderr).trim().to_string(), "see platform/edge/migrations"));
+    }
     let mut args: Vec<String> = vec!["wrangler".into(), "dev".into(), "--port".into(), a.port.to_string()];
     if a.public || a.turn.is_some() {
         args.extend(["--ip".into(), "0.0.0.0".into()]);

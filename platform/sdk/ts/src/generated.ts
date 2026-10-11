@@ -48,7 +48,7 @@ export function operations(t: Transport) {
     /** A game's uploaded builds. (developer) */
     buildsList: (game: string) => t.call("GET", `/v1/games/${encodeURIComponent(game)}/builds`, "developer", {}, undefined, "json"),
     /** Upload a build (the request body is the file). (developer) */
-    buildsUpload: (game: string, query: { platform?: string | number; version?: string | number; channel?: string | number; filename?: string | number } = {}) => t.call("POST", `/v1/games/${encodeURIComponent(game)}/builds`, "developer", query, undefined, "json"),
+    buildsUpload: (game: string, query: { platform?: string | number; version?: string | number; channel?: string | number; filename?: string | number } = {}, body: BodyInit) => t.call("POST", `/v1/games/${encodeURIComponent(game)}/builds`, "developer", query, body, "json"),
     /** The game's redeemable keys. (developer) */
     codesList: (game: string) => t.call("GET", `/v1/games/${encodeURIComponent(game)}/codes`, "developer", {}, undefined, "json"),
     /** Make redeemable keys (for press, bundles, friends). (developer) */

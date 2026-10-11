@@ -161,7 +161,7 @@ export const ROUTES: Route[] = [
     "method": "POST",
     "path": "/v1/games/:game/builds",
     "auth": "developer",
-    "body": "none"
+    "body": "binary"
   },
   {
     "op": "codesList",

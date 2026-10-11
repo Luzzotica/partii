@@ -19,7 +19,7 @@ const ops = [];
 for (const [path, methods] of Object.entries(spec.paths)) {
   for (const [method, op] of Object.entries(methods)) {
     const params = (op.parameters ?? []).map((p) => ({ name: p.name, in: p.in, required: !!p.required, type: p.schema?.type ?? "string" }));
-    const body = op.requestBody ? (op["x-body"] === "binary" ? "binary" : "json") : "none";
+    const body = op["x-body"] === "binary" ? "binary" : op.requestBody ? "json" : "none";
     const bodySchema = op.requestBody?.content?.["application/json"]?.schema;
     let fields = [];
     if (bodySchema?.properties) fields = Object.entries(bodySchema.properties).map(([k, v]) => ({ name: k, type: v.type ?? "any", required: (bodySchema.required ?? []).includes(k) }));
