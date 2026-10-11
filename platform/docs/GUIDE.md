@@ -110,31 +110,36 @@ partii torture run --client engine   # every bad network, in Docker (see docs/DE
 
 ## 3. Players and saves
 
-Each install signs in as a guest at first launch, with no form. Keep a random device id in your save folder:
-
-```
-POST /v1/players/guest  {"device_id": "<random, kept per install>", "display_name": "Player"}
-   → {player, player_token}
-```
-
-From Rust, use `partii-api`, a typed client for every operation in [API.md](API.md):
+Add `partii-account` (path or git dependency on `partii/platform/crates/partii-account`). One `Account` per launch does it all on a background thread:
 
 ```rust
-let api = partii_api::Client { base, key: Some(pk), ..Default::default() };
-let r = api.json("playersGuest", &[], Some(json!({"device_id": id, "display_name": "Player"})))?;
-let token = r["player_token"].as_str().unwrap();
+use partii_account::{Account, AccountConfig, merge_objects};
+
+let acct = Account::start(AccountConfig {
+    edge: "https://<your platform>".into(),
+    key: Some("pk_mystudio_game_...".into()),
+    game: "mygame".into(),
+    data_dir: save_folder.clone(),       // keeps this install's device id + offline entitlement cache
+    display_name: "Player".into(),
+    slots: vec!["progress".into()],      // fetched at sign-in
+    merge: Some(merge_objects),          // or your own fn(slot, mine, theirs) -> Option<merged>
+    ..AccountConfig::default()
+});
+
+// Any frame (never blocks):
+acct.ready();                            // signed in + first fetch done
+acct.player_id();                        // Some("p_...")
+acct.owns("full");                       // Some(true/false); None while unknown (fresh install offline)
+acct.read_save("progress");              // Some(json text) once fetched
+acct.write_save("progress", r#"{"level":3}"#);  // queued; conflicts merge and retry
 ```
 
-Later, a player can sign in with email (`playersEmailStart`, then `playersLogin` with `provider: "email"` and the code), Apple, Google, Discord or Steam. Send the current guest token along: the guest becomes, or merges into, that account. So their saves and purchases follow them to every device.
+- **Sign-in.** On first launch the install becomes a guest player (a random device id kept in `data_dir`), with no form. Later the player can link email (`playersEmailStart`, then `playersLogin` with `provider: "email"`), Apple, Google, Discord or Steam. The guest becomes, or merges into, that account, so saves and purchases follow them to every device.
+- **Saves.** Named JSON slots per game. If another device wrote first, your `merge` function gets both copies and the merged result is written. Every write keeps a backup (`savesHistory`, `savesRestore`).
+- **Offline.** The last entitlement answer is cached for a week, so a paid game stays unlocked without a network.
+- **Tests.** Set `AccountConfig::player_token` (e.g. from `partii test players create`) to act as a specific player.
 
-Saves are named slots of JSON per game:
-
-```
-PUT  /v1/saves/{game}/{slot}  {"base_rev": <rev you last read, or 0>, "data": {...}}
-GET  /v1/saves/{game}/{slot}  → {save: {rev, data}}
-```
-
-If another device wrote first, the PUT answers **409** with both copies (`theirs`, `yours`). Merge them and write again with `base_rev = theirs.rev`. Every write keeps a backup; see `savesHistory` and `savesRestore`.
+Under the hood these are plain API calls (`POST /v1/players/guest`, `PUT /v1/saves/{game}/{slot}` with `base_rev`, `GET /v1/players/me/entitlements?game=`), listed in [API.md](API.md); `partii-api` is a typed client for all of them if you need more.
 
 ## 4. Sell it
 
@@ -160,7 +165,7 @@ Keep `signed` (it is valid for a week) so the game stays unlocked offline. While
 
 To unlock from inside the game:
 
-- `storeCheckout` returns a URL. Open it in the browser, then check entitlements again once the player is back.
+- `acct.start_checkout()`, then `acct.take_checkout()` gives the URL to open in the browser (`Err("completed")` means the local fake store finished at once). Call `acct.refresh()` when the player is back; `acct.owns("full")` turns true.
 - Purchases made in the App Store, Google Play or Steam: send them to `playersReceipt`. partii verifies them with the store.
 
 Test without paying:
@@ -216,6 +221,6 @@ Every failure is `{"ok": false, "error": {"code", "message", "hint"}}`, and the 
 
 1. Project and key (section 1).
 2. Engine in the game: host and join with a code (section 2). Check with `partii bot guest`.
-3. Guest sign-in at launch; saves through `/v1/saves` (section 3).
+3. `partii-account` at launch: guest sign-in, saves, `owns("full")` (section 3).
 4. Store page, price and demo gate; the game checks entitlements (section 4).
 5. Optional: phone controllers (section 6) and live content (section 5).
