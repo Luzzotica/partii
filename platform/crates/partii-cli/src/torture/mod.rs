@@ -48,6 +48,19 @@ pub enum TortureCmd {
         #[arg(long, default_value = ".")]
         platform_dir: PathBuf,
     },
+    /// Rebuild a report from raw trial files (later files replace earlier
+    /// trials of the same scenario).
+    #[command(after_help = "partii torture report --raw docs/reports/raw/a.jsonl --raw docs/reports/raw/b.jsonl --label combined --client legacy-web")]
+    Report {
+        #[arg(long, required = true)]
+        raw: Vec<PathBuf>,
+        #[arg(long)]
+        label: String,
+        #[arg(long, value_enum, default_value = "engine")]
+        client: Client,
+        #[arg(long, default_value = "docs/reports")]
+        out: PathBuf,
+    },
     /// Remove every torture container and network.
     Clean,
 }
@@ -55,6 +68,24 @@ pub enum TortureCmd {
 pub fn run(cli: &Cli, cmd: &TortureCmd) -> CliResult {
     match cmd {
         TortureCmd::Scenarios => Ok(json!({ "scenarios": scenario::all() })),
+        TortureCmd::Report { raw, label, client, out } => {
+            let mut by_scenario: Vec<(String, Vec<trial::TrialResult>)> = Vec::new();
+            for path in raw {
+                let text = std::fs::read_to_string(path)?;
+                let mut fresh: Vec<trial::TrialResult> = Vec::new();
+                for line in text.lines().filter(|l| !l.trim().is_empty()) {
+                    fresh.push(serde_json::from_str(line).map_err(|e| CliError::new("bad_raw", format!("{}: {e}", path.display()), "pass files written by `partii torture run`"))?);
+                }
+                let names: std::collections::BTreeSet<String> = fresh.iter().map(|r| r.scenario.clone()).collect();
+                for n in names {
+                    by_scenario.retain(|(s, _)| *s != n);
+                    by_scenario.push((n.clone(), fresh.iter().filter(|r| r.scenario == n).cloned().collect()));
+                }
+            }
+            let scenarios: Vec<_> = scenario::all().into_iter().filter(|s| by_scenario.iter().any(|(n, _)| n == s.name)).collect();
+            let results: Vec<trial::TrialResult> = by_scenario.into_iter().flat_map(|(_, r)| r).collect();
+            report::write(out, label, *client, "(combined)", &scenarios, &results)
+        }
         TortureCmd::Clean => {
             for (i, s) in scenario::all().iter().enumerate() {
                 topo::Topo::new(&format!("pt-{}", s.name), 60 + i as u8, vec![]).down();

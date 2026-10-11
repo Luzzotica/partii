@@ -27,7 +27,7 @@ pub struct BotTarget {
     pub key: String,
 }
 
-#[derive(Debug, Clone, Serialize, Default)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize, Default)]
 pub struct TrialResult {
     pub scenario: String,
     pub trial: u32,

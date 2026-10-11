@@ -173,13 +173,18 @@ impl Topo {
         Ok(out)
     }
 
-    /// Move the guest onto the spare LAN (new address, new NAT mapping).
+    /// Move the guest to the other of its two LANs (new address, new NAT
+    /// mapping): lan2 → lan9 on one trial, lan9 → lan2 on the next.
     pub fn switch_guest_network(&self) -> Result<(), CliError> {
-        let spare = format!("{}-lan9", self.prefix);
-        docker(&["network", "connect", "--ip", &self.ip(9, 10), &spare, &self.guest])?;
         let old = docker(&["inspect", "-f", "{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}", &self.guest])?;
-        docker(&["exec", &self.guest, "ip", "route", "replace", "default", "via", &self.ip(9, 2)])?;
-        for net in old.split_whitespace().filter(|n| *n != spare) {
+        let on_spare = old.split_whitespace().any(|n| n.ends_with("-lan9"));
+        let n = if on_spare { 2 } else { 9 };
+        let target = format!("{}-lan{n}", self.prefix);
+        // Docker sets its own gateway on connect; clear ours first or it refuses.
+        let _ = docker(&["exec", &self.guest, "ip", "route", "del", "default"]);
+        docker(&["network", "connect", "--ip", &self.ip(n, 10), &target, &self.guest])?;
+        docker(&["exec", &self.guest, "ip", "route", "replace", "default", "via", &self.ip(n, 2)])?;
+        for net in old.split_whitespace().filter(|x| *x != target) {
             docker(&["network", "disconnect", net, &self.guest])?;
         }
         Ok(())

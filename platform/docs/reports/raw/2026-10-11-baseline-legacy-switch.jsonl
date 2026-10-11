@@ -1,0 +1,10 @@
+{"scenario":"network-switch","trial":0,"connected":true,"create_ms":1804,"join_ms":1843,"connect_ms":5745,"rung":"direct","rtt_p50":47.3,"rtt_p95":59.1,"longest_gap_ms":4000,"recovered":true,"error":null}
+{"scenario":"network-switch","trial":1,"connected":true,"create_ms":1696,"join_ms":1913,"connect_ms":5865,"rung":"direct","rtt_p50":49.1,"rtt_p95":65.0,"longest_gap_ms":5800,"recovered":true,"error":null}
+{"scenario":"network-switch","trial":2,"connected":true,"create_ms":1436,"join_ms":2061,"connect_ms":5563,"rung":"direct","rtt_p50":48.6,"rtt_p95":59.7,"longest_gap_ms":4148,"recovered":true,"error":null}
+{"scenario":"network-switch","trial":3,"connected":true,"create_ms":1633,"join_ms":1803,"connect_ms":5956,"rung":"direct","rtt_p50":48.3,"rtt_p95":60.5,"longest_gap_ms":4900,"recovered":true,"error":null}
+{"scenario":"network-switch","trial":4,"connected":true,"create_ms":1586,"join_ms":1911,"connect_ms":5665,"rung":"direct","rtt_p50":48.5,"rtt_p95":60.4,"longest_gap_ms":5099,"recovered":true,"error":null}
+{"scenario":"network-switch","trial":5,"connected":true,"create_ms":1753,"join_ms":1780,"connect_ms":5637,"rung":"direct","rtt_p50":49.0,"rtt_p95":59.8,"longest_gap_ms":3900,"recovered":true,"error":null}
+{"scenario":"network-switch","trial":6,"connected":true,"create_ms":1678,"join_ms":1921,"connect_ms":5845,"rung":"relay","rtt_p50":47.8,"rtt_p95":65.4,"longest_gap_ms":5800,"recovered":true,"error":null}
+{"scenario":"network-switch","trial":7,"connected":true,"create_ms":1517,"join_ms":1921,"connect_ms":5775,"rung":"relay","rtt_p50":49.3,"rtt_p95":63.8,"longest_gap_ms":3849,"recovered":true,"error":null}
+{"scenario":"network-switch","trial":8,"connected":true,"create_ms":1648,"join_ms":1747,"connect_ms":5771,"rung":"relay","rtt_p50":48.8,"rtt_p95":63.0,"longest_gap_ms":3949,"recovered":true,"error":null}
+{"scenario":"network-switch","trial":9,"connected":true,"create_ms":1524,"join_ms":1818,"connect_ms":5623,"rung":"direct","rtt_p50":48.5,"rtt_p95":61.6,"longest_gap_ms":4499,"recovered":true,"error":null}
