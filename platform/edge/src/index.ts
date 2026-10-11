@@ -14,7 +14,8 @@ export interface Env extends IceEnv {
   KEY_SECRET: string;
   GRACE_MS?: string;
   DB: D1Database;
-  FILES: R2Bucket;
+  FILES?: R2Bucket;
+  FILES_KV?: KVNamespace;
   ADMIN_TOKEN?: string;
   PLAYER_TOKEN_SECRET: string;
   ALLOW_FAKE_LOGIN?: string;

@@ -1,3 +1,4 @@
+import { files } from "../files";
 // Players: guest sign-in, email codes, provider logins (merging a guest into
 // the account it signs in to), the account itself, entitlements (with a
 // signed copy games trust offline), key redemption, store receipts, and
@@ -34,11 +35,11 @@ async function merge(env: Env, guest: string, into: string) {
   for (const s of gs.results) {
     const mine = await env.DB.prepare("SELECT updated_at FROM saves WHERE player_id = ? AND game_id = ? AND slot = ?").bind(into, s.game_id, s.slot).first<{ updated_at: number }>();
     if (mine && mine.updated_at >= s.updated_at) continue;
-    const obj = await env.FILES.get(`saves/${guest}/${s.game_id}/${s.slot}/${s.rev}`);
+    const obj = await files(env).get(`saves/${guest}/${s.game_id}/${s.slot}/${s.rev}`);
     if (!obj) continue;
     const data = await obj.arrayBuffer();
     const rev = ((await env.DB.prepare("SELECT rev FROM saves WHERE player_id = ? AND game_id = ? AND slot = ?").bind(into, s.game_id, s.slot).first<{ rev: number }>())?.rev ?? 0) + 1;
-    await env.FILES.put(`saves/${into}/${s.game_id}/${s.slot}/${rev}`, data);
+    await files(env).put(`saves/${into}/${s.game_id}/${s.slot}/${rev}`, data);
     await env.DB.prepare("INSERT INTO saves (player_id, game_id, slot, rev, size, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO UPDATE SET rev = excluded.rev, size = excluded.size, updated_at = excluded.updated_at")
       .bind(into, s.game_id, s.slot, rev, data.byteLength, s.updated_at)
       .run();
@@ -139,8 +140,8 @@ export const playerHandlers: Handlers = {
 
   async playersDelete({ env, caller }) {
     const id = caller.player!.id;
-    const saves = await env.FILES.list({ prefix: `saves/${id}/` });
-    for (const o of saves.objects) await env.FILES.delete(o.key);
+    const saves = await files(env).list(`saves/${id}/`);
+    for (const o of saves) await files(env).delete(o.key);
     await env.DB.batch([
       env.DB.prepare("DELETE FROM identities WHERE player_id = ?").bind(id),
       env.DB.prepare("DELETE FROM saves WHERE player_id = ?").bind(id),

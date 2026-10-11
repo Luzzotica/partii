@@ -1,3 +1,4 @@
+import { files } from "../files";
 // Cloud saves: named slots per player per game. Every write names the rev
 // it was based on; if another device wrote since, the write is refused with
 // both copies so the game can merge and retry. Each write keeps a backup
@@ -18,16 +19,16 @@ async function current(env: Env, player: string, game: string, slot: string) {
 }
 
 async function read(env: Env, player: string, game: string, slot: string, rev: number): Promise<unknown> {
-  const o = await env.FILES.get(key(player, game, slot, rev));
+  const o = await files(env).get(key(player, game, slot, rev));
   return o ? JSON.parse(await o.text()) : null;
 }
 
 async function write(env: Env, player: string, game: string, slot: string, rev: number, text: string) {
-  await env.FILES.put(key(player, game, slot, rev), text, { httpMetadata: { contentType: "application/json" } });
+  await files(env).put(key(player, game, slot, rev), text, { contentType: "application/json" });
   await env.DB.prepare("INSERT INTO saves (player_id, game_id, slot, rev, size, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO UPDATE SET rev = excluded.rev, size = excluded.size, updated_at = excluded.updated_at")
     .bind(player, game, slot, rev, text.length, now())
     .run();
-  if (rev > KEEP) await env.FILES.delete(key(player, game, slot, rev - KEEP));
+  if (rev > KEEP) await files(env).delete(key(player, game, slot, rev - KEEP));
 }
 
 function checkSlot(params: Record<string, string>) {
@@ -70,9 +71,9 @@ export const saveHandlers: Handlers = {
     checkSlot(params);
     const s = await current(env, caller.player!.id, params.game, params.slot);
     if (!s) return { revisions: [] };
-    const listed = await env.FILES.list({ prefix: `saves/${caller.player!.id}/${params.game}/${params.slot}/` });
-    const revisions = listed.objects
-      .map((o) => ({ rev: Number(o.key.split("/").pop()), size: o.size, at: o.uploaded.getTime() }))
+    const listed = await files(env).list(`saves/${caller.player!.id}/${params.game}/${params.slot}/`);
+    const revisions = listed
+      .map((o) => ({ rev: Number(o.key.split("/").pop()), size: o.size, at: o.uploaded }))
       .sort((a, b) => b.rev - a.rev);
     return { current: s.rev, revisions };
   },
@@ -81,7 +82,7 @@ export const saveHandlers: Handlers = {
     checkSlot(params);
     const s = await current(env, caller.player!.id, params.game, params.slot);
     const rev = Number(body.rev);
-    const old = s && rev >= 1 ? await env.FILES.get(key(caller.player!.id, params.game, params.slot, rev)) : null;
+    const old = s && rev >= 1 ? await files(env).get(key(caller.player!.id, params.game, params.slot, rev)) : null;
     if (!s || !old) throw new ApiError(404, "not_found", `no revision ${rev}`, "list them with savesHistory");
     const next = s.rev + 1;
     await write(env, caller.player!.id, params.game, params.slot, next, await old.text());
@@ -96,7 +97,7 @@ export const saveHandlers: Handlers = {
 
   async contentFile({ env, params }) {
     if (!/^[0-9a-f]{64}$/.test(params.sha)) throw bad("files are addressed by their sha256");
-    const o = await env.FILES.get(`content/${params.game}/${params.sha}`);
+    const o = await files(env).get(`content/${params.game}/${params.sha}`);
     if (!o) throw new ApiError(404, "not_found", "no such content file");
     return new Response(o.body, { headers: { "content-type": "application/octet-stream", "cache-control": "public, max-age=31536000, immutable" } });
   },

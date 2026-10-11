@@ -1,3 +1,4 @@
+import { files } from "../files";
 // Games: store pages, prices and sales, builds, keys, entitlements, live content.
 
 import { bad, b64url, fromB64url, gameView, now, ownGame, ownProject, randomSlug, sha256hex, type GameRow } from "./core";
@@ -139,7 +140,7 @@ export const gameHandlers: Handlers = {
     const sha = await sha256hex(bytes);
     const id = randomSlug(12);
     const key = `builds/${params.game}/${platform}/${version}/${id}/${filename}`;
-    await env.FILES.put(key, bytes, { httpMetadata: { contentType: "application/octet-stream", contentDisposition: `attachment; filename="${filename}"` } });
+    await files(env).put(key, bytes, { contentType: "application/octet-stream", contentDisposition: `attachment; filename="${filename}"` });
     const build = { id, game: params.game, platform, version, channel, filename, size: bytes.byteLength, sha256: sha, created_at: now() };
     await env.DB.prepare("INSERT INTO builds (id, game_id, platform, version, channel, filename, r2_key, size, sha256, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
       .bind(id, params.game, platform, version, channel, filename, key, build.size, sha, build.created_at)
@@ -211,11 +212,11 @@ export const gameHandlers: Handlers = {
     const version = String(body.version ?? "");
     if (!version) throw bad("version is required");
     const channel = String(body.channel ?? "stable");
-    const files = (body.files ?? {}) as Record<string, string>;
-    if (typeof files !== "object" || !Object.keys(files).length) throw bad("files is required: {\"path\": \"<base64>\"}");
+    const input = (body.files ?? {}) as Record<string, string>;
+    if (typeof input !== "object" || !Object.keys(input).length) throw bad("files is required: {\"path\": \"<base64>\"}");
     const manifest: Record<string, { sha256: string; size: number }> = {};
     const blobs: [string, Uint8Array][] = [];
-    for (const [path, data] of Object.entries(files)) {
+    for (const [path, data] of Object.entries(input)) {
       if (!/^[A-Za-z0-9._/-]{1,200}$/.test(path) || path.includes("..")) throw bad(`bad content path ${path}`);
       const bytes = fromB64url(data.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""));
       const sha = await sha256hex(bytes);
@@ -224,7 +225,7 @@ export const gameHandlers: Handlers = {
     }
     const m = { game: params.game, channel, version, files: manifest };
     if (dryRun) return { dry_run: true, manifest: m };
-    for (const [sha, bytes] of blobs) await env.FILES.put(`content/${params.game}/${sha}`, bytes);
+    for (const [sha, bytes] of blobs) await files(env).put(`content/${params.game}/${sha}`, bytes);
     await env.DB.prepare("INSERT INTO content (game_id, channel, version, manifest, created_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO UPDATE SET version = excluded.version, manifest = excluded.manifest, created_at = excluded.created_at")
       .bind(params.game, channel, version, JSON.stringify(m), now())
       .run();

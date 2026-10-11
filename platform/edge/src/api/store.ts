@@ -1,3 +1,4 @@
+import { files } from "../files";
 // The store: published games, checkout (Stripe), the player's library and
 // downloads, test purchases for developers, and Stripe's webhook. Stripe is
 // called over plain fetch (no SDK in the Worker). Without a Stripe key the
@@ -105,7 +106,7 @@ export const storeHandlers: Handlers = {
     if (!owns && !g.demo && g.price_cents > 0) throw new ApiError(402, "not_owned", "buy the game to download it", "POST /v1/store/games/{game}/checkout");
     const b = await env.DB.prepare("SELECT r2_key, filename FROM builds WHERE game_id = ? AND platform = ? AND channel = 'stable' ORDER BY created_at DESC LIMIT 1").bind(g.id, params.platform).first<{ r2_key: string; filename: string }>();
     if (!b) throw new ApiError(404, "not_found", `no ${params.platform} build yet`);
-    const o = await env.FILES.get(b.r2_key);
+    const o = await files(env).get(b.r2_key);
     if (!o) throw new ApiError(404, "not_found", "the build file is missing");
     return new Response(o.body, { headers: { "content-type": "application/octet-stream", "content-disposition": `attachment; filename="${b.filename}"`, "content-length": String(o.size) } });
   },
