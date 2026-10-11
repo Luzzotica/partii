@@ -1,10 +1,11 @@
 //! The browser driver: the same core as natively, with the browser's own
-//! WebSocket and RTCPeerConnection doing the I/O. Exposed to JavaScript as
-//! `WebEngine` (wasm-bindgen): `poll()` returns the events since the last
-//! call as a JSON array; `create`/`join`/`send`/`leave` mirror the native
-//! `Engine`. Browsers relay over TURN on every transport, TLS/443 included.
+//! WebSocket and RTCPeerConnection doing the I/O. Rust games compiled to wasm
+//! use `Engine`, which has the native `Engine`'s API, so one code path serves
+//! both. JavaScript uses `WebEngine` (wasm-bindgen): `poll()` returns the
+//! events since the last call as a JSON array. Browsers relay over TURN on
+//! every transport, TLS/443 included.
 
-use crate::core::{Action, Config, Core, IceServer, TICK_MS};
+use crate::core::{Action, Config, Core, Event, IceServer, TICK_MS};
 use crate::link::PathId;
 use js_sys::{Array, Object, Reflect, Uint8Array};
 use serde_json::{json, Value};
@@ -32,7 +33,7 @@ struct Inner {
     ws: Option<WebSocket>,
     ws_epoch: u32,
     pcs: HashMap<(u16, PathId), Pc>,
-    events: Vec<Value>,
+    events: Vec<Event>,
 }
 
 type Shared = Rc<RefCell<Inner>>;
@@ -79,7 +80,7 @@ fn perform(sh: &Shared) {
                         }
                     }
                 }
-                Action::Emit(e) => sh.borrow_mut().events.push(serde_json::to_value(&e).unwrap_or(Value::Null)),
+                Action::Emit(e) => sh.borrow_mut().events.push(e),
             }
         }
     }
@@ -335,22 +336,17 @@ fn pc_signal(sh: &Shared, mid: u16, path: PathId, gen: u32, signal: Value) {
     }
 }
 
-/// The engine for web pages. One per page.
-#[wasm_bindgen]
-pub struct WebEngine {
+/// The engine for Rust games built for the web: the native `Engine`'s API on
+/// the browser's event loop (the browser runs it; nothing blocks).
+pub struct Engine {
     sh: Shared,
 }
 
-#[wasm_bindgen]
-impl WebEngine {
-    /// `config`: `{edge, key, conn?, client?, player_token?, no_webrtc?}` (JSON).
-    #[wasm_bindgen(constructor)]
-    pub fn new(config: &str) -> Result<WebEngine, JsValue> {
-        let mut cfg: Config = serde_json::from_str(config).map_err(|e| JsValue::from_str(&format!("config: {e}")))?;
+impl Engine {
+    /// Start connecting. Events (starting with `Online`) arrive via `poll`.
+    pub fn start(mut cfg: Config) -> Self {
         if cfg.conn.is_empty() {
-            let mut b = [0u8; 18];
-            let _ = getrandom::fill(&mut b);
-            cfg.conn = b.iter().map(|x| b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"[(*x & 63) as usize] as char).collect();
+            cfg.conn = Self::new_conn_id();
         }
         let sh: Shared = Rc::new(RefCell::new(Inner { core: Core::new(cfg), ws: None, ws_epoch: 0, pcs: HashMap::new(), events: Vec::new() }));
         let s = sh.clone();
@@ -358,50 +354,113 @@ impl WebEngine {
             s.borrow_mut().core.tick(now());
             perform(&s);
         });
-        let win = web_sys::window().ok_or("no window")?;
-        win.set_interval_with_callback_and_timeout_and_arguments_0(tick.as_ref().unchecked_ref(), TICK_MS as i32)?;
+        if let Some(win) = web_sys::window() {
+            let _ = win.set_interval_with_callback_and_timeout_and_arguments_0(tick.as_ref().unchecked_ref(), TICK_MS as i32);
+        }
         tick.forget();
-        Ok(WebEngine { sh })
+        Engine { sh }
+    }
+
+    /// A fresh random connection id (one per page load).
+    pub fn new_conn_id() -> String {
+        let mut b = [0u8; 18];
+        let _ = getrandom::fill(&mut b);
+        b.iter().map(|x| b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"[(*x & 63) as usize] as char).collect()
+    }
+
+    /// Every event since the last call.
+    pub fn poll(&self) -> Vec<Event> {
+        std::mem::take(&mut self.sh.borrow_mut().events)
+    }
+
+    fn act<R>(&self, f: impl FnOnce(&mut Core) -> R) -> R {
+        let r = f(&mut self.sh.borrow_mut().core);
+        perform(&self.sh);
+        r
+    }
+
+    pub fn create(&self, game: &str, max_members: Option<u32>, kind: &str, name: &str, meta: Value) -> u32 {
+        self.act(|c| c.create(game, max_members, kind, name, meta))
+    }
+    pub fn join(&self, code: &str, kind: &str, name: &str, meta: Value) -> u32 {
+        self.act(|c| c.join(code, kind, name, meta))
+    }
+    pub fn leave(&self) {
+        self.act(|c| {
+            c.leave();
+        })
+    }
+    pub fn update(&self, patch: Value) {
+        self.act(|c| {
+            c.update(patch);
+        })
+    }
+    pub fn kick(&self, mid: u16) {
+        self.act(|c| {
+            c.kick(mid);
+        })
+    }
+    /// Send to a member (`crate::core::BROADCAST` for everyone).
+    pub fn send(&self, to: u16, reliable: bool, bytes: Vec<u8>) {
+        self.act(|c| c.send(to, reliable, &bytes, now()))
+    }
+    pub fn report(&self, metrics: Value) {
+        self.act(|c| c.report(metrics))
+    }
+    pub fn online(&self) -> bool {
+        self.sh.borrow().core.online()
+    }
+    /// Link state per member (path in use, RTT per path).
+    pub fn stats(&self) -> Value {
+        self.sh.borrow().core.stats()
+    }
+}
+
+/// The engine for web pages (JavaScript). One per page.
+#[wasm_bindgen]
+pub struct WebEngine {
+    e: Engine,
+}
+
+#[wasm_bindgen]
+impl WebEngine {
+    /// `config`: `{edge, key, conn?, client?, player_token?, no_webrtc?}` (JSON).
+    #[wasm_bindgen(constructor)]
+    pub fn new(config: &str) -> Result<WebEngine, JsValue> {
+        let cfg: Config = serde_json::from_str(config).map_err(|e| JsValue::from_str(&format!("config: {e}")))?;
+        web_sys::window().ok_or("no window")?;
+        Ok(WebEngine { e: Engine::start(cfg) })
     }
 
     /// Events since the last call, as a JSON array.
     pub fn poll(&self) -> String {
-        let ev = std::mem::take(&mut self.sh.borrow_mut().events);
-        serde_json::to_string(&ev).unwrap_or_else(|_| "[]".into())
+        serde_json::to_string(&self.e.poll()).unwrap_or_else(|_| "[]".into())
     }
 
     pub fn create(&self, game: &str, max_members: u32, kind: &str, name: &str, meta: &str) -> u32 {
-        let meta = serde_json::from_str(meta).unwrap_or(Value::Null);
-        let id = self.sh.borrow_mut().core.create(game, Some(max_members), kind, name, meta);
-        perform(&self.sh);
-        id
+        self.e.create(game, Some(max_members), kind, name, serde_json::from_str(meta).unwrap_or(Value::Null))
     }
 
     pub fn join(&self, code: &str, kind: &str, name: &str, meta: &str) -> u32 {
-        let meta = serde_json::from_str(meta).unwrap_or(Value::Null);
-        let id = self.sh.borrow_mut().core.join(code, kind, name, meta);
-        perform(&self.sh);
-        id
+        self.e.join(code, kind, name, serde_json::from_str(meta).unwrap_or(Value::Null))
     }
 
     pub fn leave(&self) {
-        self.sh.borrow_mut().core.leave();
-        perform(&self.sh);
+        self.e.leave()
     }
 
     /// Send bytes to a member (0xFFFF = everyone).
     pub fn send(&self, to: u16, reliable: bool, bytes: &[u8]) {
-        self.sh.borrow_mut().core.send(to, reliable, bytes, now());
-        perform(&self.sh);
+        self.e.send(to, reliable, bytes.to_vec())
     }
 
     pub fn online(&self) -> bool {
-        self.sh.borrow().core.online()
+        self.e.online()
     }
 
     /// Link state per member, as JSON.
     pub fn stats(&self) -> String {
-        self.sh.borrow().core.stats().to_string()
+        self.e.stats().to_string()
     }
 
     #[wasm_bindgen(js_name = pathName)]

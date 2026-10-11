@@ -12,3 +12,5 @@ pub use core::{Config, Event, Member, Room, BROADCAST};
 pub use link::PathId;
 #[cfg(target_arch = "wasm32")]
 pub mod web;
+#[cfg(target_arch = "wasm32")]
+pub use web::Engine;

@@ -2,7 +2,7 @@
 /* eslint-disable */
 
 /**
- * The engine for web pages. One per page.
+ * The engine for web pages (JavaScript). One per page.
  */
 export class WebEngine {
     free(): void;
