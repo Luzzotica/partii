@@ -3,6 +3,8 @@
 //! mutations, the token from `PARTII_TOKEN`, and `partii help --json` for
 //! the full command tree (docs/DESIGN.md, "The CLI").
 
+mod bot;
+mod dev;
 mod help;
 mod out;
 mod torture;
@@ -37,6 +39,12 @@ pub enum Cmd {
         #[arg(long)]
         json: bool,
     },
+    /// Run the platform on this machine, and make dev keys.
+    #[command(subcommand)]
+    Dev(dev::DevCmd),
+    /// Headless engine peers (for checks and the torture harness).
+    #[command(subcommand)]
+    Bot(bot::BotCmd),
     /// Network torture harness: run real clients through bad networks.
     #[command(subcommand)]
     Torture(torture::TortureCmd),
@@ -58,6 +66,8 @@ fn main() {
     let pretty = cli.pretty;
     let result: CliResult = match &cli.cmd {
         Cmd::Help { .. } => Ok(help::tree()),
+        Cmd::Dev(c) => dev::run(&cli, c),
+        Cmd::Bot(c) => bot::run(&cli, c),
         Cmd::Torture(c) => torture::run(&cli, c),
     };
     std::process::exit(out::print(result, pretty));

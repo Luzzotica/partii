@@ -4,8 +4,9 @@
 //!
 //! - Play starts on whatever is open first (the ws relay is open the moment
 //!   both peers are in the room).
-//! - A better path takes over only when it is faster by ≥10% and ≥5 ms for
-//!   a full second.
+//! - A better path takes over only when it scores better by ≥10% and ≥5 ms
+//!   for a full second. Score = RTT, plus `WS_PENALTY_MS` for the ws relay,
+//!   so a healthy WebRTC path wins unless it is clearly slower.
 //! - A path that misses pongs for `DEAD_MS` loses traffic at once.
 //! - Reliable messages ride the link's ARQ, so a switch never loses or
 //!   reorders them.
@@ -16,7 +17,7 @@
 use crate::arq::{self, Ack, Fragment};
 use std::collections::VecDeque;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PathId {
     Ws = 0,
@@ -38,6 +39,10 @@ impl PathId {
 pub const PING_MS: f64 = 250.0;
 pub const DEAD_MS: f64 = 1000.0;
 pub const SWITCH_HOLD_MS: f64 = 1000.0;
+/// The ws relay is the last rung: every packet is an edge request and it
+/// rides TCP. Score it this much worse so play leaves it for any healthy
+/// WebRTC path that is not clearly slower.
+pub const WS_PENALTY_MS: f64 = 25.0;
 
 const PING: u8 = 0x10;
 const PONG: u8 = 0x11;
@@ -241,10 +246,11 @@ impl Link {
         if cur_ok && self.connected_at.is_none() {
             self.connected_at = Some(now);
         }
+        let score = |p: PathId| self.path(p).rtt.map(|r| r + if p == PathId::Ws { WS_PENALTY_MS } else { 0.0 });
         let best = PathId::ALL
             .into_iter()
             .filter(|p| *p != cur && self.path(*p).healthy(now))
-            .min_by(|a, b| self.path(*a).rtt.unwrap_or(f64::MAX).total_cmp(&self.path(*b).rtt.unwrap_or(f64::MAX)));
+            .min_by(|a, b| score(*a).unwrap_or(f64::MAX).total_cmp(&score(*b).unwrap_or(f64::MAX)));
         if !cur_ok {
             // Fail over now: the best measured path, else the ws relay.
             let to = best.or_else(|| self.usable(PathId::Ws, now).then_some(PathId::Ws)).filter(|p| *p != cur);
@@ -257,7 +263,7 @@ impl Link {
             self.candidate = None;
             return;
         };
-        let (rb, rc) = (self.path(b).rtt.unwrap_or(f64::MAX), self.path(cur).rtt);
+        let (rb, rc) = (score(b).unwrap_or(f64::MAX), score(cur));
         let better = match rc {
             // Current not measured yet (fresh ws): any measured path is better.
             None => true,
@@ -442,6 +448,18 @@ mod tests {
         s.a.send(true, b"still here");
         s.step(500.0);
         assert!(s.msgs_b(true).contains(&b"still here".to_vec()));
+    }
+
+    #[test]
+    fn leaves_a_fast_ws_relay_for_webrtc() {
+        // Even when the relay is quick, a healthy WebRTC path takes over.
+        let mut s = Sim::new([3.0, 20.0, 1.0]);
+        s.open(PathId::Ws, true);
+        s.step(600.0);
+        s.open(PathId::Direct, true);
+        s.step(1500.0);
+        assert_eq!(s.a.current(), PathId::Direct);
+        assert_eq!(s.b.current(), PathId::Direct);
     }
 
     #[test]

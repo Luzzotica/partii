@@ -3,3 +3,10 @@
 //! web pages (docs/platform/ENGINE.md).
 pub mod arq;
 pub mod link;
+pub mod core;
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+pub mod native;
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+pub use native::Engine;
+pub use core::{Config, Event, Member, Room, BROADCAST};
+pub use link::PathId;

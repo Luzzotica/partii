@@ -137,7 +137,7 @@ enum Req {
 }
 
 enum Sock {
-    Down { retry_at: f64, attempt: usize },
+    Down { retry_at: f64 },
     Connecting,
     Hello,
     Up,
@@ -147,6 +147,8 @@ pub struct Core {
     cfg: Config,
     sock: Sock,
     ever_up: bool,
+    /// Failed connects since the socket was last up (drives the backoff).
+    attempt: usize,
     ice: Vec<IceServer>,
     relay: String,
     room: Option<Room>,
@@ -160,8 +162,9 @@ impl Core {
     pub fn new(cfg: Config) -> Self {
         Self {
             cfg,
-            sock: Sock::Down { retry_at: 0.0, attempt: 0 },
+            sock: Sock::Down { retry_at: 0.0 },
             ever_up: false,
+            attempt: 0,
             ice: Vec::new(),
             relay: "ws".into(),
             room: None,
@@ -264,7 +267,7 @@ impl Core {
     // ── Driver input ──
 
     pub fn tick(&mut self, now: f64) {
-        if let Sock::Down { retry_at, .. } = self.sock {
+        if let Sock::Down { retry_at } = self.sock {
             if now >= retry_at {
                 self.sock = Sock::Connecting;
                 let url = self.url();
@@ -288,13 +291,11 @@ impl Core {
     }
 
     pub fn on_socket_closed(&mut self, now: f64) {
-        let attempt = match self.sock {
-            Sock::Down { attempt, .. } => attempt + 1,
-            _ => 0,
-        };
         let was_up = matches!(self.sock, Sock::Up);
+        let attempt = if was_up { 0 } else { self.attempt + 1 };
+        self.attempt = attempt;
         let wait = RECONNECT_BACKOFF_MS[attempt.min(RECONNECT_BACKOFF_MS.len() - 1)];
-        self.sock = Sock::Down { retry_at: now + wait, attempt };
+        self.sock = Sock::Down { retry_at: now + wait };
         for (_, p) in self.peers.iter_mut() {
             p.link.set_open(PathId::Ws, false, now);
         }
@@ -338,9 +339,10 @@ impl Core {
                         x.status = if suspended { "suspended" } else { "active" }.into();
                     }
                 }
+                let open = !suspended && self.online_now();
                 if let Some(p) = self.peers.get_mut(&mid) {
                     // Its relay socket is down (or back); WebRTC paths judge themselves.
-                    p.link.set_open(PathId::Ws, !suspended && self.online_now(), now);
+                    p.link.set_open(PathId::Ws, open, now);
                 }
                 self.emit(if suspended { Event::MemberSuspended { mid } } else { Event::MemberResumed { mid } });
             }
@@ -364,7 +366,6 @@ impl Core {
                 }
                 self.relay = m["relay"].as_str().unwrap_or("ws").into();
             }
-            "err" => {}
             _ => {}
         }
     }
@@ -434,6 +435,7 @@ impl Core {
     fn welcome(&mut self, m: &Value, now: f64) {
         self.sock = Sock::Up;
         self.ever_up = true;
+        self.attempt = 0;
         self.ice = serde_json::from_value(m["ice_servers"].clone()).unwrap_or_default();
         self.relay = m["relay"].as_str().unwrap_or("ws").into();
         let resumed = m["resumed"].as_bool().unwrap_or(false);
@@ -626,7 +628,7 @@ impl Core {
         for e in events {
             match e {
                 LinkEvent::Message { reliable, bytes } => self.emit(Event::Message { from: mid, reliable, bytes }),
-                LinkEvent::Switched { from, to, rtt } if from == to => self.emit(Event::PeerConnected { mid, path: to }),
+                LinkEvent::Switched { from, to, .. } if from == to => self.emit(Event::PeerConnected { mid, path: to }),
                 LinkEvent::Switched { from, to, rtt } => self.emit(Event::PathChanged { mid, from, to, rtt }),
             }
         }
