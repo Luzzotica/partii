@@ -1,0 +1,27 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "partii-edge",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "durable_objects": {
+    "bindings": [
+      { "name": "SESSION", "class_name": "Session" },
+      { "name": "ROOM", "class_name": "Room" }
+    ]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Session", "Room"] }],
+  "vars": { "PARTII_ENV": "dev" },
+  "env": {
+    "staging": {
+      "name": "partii-edge-staging",
+      "vars": { "PARTII_ENV": "staging" },
+      "durable_objects": {
+        "bindings": [
+          { "name": "SESSION", "class_name": "Session" },
+          { "name": "ROOM", "class_name": "Room" }
+        ]
+      }
+    }
+  }
+}

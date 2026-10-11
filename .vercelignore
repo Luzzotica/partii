@@ -20,3 +20,4 @@ games/gyrii/spacetimedb/target
 **/*.o
 **/*.rmeta
 **/*.d
+platform
