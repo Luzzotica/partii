@@ -11,7 +11,7 @@
     ]
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Session", "Room"] }],
-  "vars": { "PARTII_ENV": "dev" },
+  "vars": { "PARTII_ENV": "dev", "KEY_SECRET": "dev-only-key-secret", "TURN_MODE": "none" },
   "env": {
     "staging": {
       "name": "partii-edge-staging",

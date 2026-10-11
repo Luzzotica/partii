@@ -1,0 +1,4 @@
+# A torture-harness client: Chromium (for web bots) + Linux net tools.
+FROM mcr.microsoft.com/playwright:v1.56.1-noble
+RUN apt-get update && apt-get install -y --no-install-recommends iptables iproute2 iputils-ping dnsutils ca-certificates && rm -rf /var/lib/apt/lists/*
+CMD ["sleep", "infinity"]

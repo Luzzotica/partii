@@ -1,0 +1,4 @@
+# A torture-harness router: forwards and NATs a LAN onto the WAN.
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends iptables iproute2 && rm -rf /var/lib/apt/lists/*
+CMD ["sleep", "infinity"]
