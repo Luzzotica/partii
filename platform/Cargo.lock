@@ -2059,6 +2059,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "partii-account"
+version = "0.1.0"
+dependencies = [
+ "getrandom 0.3.4",
+ "partii-api",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "partii-api"
 version = "0.1.0"
 dependencies = [

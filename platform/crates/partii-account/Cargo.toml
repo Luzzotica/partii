@@ -1,0 +1,12 @@
+[package]
+name = "partii-account"
+description = "The player's partii account inside a game: guest sign-in per device, entitlements cached for offline play, cloud saves with conflict merging, checkout."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+partii-api = { path = "../partii-api" }
+serde.workspace = true
+serde_json.workspace = true
+getrandom = "0.3"
