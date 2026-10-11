@@ -82,6 +82,8 @@ struct State {
     saves: HashMap<String, (i64, String)>,
     checkout: Option<Result<String, String>>,
     error: Option<String>,
+    /// Writes queued and not yet answered by the platform.
+    pending: usize,
 }
 
 enum Job {
@@ -197,7 +199,11 @@ impl Account {
                 for job in rx {
                     match job {
                         Job::Refresh => refresh(&c, &cfg.game, &shared, &cache_path),
-                        Job::Write { slot, contents } => write_save(&c, &cfg, &shared, &slot, contents),
+                        Job::Write { slot, contents } => {
+                            write_save(&c, &cfg, &shared, &slot, contents);
+                            let mut s = lock(&shared);
+                            s.pending = s.pending.saturating_sub(1);
+                        }
                         Job::Checkout => {
                             let out = match c.json("storeCheckout", &[("game", cfg.game.as_str())], Some(json!({}))) {
                                 Ok(v) if v["ok"] == true => match v["url"].as_str() {
@@ -254,9 +260,21 @@ impl Account {
     pub fn save_rev(&self, slot: &str) -> i64 {
         lock(&self.st).saves.get(slot).map(|(r, _)| *r).unwrap_or(0)
     }
-    /// Queue a write of JSON text to a slot.
+    /// Queue a write of JSON text (it is stored as parsed JSON) to a slot.
     pub fn write_save(&self, slot: &str, contents: &str) -> bool {
-        self.jobs.send(Job::Write { slot: slot.to_string(), contents: contents.to_string() }).is_ok()
+        lock(&self.st).pending += 1;
+        let ok = self.jobs.send(Job::Write { slot: slot.to_string(), contents: contents.to_string() }).is_ok();
+        if !ok {
+            let mut s = lock(&self.st);
+            s.pending = s.pending.saturating_sub(1);
+        }
+        ok
+    }
+    /// Writes not yet stored by the platform. Wait for 0 (briefly) before
+    /// quitting if a save must not be lost; writes made offline wait for
+    /// sign-in.
+    pub fn pending_writes(&self) -> usize {
+        lock(&self.st).pending
     }
 }
 

@@ -17,6 +17,14 @@ pub fn tree() -> Value {
             "mutations": "idempotent; --dry-run shows the change without making it"
         },
         "global_args": args(&cmd),
+        // API commands also take the per-role credentials.
+        "api_args": [
+            {"name": "--key", "env": "PARTII_KEY", "help": "Publishable key (games and players)."},
+            {"name": "--player-token", "env": "PARTII_PLAYER_TOKEN", "help": "Player token."},
+            {"name": "--admin-token", "env": "PARTII_ADMIN_TOKEN", "help": "Platform admin token."},
+            {"name": "--body", "help": "The whole JSON body, or @path/to/file.json"},
+            {"name": "--field", "help": "One body field KEY=VALUE (repeatable); JSON values are parsed"}
+        ],
         "commands": cmd.get_subcommands().filter(|c| c.get_name() != "help").map(command).collect::<Vec<_>>(),
         "api_commands": crate::api_cmd::help_entries(),
     })

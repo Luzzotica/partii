@@ -151,6 +151,9 @@ enum Sock {
     Up,
 }
 
+/// How long a create/join made before the socket is up waits for it.
+pub const OFFLINE_QUEUE_MS: f64 = 10_000.0;
+
 pub struct Core {
     cfg: Config,
     sock: Sock,
@@ -162,6 +165,10 @@ pub struct Core {
     room: Option<Room>,
     peers: BTreeMap<u16, Peer>,
     next_req: u32,
+    /// Creates/joins asked for before the socket was up: (id, message,
+    /// first tick seen). Sent on `Online`; failed `offline` after
+    /// `OFFLINE_QUEUE_MS`.
+    queued: Vec<(u32, Value, Option<f64>)>,
     reqs: BTreeMap<u32, Req>,
     out: VecDeque<Action>,
     last_rx: f64,
@@ -180,6 +187,7 @@ impl Core {
             room: None,
             peers: BTreeMap::new(),
             next_req: 1,
+            queued: Vec::new(),
             reqs: BTreeMap::new(),
             out: VecDeque::new(),
             last_rx: 0.0,
@@ -252,11 +260,40 @@ impl Core {
         v["id"] = json!(id);
         if self.online() {
             self.text(v);
+        } else if matches!(kind, Req::Create | Req::Join) {
+            // Games call create/join from their first frame: hold it until
+            // the socket is up rather than failing.
+            self.queued.push((id, v, None));
         } else {
             self.reqs.remove(&id);
             self.emit(Event::Failed { req: id, code: "offline".into(), message: "not connected to partii yet".into() });
         }
         id
+    }
+
+    /// Send held creates/joins (just came online) or fail the stale ones.
+    fn pump_queued(&mut self, now: Option<f64>) {
+        if self.queued.is_empty() {
+            return;
+        }
+        if self.online() {
+            for (_, v, _) in std::mem::take(&mut self.queued) {
+                self.text(v);
+            }
+            return;
+        }
+        let Some(now) = now else { return };
+        let mut keep = Vec::new();
+        for (id, v, since) in std::mem::take(&mut self.queued) {
+            let since = since.unwrap_or(now);
+            if now - since > OFFLINE_QUEUE_MS {
+                self.reqs.remove(&id);
+                self.emit(Event::Failed { req: id, code: "offline".into(), message: "could not reach partii".into() });
+            } else {
+                keep.push((id, v, Some(since)));
+            }
+        }
+        self.queued = keep;
     }
 
     pub fn create(&mut self, game: &str, max_members: Option<u32>, kind: &str, name: &str, meta: Value) -> u32 {
@@ -316,6 +353,7 @@ impl Core {
     // ── Driver input ──
 
     pub fn tick(&mut self, now: f64) {
+        self.pump_queued(Some(now));
         if matches!(self.sock, Sock::Up | Sock::Hello) {
             if now - self.last_rx > SOCK_DEAD_MS {
                 // Silent socket: drop it and reconnect (the session resumes).
@@ -543,6 +581,7 @@ impl Core {
         }
         let relay = self.relay.clone();
         self.emit(Event::Online { resumed, relay });
+        self.pump_queued(None);
     }
 
     fn reply(&mut self, m: &Value, now: f64) {

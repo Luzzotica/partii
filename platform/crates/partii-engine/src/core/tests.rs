@@ -53,10 +53,41 @@ fn connects_then_says_hello_then_goes_online() {
 }
 
 #[test]
-fn requests_fail_fast_while_offline() {
+fn a_create_before_online_is_sent_once_the_socket_is_up() {
     let mut c = core(true);
-    let id = c.create("g", None, "game", "", Value::Null);
+    let id = c.create("g", Some(4), "game", "Ann", Value::Null);
+    assert!(events(&c.drain()).is_empty(), "held, not failed");
+    online_keep(&mut c);
+    let sent = texts(&c.drain());
+    let create = sent.iter().find(|t| t["t"] == "create").expect("create sent after welcome");
+    assert_eq!(create["id"], id);
+    assert_eq!(create["name"], "Ann");
+}
+
+#[test]
+fn a_held_join_fails_offline_when_partii_stays_unreachable() {
+    let mut c = core(true);
+    let id = c.join("ABCDE", "game", "", Value::Null);
+    c.tick(0.0);
+    c.drain();
+    c.tick(OFFLINE_QUEUE_MS - 1.0);
+    assert!(events(&c.drain()).iter().all(|e| !matches!(e, Event::Failed { .. })));
+    c.tick(OFFLINE_QUEUE_MS + 1.0);
+    assert!(events(&c.drain()).iter().any(|e| matches!(e, Event::Failed { req, code, .. } if *req == id && code == "offline")));
+}
+
+#[test]
+fn other_requests_still_fail_fast_while_offline() {
+    let mut c = core(true);
+    let id = c.kick(2);
     assert!(matches!(&events(&c.drain())[0], Event::Failed { req, code, .. } if *req == id && code == "offline"));
+}
+
+/// Like `online`, but leaves the actions for the caller to inspect.
+fn online_keep(c: &mut Core) {
+    c.tick(0.0);
+    c.on_socket_open(0.0);
+    c.on_text(r#"{"t":"welcome","resumed":false,"relay":"ws","ice_servers":[]}"#, 0.0);
 }
 
 #[test]

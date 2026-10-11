@@ -21,7 +21,7 @@ cargo build -p partii-cli            # → target/debug/partii (put it on PATH)
 
 Which platform you use:
 
-- **Local** (everything on your machine): `partii dev up` (leave it running). It prints its URL and a dev key. Fake stores and logins are on.
+- **Local** (everything on your machine): `partii dev up` (leave it running). It prints its URL and a ready-made publishable key for a built-in `demo` project, handy for a first multiplayer test. For a real game make your own project and key (section 1); `partii dev key` mints more demo keys. Locally, purchases go through a fake store and logins are fake, so nothing needs Stripe or Apple.
 - **Staging** or **production**: set `PARTII_API` to its URL.
 
 Credentials come from the environment:
@@ -32,6 +32,7 @@ Credentials come from the environment:
 | `PARTII_TOKEN` | Your developer token |
 | `PARTII_KEY` | A publishable key (games and web pages ship this) |
 | `PARTII_PLAYER_TOKEN` | A player's token (for player commands and tests) |
+| `PARTII_ADMIN_TOKEN` | Platform operators only (`partii admin …`); locally `dev-admin-token` |
 
 ## 1. Account, project, key
 
@@ -47,9 +48,19 @@ export PARTII_KEY=pk_mystudio_game_...
 
 Every create is safe to repeat: `put` updates, and `create` with the same id returns the same key. Add `--dry-run` to any change to see it without making it.
 
+Ids: projects are lowercase letters and digits; games are 1–40 lowercase letters, digits and dashes (`my-game`).
+
 ## 2. Multiplayer in a Rust game
 
-Add the engine (path or git dependency on `partii/platform/crates/partii-engine`). It runs its own threads, and nothing blocks your frame:
+Add the engine. It runs its own threads, and nothing blocks your frame:
+
+```toml
+[dependencies]
+partii-engine = { path = "../partii/platform/crates/partii-engine" }   # or a git dependency; feature `native` (default) = desktop/mobile
+serde_json = "1"                                                       # member/room `meta` is a serde_json::Value
+```
+
+For a web (wasm) build use `default-features = false`; the same `Engine` API runs on the browser's event loop.
 
 ```rust
 use partii_engine::{Config, Engine, Event, BROADCAST};
@@ -63,8 +74,10 @@ let engine = Engine::start(Config {
     no_webrtc: false,
 });
 
-// Later, from a menu (the engine connects at once; create/join right away is fine):
-let req = engine.create("mygame", Some(4), "game", "Alice", serde_json::json!({}));
+// Any time, even on the first frame: a create/join made before the engine is
+// online is held and sent the moment it connects (Event::Online); if partii
+// can't be reached within 10 s it fails with code "offline".
+let req: u32 = engine.create("mygame", Some(4), "game", "Alice", serde_json::json!({}));
 // or: engine.join("KXQPT", "game", "Bob", serde_json::json!({}));
 
 // Every frame:
@@ -72,11 +85,11 @@ for ev in engine.poll() {
     match ev {
         Event::Created { room, .. } => show_code(&room.code),   // 5 capital letters
         Event::Joined { room, .. } => { /* you are room.you; the host is room.host */ }
-        Event::Failed { code, message, .. } => show_error(&code, &message), // not_found, full, offline, …
+        Event::Failed { req, code, message } => show_error(&code, &message), // not_found, full, not_joinable, offline, …
         Event::PeerConnected { mid, .. } => { /* member `mid` can receive now */ }
         Event::MemberLeft { mid, .. } => { /* gone */ }
         Event::Message { from, reliable, bytes } => handle(from, reliable, &bytes),
-        Event::RoomClosed { .. } => back_to_menu(),
+        Event::RoomClosed { reason } => back_to_menu(),          // "host_left", "expired", "kicked", …
         _ => {}
     }
 }
@@ -84,6 +97,26 @@ engine.send(mid, false, input_bytes);     // unreliable: positions, inputs
 engine.send(mid, true, event_bytes);      // reliable and ordered: chat, joins, round results
 engine.send(BROADCAST, true, bytes);      // everyone else in the room
 ```
+
+`create` and `join` return a request id (`u32`); the matching `Created`/`Joined`/`Failed` carries it as `req`. Every event:
+
+| Event | Fields | Meaning |
+|---|---|---|
+| `Online` | `resumed: bool, relay: String` | The session socket is up (first time or after a drop). |
+| `Offline` | – | The socket dropped; the engine is reconnecting (rooms survive short drops). |
+| `Created` / `Joined` | `req: u32, room: Room` | You are in the room. |
+| `Failed` | `req: u32, code: String, message: String` | A create/join didn't happen. |
+| `MemberJoined` | `member: Member` | Someone joined. |
+| `MemberLeft` | `mid: u16, reason: String` | Someone left (or their seat grace ran out). |
+| `MemberSuspended` / `MemberResumed` | `mid: u16` | A member's connection dropped / came back (seat kept meanwhile). |
+| `RoomUpdated` | `room: Room` | Room settings changed (joinable, meta, size). |
+| `RoomClosed` | `reason: String` | The room is gone for you. When the host leaves, guests get `host_left`. |
+| `PeerConnected` | `mid: u16, path: PathId` | You can send to `mid` now. |
+| `PathChanged` | `mid: u16, from, to: PathId, rtt: Option<f64>` | The route to a member changed (ws relay ↔ TURN ↔ direct). Informational. |
+| `Message` | `from: u16, reliable: bool, bytes: Vec<u8>` | Data from a member. |
+| `Error` | `message: String` | Something to log; the engine recovers by itself. |
+
+`Room { code: String, game: String, host: u16, you: u16, joinable: bool, max_members: u32, meta: Value, members: Vec<Member> }` and `Member { mid: u16, kind: String, name: String, meta: Value, status: String }`. Member ids (`mid`) are small integers, unique within the room; the host is `room.host`.
 
 What the engine does for you:
 
@@ -110,7 +143,7 @@ partii torture run --client engine   # every bad network, in Docker (see docs/DE
 
 ## 3. Players and saves
 
-Add `partii-account` (path or git dependency on `partii/platform/crates/partii-account`). One `Account` per launch does it all on a background thread:
+Add `partii-account` (`partii-account = { path = "../partii/platform/crates/partii-account" }`). One `Account` per launch does it all on a background thread (native builds):
 
 ```rust
 use partii_account::{Account, AccountConfig, merge_objects};
@@ -132,7 +165,31 @@ acct.player_id();                        // Some("p_...")
 acct.owns("full");                       // Some(true/false); None while unknown (fresh install offline)
 acct.read_save("progress");              // Some(json text) once fetched
 acct.write_save("progress", r#"{"level":3}"#);  // queued; conflicts merge and retry
+acct.pending_writes();                   // writes not stored yet; wait for 0 before quitting if it matters
 ```
+
+The API, in types:
+
+| Item | Type |
+|---|---|
+| `AccountConfig { edge, game, display_name }` | `String` |
+| `AccountConfig { key, player_token }` | `Option<String>` |
+| `AccountConfig { data_dir }` | `PathBuf` |
+| `AccountConfig { slots }` | `Vec<String>` |
+| `AccountConfig { merge }` | `Option<fn(slot: &str, mine: &str, theirs: &str) -> Option<String>>` (JSON texts in, merged JSON text out; `None` keeps yours) |
+| `merge_objects` | a ready-made `merge`: unions two JSON objects, your keys win |
+| `ready()` | `bool`: signed in, entitlements and the listed slots fetched |
+| `player_id()` | `Option<String>` |
+| `owns(sku)` | `Option<bool>` |
+| `read_save(slot)` | `Option<String>`: JSON text; `None` if empty or not fetched |
+| `save_rev(slot)` | `i64`: 0 = never written |
+| `write_save(slot, json_text)` | `bool`: queued; the text is stored as parsed JSON |
+| `pending_writes()` | `usize` |
+| `refresh()`, `start_checkout()` | `()` |
+| `take_checkout()` | `Option<Result<String, String>>` |
+| `error()` | `Option<String>` |
+
+**When `owns` is fresh.** Before `ready()`, `owns` returns last week's cached answer (or `None` on a fresh install). Once `ready()` is true it reflects the platform at sign-in. After a purchase made elsewhere (the browser, another device), call `refresh()`; `owns` updates when the answer arrives.
 
 - **Sign-in.** On first launch the install becomes a guest player (a random device id kept in `data_dir`), with no form. Later the player can link email (`playersEmailStart`, then `playersLogin` with `provider: "email"`), Apple, Google, Discord or Steam. The guest becomes, or merges into, that account, so saves and purchases follow them to every device.
 - **Saves.** Named JSON slots per game. If another device wrote first, your `merge` function gets both copies and the merged result is written. Every write keeps a backup (`savesHistory`, `savesRestore`).
@@ -147,9 +204,9 @@ Under the hood these are plain API calls (`POST /v1/players/guest`, `PUT /v1/sav
 partii games put mygame --project mystudio --title "My Game" --tagline "One line" \
   --description "What it is." --price-cents 499 \
   --field 'platforms=["macos","windows","ios","android"]' \
-  --field 'demo={"free_levels":20}'                   # optional free part; null for none
-partii builds upload mygame --platform macos --version 1.0.0 --file MyGame.dmg
-partii games publish mygame                           # now on the store
+  --field 'demo={"free_levels":20}'                   # a free part; `demo=null` = no free part (the whole game is paid)
+partii builds upload mygame --platform macos --version 1.0.0 --file MyGame.dmg   # optional for publishing
+partii games publish mygame                           # now on the store (needs nothing else)
 partii games sale mygame --percent 25                 # a week-long sale (or --starts-at/--ends-at, ms)
 partii codes create mygame --count 10 --note press    # redeemable keys
 ```
@@ -173,8 +230,10 @@ Test without paying:
 ```sh
 partii test players create --name Tester            # → player id + player_token
 partii test purchase --game mygame --player p_...   # Stripe test mode, or the fake store locally
-partii sales mygame                                  # purchases and totals
+partii sales mygame                                  # purchases and totals (gross_cents counts real sales only; test purchases are test_count)
 ```
+
+Body fields are also flags: `--price-cents 500` and `--field price_cents=500` are the same; use `--field` for JSON values (lists, objects, `null`).
 
 ## 5. Live content
 

@@ -1,6 +1,6 @@
 //! The partii connection engine. One implementation of rooms, signaling,
 //! peer links and recovery, used natively by games and compiled to wasm for
-//! web pages (docs/platform/ENGINE.md).
+//! web pages. Games: docs/GUIDE.md; wire protocol: docs/PROTOCOL.md.
 pub mod arq;
 pub mod link;
 pub mod core;

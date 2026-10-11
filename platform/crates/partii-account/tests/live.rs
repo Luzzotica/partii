@@ -37,6 +37,7 @@ fn saves_merge_across_devices_of_one_player() {
 
     a.write_save("progress", r#"{"a":1}"#);
     wait("a's write", || a.save_rev("progress") >= 1);
+    wait("a's queue drained", || a.pending_writes() == 0);
     // b still thinks the slot is empty: its write conflicts and merges.
     b.write_save("progress", r#"{"b":2}"#);
     wait("b's merged write", || b.save_rev("progress") >= 2);

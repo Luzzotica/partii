@@ -19,7 +19,7 @@ pub struct Cli {
     /// Platform API base URL.
     #[arg(long, global = true, env = "PARTII_API", default_value = "http://127.0.0.1:8787")]
     pub api: String,
-    /// Developer token (from `partii login`).
+    /// Developer token (from `partii admin developers create`, or your platform operator).
     #[arg(long, global = true, env = "PARTII_TOKEN", hide_env_values = true)]
     pub token: Option<String>,
     /// Show what a mutation would do without doing it.
