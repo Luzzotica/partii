@@ -167,7 +167,26 @@ async fn actor(cfg: Config, cmds: async_channel::Receiver<Cmd>, events: async_ch
                 Ok(Cmd::Leave) => { core.leave(); }
                 Ok(Cmd::Update(p)) => { core.update(p); }
                 Ok(Cmd::Kick(m)) => { core.kick(m); }
-                Ok(Cmd::Send { to, reliable, bytes }) => core.send(to, reliable, &bytes, now()),
+                Ok(Cmd::Send { to, reliable, bytes }) => {
+                    // Take every send already waiting, then flush once:
+                    // bundled frames cost the relay one request, not one each.
+                    core.queue(to, reliable, &bytes);
+                    let mut more = 0;
+                    while more < 256 {
+                        match cmds.try_recv() {
+                            Ok(Cmd::Send { to, reliable, bytes }) => core.queue(to, reliable, &bytes),
+                            Ok(other) => {
+                                core.flush(now());
+                                if !apply_other(&mut core, other) {
+                                    return;
+                                }
+                            }
+                            Err(_) => break,
+                        }
+                        more += 1;
+                    }
+                    core.flush(now());
+                }
                 Ok(Cmd::Report(m)) => core.report(m),
                 Ok(Cmd::Stats(reply)) => { let _ = reply.try_send(core.stats()); }
                 Ok(Cmd::Shutdown) | Err(_) => break,
@@ -242,6 +261,34 @@ async fn actor(cfg: Config, cmds: async_channel::Receiver<Cmd>, events: async_ch
             }
         }
     }
+}
+
+/// A non-send command met while draining sends; false = shut down.
+fn apply_other(core: &mut Core, c: Cmd) -> bool {
+    match c {
+        Cmd::Create { game, max, kind, name, meta, reply } => {
+            let _ = reply.try_send(core.create(&game, max, &kind, &name, meta));
+        }
+        Cmd::Join { code, kind, name, meta, reply } => {
+            let _ = reply.try_send(core.join(&code, &kind, &name, meta));
+        }
+        Cmd::Leave => {
+            core.leave();
+        }
+        Cmd::Update(p) => {
+            core.update(p);
+        }
+        Cmd::Kick(m) => {
+            core.kick(m);
+        }
+        Cmd::Report(m) => core.report(m),
+        Cmd::Stats(reply) => {
+            let _ = reply.try_send(core.stats());
+        }
+        Cmd::Send { .. } => {}
+        Cmd::Shutdown => return false,
+    }
+    true
 }
 
 async fn socket(url: String, epoch: u64, out: async_channel::Receiver<Message>, io: async_channel::Sender<Io>) {

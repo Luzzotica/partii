@@ -21,6 +21,9 @@ const PC_RETRY_MS: [f64; 5] = [1000.0, 2000.0, 4000.0, 8000.0, 10000.0];
 /// A WebRTC path that has not opened by now is rebuilt.
 const PC_OPEN_TIMEOUT_MS: f64 = 12_000.0;
 pub const RELAY_FRAME: u8 = 0x01;
+/// Several datagrams to one member in one relay frame: `[0x02][to][n]{[len u16 LE][bytes]}`.
+/// Every relayed frame is an edge request, so a flush goes out as one.
+pub const RELAY_BUNDLE: u8 = 0x02;
 pub const BROADCAST: u16 = 0xffff;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -281,7 +284,25 @@ impl Core {
         }
     }
 
-    /// Send to one member (or `BROADCAST`).
+    /// Queue for one member (or `BROADCAST`) without flushing; `flush`
+    /// sends everything queued, bundled per member.
+    pub fn queue(&mut self, to: u16, reliable: bool, bytes: &[u8]) {
+        let targets: Vec<u16> = if to == BROADCAST { self.peers.keys().copied().collect() } else { vec![to] };
+        for mid in targets {
+            if let Some(p) = self.peers.get_mut(&mid) {
+                p.link.send(reliable, bytes);
+            }
+        }
+    }
+
+    pub fn flush(&mut self, now: f64) {
+        let mids: Vec<u16> = self.peers.keys().copied().collect();
+        for mid in mids {
+            self.flush_link(mid, now);
+        }
+    }
+
+    /// Send to one member (or `BROADCAST`) now.
     pub fn send(&mut self, to: u16, reliable: bool, bytes: &[u8], now: f64) {
         let targets: Vec<u16> = if to == BROADCAST { self.peers.keys().copied().collect() } else { vec![to] };
         for mid in targets {
@@ -422,15 +443,31 @@ impl Core {
 
     pub fn on_binary(&mut self, b: &[u8], now: f64) {
         self.last_rx = now;
-        if b.len() < 3 || b[0] != RELAY_FRAME {
+        if b.len() < 3 || (b[0] != RELAY_FRAME && b[0] != RELAY_BUNDLE) {
             return;
         }
         let from = u16::from_be_bytes([b[1], b[2]]);
+        let datagrams: Vec<&[u8]> = if b[0] == RELAY_FRAME {
+            vec![&b[3..]]
+        } else {
+            let mut v = Vec::new();
+            let n = *b.get(3).unwrap_or(&0) as usize;
+            let mut i = 4;
+            for _ in 0..n {
+                let Some(len) = b.get(i..i + 2).map(|l| u16::from_le_bytes([l[0], l[1]]) as usize) else { break };
+                let Some(d) = b.get(i + 2..i + 2 + len) else { break };
+                v.push(d);
+                i += 2 + len;
+            }
+            v
+        };
         if let Some(p) = self.peers.get_mut(&from) {
             if !p.link.path(PathId::Ws).open {
                 p.link.set_open(PathId::Ws, true, now);
             }
-            p.link.on_datagram(PathId::Ws, &b[3..], now);
+            for d in datagrams {
+                p.link.on_datagram(PathId::Ws, d, now);
+            }
         }
         self.flush_link(from, now);
     }
@@ -704,18 +741,31 @@ impl Core {
             p.connected = true;
             events.insert(0, LinkEvent::Switched { from: p.link.current(), to: p.link.current(), rtt: None });
         }
+        let mut ws: Vec<Vec<u8>> = Vec::new();
         for (path, d) in datagrams {
             match path {
-                PathId::Ws => {
-                    if matches!(self.sock, Sock::Up) {
-                        let mut f = Vec::with_capacity(d.len() + 3);
-                        f.push(RELAY_FRAME);
-                        f.extend_from_slice(&mid.to_be_bytes());
-                        f.extend_from_slice(&d);
-                        self.out.push_back(Action::SendBinary(f));
-                    }
-                }
+                PathId::Ws => ws.push(d),
                 _ => self.out.push_back(Action::PcSend { mid, path, bytes: d }),
+            }
+        }
+        if matches!(self.sock, Sock::Up) && !ws.is_empty() {
+            if let [one] = &ws[..] {
+                let mut f = Vec::with_capacity(one.len() + 3);
+                f.push(RELAY_FRAME);
+                f.extend_from_slice(&mid.to_be_bytes());
+                f.extend_from_slice(one);
+                self.out.push_back(Action::SendBinary(f));
+            } else {
+                for chunk in ws.chunks(255) {
+                    let mut f = vec![RELAY_BUNDLE];
+                    f.extend_from_slice(&mid.to_be_bytes());
+                    f.push(chunk.len() as u8);
+                    for d in chunk {
+                        f.extend_from_slice(&(d.len() as u16).to_le_bytes());
+                        f.extend_from_slice(d);
+                    }
+                    self.out.push_back(Action::SendBinary(f));
+                }
             }
         }
         for e in events {

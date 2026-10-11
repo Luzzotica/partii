@@ -38,6 +38,11 @@ impl PathId {
 
 pub const PING_MS: f64 = 250.0;
 pub const DEAD_MS: f64 = 1000.0;
+/// The ws relay costs an edge request per packet, so while it is not
+/// carrying play it is pinged rarely (the session socket has its own
+/// keepalive) and judged over a longer window.
+pub const WS_IDLE_PING_MS: f64 = 2000.0;
+pub const WS_IDLE_DEAD_MS: f64 = 6000.0;
 pub const SWITCH_HOLD_MS: f64 = 1000.0;
 /// Leaving the ws relay for WebRTC needs less proof (the relay is the
 /// expensive last rung, and a flap back costs nothing but a few packets).
@@ -67,7 +72,10 @@ pub struct PathState {
 
 impl PathState {
     pub fn healthy(&self, now: f64) -> bool {
-        self.open && self.last_pong.is_some_and(|t| now - t < DEAD_MS)
+        self.healthy_within(now, DEAD_MS)
+    }
+    fn healthy_within(&self, now: f64, dead: f64) -> bool {
+        self.open && self.last_pong.is_some_and(|t| now - t < dead)
     }
 }
 
@@ -112,6 +120,11 @@ impl Link {
     }
     pub fn path(&self, p: PathId) -> &PathState {
         &self.paths[p as usize]
+    }
+    /// Is path `p` alive, judged by its own ping cadence?
+    fn alive(&self, p: PathId, now: f64) -> bool {
+        let dead = if p == PathId::Ws && self.current != PathId::Ws { WS_IDLE_DEAD_MS } else { DEAD_MS };
+        self.path(p).healthy_within(now, dead)
     }
     fn path_mut(&mut self, p: PathId) -> &mut PathState {
         &mut self.paths[p as usize]
@@ -193,9 +206,11 @@ impl Link {
     pub fn poll(&mut self, now: f64) -> Vec<(PathId, Vec<u8>)> {
         self.select(now);
         let mut out: Vec<(PathId, Vec<u8>)> = self.out.drain(..).collect();
+        let cur = self.current;
         for p in PathId::ALL {
+            let every = if p == PathId::Ws && cur != PathId::Ws { WS_IDLE_PING_MS } else { PING_MS };
             let s = self.path_mut(p);
-            if s.open && now - s.last_ping >= PING_MS {
+            if s.open && now - s.last_ping >= every {
                 s.last_ping = now;
                 s.ping_seq = s.ping_seq.wrapping_add(1);
                 s.pings += 1;
@@ -205,12 +220,11 @@ impl Link {
                 out.push((p, d));
             }
         }
-        if !self.usable(self.current, now) {
+        if !self.usable(cur, now) {
             // Nothing to carry traffic yet; reliable data waits in the ARQ.
             self.unrel.clear();
             return out;
         }
-        let cur = self.current;
         for b in self.unrel.drain(..) {
             let mut d = Vec::with_capacity(b.len() + 1);
             d.push(UNREL);
@@ -240,7 +254,7 @@ impl Link {
     /// checked), so play starts before the first pong.
     fn usable(&self, p: PathId, now: f64) -> bool {
         let s = self.path(p);
-        s.healthy(now) || (p == PathId::Ws && s.open && (s.last_pong.is_none() || s.healthy(now)))
+        self.alive(p, now) || (p == PathId::Ws && s.open && s.last_pong.is_none())
     }
 
     fn select(&mut self, now: f64) {
@@ -252,7 +266,7 @@ impl Link {
         let score = |p: PathId| self.path(p).rtt.map(|r| r + if p == PathId::Ws { WS_PENALTY_MS } else { 0.0 });
         let best = PathId::ALL
             .into_iter()
-            .filter(|p| *p != cur && self.path(*p).healthy(now))
+            .filter(|p| *p != cur && self.alive(*p, now))
             .min_by(|a, b| score(*a).unwrap_or(f64::MAX).total_cmp(&score(*b).unwrap_or(f64::MAX)));
         if !cur_ok {
             // Fail over now: the best measured path, else the ws relay.
@@ -464,6 +478,25 @@ mod tests {
         s.step(1500.0);
         assert_eq!(s.a.current(), PathId::Direct);
         assert_eq!(s.b.current(), PathId::Direct);
+    }
+
+    #[test]
+    fn the_idle_ws_relay_is_pinged_rarely_but_still_catches_a_failover() {
+        let mut s = Sim::new([40.0, 20.0, 5.0]);
+        s.open(PathId::Ws, true);
+        s.open(PathId::Direct, true);
+        s.step(2000.0);
+        assert_eq!(s.a.current(), PathId::Direct);
+        let before = s.a.path(PathId::Ws).pings;
+        s.step(10_000.0);
+        let ws_pings = s.a.path(PathId::Ws).pings - before;
+        assert!(ws_pings <= 6, "idle relay pinged {ws_pings} times in 10 s");
+        s.blackhole(PathId::Direct);
+        s.step(1500.0);
+        assert_eq!(s.a.current(), PathId::Ws, "still the fallback");
+        s.a.send(true, b"after");
+        s.step(500.0);
+        assert!(s.msgs_b(true).contains(&b"after".to_vec()));
     }
 
     #[test]

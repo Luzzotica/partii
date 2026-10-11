@@ -20,6 +20,7 @@ import {
   normalizeCode,
   PROTOCOL_VERSION,
   ProtoError,
+  RELAY_BUNDLE,
   RELAY_FRAME,
   str,
 } from "./protocol";
@@ -376,12 +377,13 @@ export class Session extends DurableObject<Env> {
     const s = this.load();
     if (!s?.room || data.byteLength < 3 || data.byteLength > MAX_RELAY_BYTES + 3) return;
     const v = new DataView(data);
-    if (v.getUint8(0) !== RELAY_FRAME) return;
+    const kind = v.getUint8(0);
+    if (kind !== RELAY_FRAME && kind !== RELAY_BUNDLE) return;
     const to = v.getUint16(1);
     const payload = data.slice(3);
     const me = s.room.mid;
     const targets = to === BROADCAST ? Object.entries(s.conns).filter(([mid]) => Number(mid) !== me).map(([, c]) => c) : [s.conns[to]].filter(Boolean);
-    for (const conn of targets) this.peer(conn).relay(me, payload).catch(() => {});
+    for (const conn of targets) this.peer(conn).relay(me, payload, kind).catch(() => {});
   }
 
   // ── RPC from rooms and other sessions ──
@@ -411,11 +413,11 @@ export class Session extends DurableObject<Env> {
     this.ctx.storage.kv.put("buf", buf);
   }
 
-  async relay(from: number, payload: ArrayBuffer): Promise<void> {
+  async relay(from: number, payload: ArrayBuffer, kind = RELAY_FRAME): Promise<void> {
     const ws = this.socket();
     if (!ws) return;
     const out = new Uint8Array(payload.byteLength + 3);
-    out[0] = RELAY_FRAME;
+    out[0] = kind;
     new DataView(out.buffer).setUint16(1, from);
     out.set(new Uint8Array(payload), 3);
     ws.send(out);

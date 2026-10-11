@@ -2,6 +2,8 @@
 
 export const PROTOCOL_VERSION = 1;
 export const RELAY_FRAME = 0x01;
+/** Several datagrams for one member in one frame (opaque to the edge). */
+export const RELAY_BUNDLE = 0x02;
 export const BROADCAST = 0xffff;
 export const MAX_RELAY_BYTES = 64 * 1024;
 export const DEFAULT_MAX_MEMBERS = 8;

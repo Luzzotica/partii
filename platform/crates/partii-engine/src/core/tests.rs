@@ -276,3 +276,32 @@ fn the_room_comes_before_its_peers() {
     let peer = ev.iter().position(|e| matches!(e, Event::PeerConnected { mid: 3, .. })).unwrap();
     assert!(joined < peer, "{ev:?}");
 }
+
+#[test]
+fn queued_sends_go_out_as_one_bundled_relay_frame() {
+    let mut a = core(true);
+    online(&mut a, "ws");
+    let id = a.join("ABCDE", "game", "", Value::Null);
+    a.drain();
+    a.on_text(&json!({"t": "ok", "id": id, "room": room(1, &[1, 2])}).to_string(), 0.0);
+    a.drain();
+    a.queue(2, false, b"one");
+    a.queue(2, false, b"two");
+    a.queue(2, true, b"three");
+    a.flush(1.0);
+    let frames: Vec<Vec<u8>> = a.drain().into_iter().filter_map(|x| if let Action::SendBinary(f) = x { Some(f) } else { None }).collect();
+    assert_eq!(frames.len(), 1, "{frames:?}");
+    assert_eq!(frames[0][0], RELAY_BUNDLE);
+    // The receiver unpacks every datagram.
+    let mut b = core(true);
+    online(&mut b, "ws");
+    let id = b.join("ABCDE", "game", "", Value::Null);
+    b.drain();
+    b.on_text(&json!({"t": "ok", "id": id, "room": room(2, &[1, 2])}).to_string(), 0.0);
+    b.drain();
+    let mut f = frames[0].clone();
+    f[1..3].copy_from_slice(&1u16.to_be_bytes());
+    b.on_binary(&f, 2.0);
+    let got: Vec<Vec<u8>> = events(&b.drain()).into_iter().filter_map(|e| if let Event::Message { bytes, .. } = e { Some(bytes) } else { None }).collect();
+    assert!(got.contains(&b"one".to_vec()) && got.contains(&b"two".to_vec()) && got.contains(&b"three".to_vec()), "{got:?}");
+}
