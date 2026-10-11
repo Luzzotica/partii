@@ -8,6 +8,8 @@ export const DEFAULT_MAX_MEMBERS = 8;
 export const MAX_MEMBERS = 32;
 export const GRACE_MS = 20_000;
 export const BUFFER_LIMIT = 512;
+/** A room made ahead of time lives this long unclaimed. */
+export const RESERVATION_MS = 30 * 60_000;
 
 export type ErrCode =
   | "bad_request"

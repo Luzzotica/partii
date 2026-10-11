@@ -5,7 +5,7 @@
 
 import { DurableObject } from "cloudflare:workers";
 import type { Env } from "./index";
-import { DEFAULT_MAX_MEMBERS, MAX_MEMBERS, type Joined, type Member, ProtoError, type RoomView } from "./protocol";
+import { DEFAULT_MAX_MEMBERS, MAX_MEMBERS, RESERVATION_MS, type Joined, type Member, ProtoError, type RoomView } from "./protocol";
 
 interface MemberRec extends Member {
   conn: string;
@@ -22,6 +22,8 @@ interface RoomState {
   nextMid: number;
   members: Record<number, MemberRec>;
   createdAt: number;
+  /** Made ahead of time for a session; invisible until that session claims it. */
+  reserved?: boolean;
 }
 
 export interface MemberArgs {
@@ -76,7 +78,7 @@ export class Room extends DurableObject<Env> {
     }
   }
 
-  async init(args: { code: string; project: string; game: string; maxMembers?: number; meta?: unknown; host: MemberArgs }): Promise<Result<Joined>> {
+  async init(args: { code: string; project: string; game: string; maxMembers?: number; meta?: unknown; host: MemberArgs; reserved?: boolean }): Promise<Result<Joined>> {
     try {
       const existing = this.load();
       if (existing) throw new ProtoError("closed", "code taken");
@@ -93,18 +95,54 @@ export class Room extends DurableObject<Env> {
         nextMid: 2,
         members: { 1: host },
         createdAt: Date.now(),
+        reserved: args.reserved || undefined,
       };
       this.save(s);
+      // An unclaimed reservation cleans itself up.
+      if (s.reserved) await this.ctx.storage.setAlarm(Date.now() + RESERVATION_MS);
       return { ok: true, value: this.joined(s, 1) };
     } catch (e) {
       return fail(e);
     }
   }
 
+  /** The reserving session takes its warm room: create without a cold start. */
+  async claim(args: { conn: string; game: string; maxMembers?: number; meta?: unknown; host: MemberArgs }): Promise<Result<Joined>> {
+    try {
+      const s = this.load();
+      if (!s || !s.reserved || s.members[1]?.conn !== args.conn) throw new ProtoError("not_found", "reservation gone");
+      s.reserved = undefined;
+      s.game = args.game;
+      s.maxMembers = Math.min(Math.max(args.maxMembers ?? DEFAULT_MAX_MEMBERS, 1), MAX_MEMBERS);
+      s.meta = args.meta ?? null;
+      s.members[1] = { mid: 1, status: "active", ...args.host };
+      s.createdAt = Date.now();
+      this.save(s);
+      await this.ctx.storage.deleteAlarm();
+      return { ok: true, value: this.joined(s, 1) };
+    } catch (e) {
+      return fail(e);
+    }
+  }
+
+  /** Drop an unclaimed reservation (its session went away). */
+  async release(conn: string): Promise<void> {
+    const s = this.load();
+    if (s?.reserved && s.members[1]?.conn === conn) this.save(null);
+  }
+
+  async alarm() {
+    const s = this.load();
+    if (s?.reserved) this.save(null);
+  }
+
   async join(args: MemberArgs & { project: string }): Promise<Result<Joined>> {
     try {
       const s = this.load();
       if (!s || s.project !== args.project) throw new ProtoError("not_found", "no room with that code");
+      // Claimed a moment ago but the claim is still on its way: the joiner's
+      // session retries (a reservation nobody claims stays invisible).
+      if (s.reserved) throw new ProtoError("reserved" as ProtoError["code"], "not open yet");
       // A session re-joining (for example after a reconnect race) keeps its seat.
       const again = Object.values(s.members).find((m) => m.conn === args.conn);
       if (again) return { ok: true, value: this.joined(s, again.mid) };

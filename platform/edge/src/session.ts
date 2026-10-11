@@ -11,6 +11,8 @@ import { verifyKey } from "./keys";
 import {
   BROADCAST,
   BUFFER_LIMIT,
+  DEFAULT_MAX_MEMBERS,
+  MAX_MEMBERS,
   GRACE_MS,
   type Joined,
   MAX_RELAY_BYTES,
@@ -28,6 +30,8 @@ interface SessState {
   keyId: string;
   client?: string;
   room?: { code: string; mid: number };
+  /** A warm room made ahead of time, so `create` skips a cold start. */
+  reserved?: string;
   conns: Record<number, string>;
   ice?: IceGrant;
   disconnectedAt?: number;
@@ -45,6 +49,7 @@ function unwrap<T>(r: RoomResult<T>): T {
 
 export class Session extends DurableObject<Env> {
   private st: SessState | null | undefined;
+  private reserving: Promise<void> | null = null;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -132,6 +137,7 @@ export class Session extends DurableObject<Env> {
     if (s.disconnectedAt !== undefined && !this.socket()) {
       if (now - s.disconnectedAt >= this.grace()) {
         if (s.room) await this.roomStub(s).leave(s.room.mid, "timeout");
+        if (s.reserved) await this.roomStub(s, s.reserved).release(s.conn);
         this.save(null);
         this.ctx.storage.kv.delete("buf");
         return;
@@ -170,6 +176,7 @@ export class Session extends DurableObject<Env> {
         s.room = undefined;
         s.conns = {};
         this.save(s);
+        this.reserveSoon();
         return {};
       }
       case "update": {
@@ -259,14 +266,65 @@ export class Session extends DurableObject<Env> {
     for (const f of buf) ws.send(f);
     this.ctx.storage.kv.delete("buf");
     await this.schedule();
+    this.reserveSoon();
     return null;
   }
 
+  /** Make a warm room in the background (not on any request's path). */
+  private reserveSoon() {
+    const s = this.load();
+    if (!s || s.room || s.reserved || this.reserving) return;
+    this.reserving = (async () => {
+      for (let attempt = 0; attempt < 6; attempt++) {
+        const code = newCode();
+        const r = (await this.roomStub(s, code).init({
+          code,
+          project: s.project,
+          game: "",
+          host: { conn: s.conn, kind: "game", name: "", meta: null },
+          reserved: true,
+        })) as RoomResult<Joined>;
+        if (r.ok) {
+          const cur = this.load();
+          if (cur && !cur.room && !cur.reserved) {
+            cur.reserved = code;
+            this.save(cur);
+          } else {
+            await this.roomStub(s, code).release(s.conn);
+          }
+          return;
+        }
+      }
+    })()
+      .catch(() => {})
+      .finally(() => (this.reserving = null));
+  }
+
   private async create(m: Msg) {
+    const t0 = Date.now();
     const s = this.need();
     if (s.room) throw new ProtoError("already_in_room", "leave your room first");
     const game = str(m.game);
     if (!game) throw new ProtoError("bad_request", "game is required");
+    const host = { conn: s.conn, kind: str(m.kind, 16) ?? "game", name: str(m.name) ?? "", meta: m.meta ?? null };
+    // A reservation on its way is quicker than a second cold room.
+    if (!s.reserved && this.reserving) {
+      await this.reserving;
+      Object.assign(s, this.load());
+    }
+    if (s.reserved) {
+      // The warm room is ours: answer now, claim it in the background. A
+      // join that beats the claim gets "reserved" and is retried.
+      const code = s.reserved;
+      s.reserved = undefined;
+      const maxMembers = Math.min(Math.max(typeof m.max_members === "number" ? m.max_members : DEFAULT_MAX_MEMBERS, 1), MAX_MEMBERS);
+      const room = { code, game, host: 1, you: 1, joinable: true, max_members: maxMembers, meta: m.meta ?? null, members: [{ mid: 1, kind: host.kind, name: host.name, meta: host.meta, status: "active" as const }] };
+      const entered = this.entered(s, code, { room, conns: { 1: s.conn } });
+      this.roomStub(s, code)
+        .claim({ conn: s.conn, game, maxMembers, meta: m.meta, host })
+        .catch(() => {});
+      return { ...entered, server_ms: Date.now() - t0, warm: true };
+    }
     for (let attempt = 0; attempt < 6; attempt++) {
       const code = newCode();
       const r = (await this.roomStub(s, code).init({
@@ -275,27 +333,28 @@ export class Session extends DurableObject<Env> {
         game,
         maxMembers: typeof m.max_members === "number" ? m.max_members : undefined,
         meta: m.meta,
-        host: { conn: s.conn, kind: str(m.kind, 16) ?? "game", name: str(m.name) ?? "", meta: m.meta ?? null },
+        host,
       })) as RoomResult<Joined>;
-      if (r.ok) return this.entered(s, code, r.value as Joined);
+      if (r.ok) return { ...this.entered(s, code, r.value as Joined), server_ms: Date.now() - t0 };
       if (r.code !== "closed") unwrap(r);
     }
     throw new ProtoError("internal", "could not find a free room code");
   }
 
   private async join(m: Msg) {
+    const t0 = Date.now();
     const s = this.need();
     if (s.room) throw new ProtoError("already_in_room", "leave your room first");
     const code = normalizeCode(m.code);
     if (!code) throw new ProtoError("bad_request", "code must be 4–8 letters");
-    const r = (await this.roomStub(s, code).join({
-      project: s.project,
-      conn: s.conn,
-      kind: str(m.kind, 16) ?? "game",
-      name: str(m.name) ?? "",
-      meta: m.meta ?? null,
-    })) as RoomResult<Joined>;
-    return this.entered(s, code, unwrap(r));
+    const args = { project: s.project, conn: s.conn, kind: str(m.kind, 16) ?? "game", name: str(m.name) ?? "", meta: m.meta ?? null };
+    let r = (await this.roomStub(s, code).join(args)) as RoomResult<Joined>;
+    for (let i = 0; i < 5 && !r.ok && (r.code as string) === "reserved"; i++) {
+      await new Promise((ok) => setTimeout(ok, 40));
+      r = (await this.roomStub(s, code).join(args)) as RoomResult<Joined>;
+    }
+    if (!r.ok && (r.code as string) === "reserved") r = { ok: false, code: "not_found", message: "no room with that code" };
+    return { ...this.entered(s, code, unwrap(r)), server_ms: Date.now() - t0 };
   }
 
   private entered(s: SessState, code: string, j: Joined) {
@@ -335,6 +394,7 @@ export class Session extends DurableObject<Env> {
       s.room = undefined;
       s.conns = {};
       this.save(s);
+      this.reserveSoon();
     }
     const ws = this.socket();
     const frame = JSON.stringify(ev);

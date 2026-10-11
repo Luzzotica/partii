@@ -78,7 +78,7 @@ pub fn write(dir: &Path, label: &str, client: Client, api: &str, scenarios: &[Sc
     let _ = writeln!(md, "- Platform: `{api}`");
     let _ = writeln!(md, "- When: {}", chrono_now());
     let _ = writeln!(md, "- Overall: {ok}/{total} trials connected ({:.1}%)\n", if total > 0 { 100.0 * ok as f64 / total as f64 } else { 0.0 });
-    let _ = writeln!(md, "Times are milliseconds. *Create* is the host's create call until it has a room code. *Join* is the guest's join call until it is in the room. *Connect* is from the guest starting until its first message comes back from the host. *Rung* is the path the connection used.\n");
+    let _ = writeln!(md, "Times are milliseconds. *Create* is the host's create call until it has a room code (engine hosts create 1.5 s after their socket is up, as an app's player would from a menu). *Join* is the guest's join call until it is in the room. *Connect* is from the guest starting until its first message comes back from the host. *Rung* is the path the connection used.\n");
     let _ = writeln!(md, "| Scenario | Connected | Connected on | Settled on | Create p50 / p95 | Join p50 / p95 | Connect p50 / p95 | RTT p50 | Longest stall p95 | Recovered |");
     let _ = writeln!(md, "|---|---|---|---|---|---|---|---|---|---|");
     for (s, v) in scenarios.iter().zip(&sums) {

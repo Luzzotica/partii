@@ -1,4 +1,4 @@
-import { env, runDurableObjectAlarm } from "cloudflare:test";
+import { env, runDurableObjectAlarm, runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { Client, connected, key, roomWithGuest, sleep } from "./client";
 
@@ -195,5 +195,47 @@ describe("dropped sockets", () => {
     expect(await host.event("member_left")).toMatchObject({ mid: 2, reason: "timeout" });
     const back = await new Client(guest.conn).open();
     expect(await back.hello()).toMatchObject({ resumed: false });
+  });
+});
+
+describe("warm rooms", () => {
+  const reservation = async (c: Client): Promise<string | undefined> => {
+    const stub = (env as any).SESSION.get((env as any).SESSION.idFromName(c.conn));
+    for (let i = 0; i < 50; i++) {
+      const s: any = await (runInDurableObject as any)(stub, (_o: any, state: DurableObjectState) => state.storage.kv.get("s"));
+      if (s?.reserved) return s.reserved;
+      await sleep(20);
+    }
+    return undefined;
+  };
+
+  it("a session reserves a room after hello, and create claims it", async () => {
+    const c = await connected();
+    const code = await reservation(c);
+    expect(code).toMatch(/^[A-HJ-NP-Z]{5}$/);
+    // Nobody can join a reservation.
+    const g = await connected();
+    expect(await g.req({ t: "join", code })).toMatchObject({ t: "err", code: "not_found" });
+    const r = await c.req({ t: "create", game: "tankii", max_members: 3, name: "H" });
+    expect(r).toMatchObject({ t: "ok", warm: true, room: { code, game: "tankii", max_members: 3, you: 1 } });
+    expect(await g.req({ t: "join", code })).toMatchObject({ t: "ok", room: { you: 2 } });
+  });
+
+  it("re-reserves after leaving", async () => {
+    const c = await connected();
+    const first = await reservation(c);
+    await c.req({ t: "create", game: "g" });
+    await c.req({ t: "leave" });
+    const second = await reservation(c);
+    expect(second).toBeDefined();
+    expect(second).not.toBe(first);
+  });
+
+  it("an unclaimed reservation expires", async () => {
+    const c = await connected();
+    const code = await reservation(c);
+    const room = (env as any).ROOM.get((env as any).ROOM.idFromName(`demo:${code}`));
+    expect(await runDurableObjectAlarm(room)).toBe(true);
+    expect(await room.inspect()).toBeNull();
   });
 });

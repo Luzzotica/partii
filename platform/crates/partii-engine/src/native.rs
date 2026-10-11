@@ -156,7 +156,11 @@ async fn actor(cfg: Config, cmds: async_channel::Receiver<Cmd>, events: async_ch
     let mut tick = tokio::time::interval(Duration::from_millis(TICK_MS as u64));
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
+        // Biased: commands, then inbound data, then the timer. After a
+        // freeze (a backgrounded app) the socket holds frames that must be
+        // read before the keepalive check decides the socket is dead.
         tokio::select! {
+            biased;
             c = cmds.recv() => match c {
                 Ok(Cmd::Create { game, max, kind, name, meta, reply }) => { let _ = reply.try_send(core.create(&game, max, &kind, &name, meta)); }
                 Ok(Cmd::Join { code, kind, name, meta, reply }) => { let _ = reply.try_send(core.join(&code, &kind, &name, meta)); }
@@ -327,6 +331,8 @@ async fn peer(
         .with_prflx_acceptance_min_wait(Some(Duration::ZERO))
         .with_relay_acceptance_min_wait(Some(Duration::ZERO))
         .with_ice_timeouts(Some(Duration::from_secs(3)), Some(Duration::from_secs(8)), Some(Duration::from_secs(1)))
+        // Check pairs every 50 ms (not 200) so a lost check costs little.
+        .with_ice_connection_attempts(Some(Duration::from_millis(50)), Some(24))
         .build();
     let pc = match PeerConnectionBuilder::new()
         .with_configuration(config)

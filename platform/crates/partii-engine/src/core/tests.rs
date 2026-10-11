@@ -229,3 +229,32 @@ fn a_silent_socket_is_pinged_then_replaced() {
     assert!(acts.iter().any(|a| matches!(a, Action::Emit(Event::Offline))));
     assert!(acts.iter().any(|a| matches!(a, Action::Connect { .. })), "reconnects at once");
 }
+
+#[test]
+fn a_resume_restarts_unopened_paths_at_once() {
+    // Offerer side: a failed path waiting out its backoff restarts on resume.
+    let mut c = core(false);
+    online(&mut c, "turn");
+    let id = c.join("ABCDE", "game", "", Value::Null);
+    c.drain();
+    c.on_text(&json!({"t": "ok", "id": id, "room": room(1, &[1, 2])}).to_string(), 0.0);
+    c.tick(1.0);
+    c.drain();
+    c.on_pc_closed(2, PathId::Turn, 1, 100.0);
+    c.on_pc_closed(2, PathId::Turn, 1, 100.0);
+    c.on_text(r#"{"t":"member_suspended","mid":2}"#, 200.0);
+    c.on_text(r#"{"t":"member_resumed","mid":2}"#, 300.0);
+    c.tick(310.0);
+    assert!(c.drain().iter().any(|a| matches!(a, Action::CreatePc { path: PathId::Turn, .. })), "no backoff wait after a resume");
+
+    // Answerer side: asks the offerer to restart.
+    let mut g = core(false);
+    online(&mut g, "turn");
+    let id = g.join("ABCDE", "game", "", Value::Null);
+    g.drain();
+    g.on_text(&json!({"t": "ok", "id": id, "room": room(2, &[1, 2])}).to_string(), 0.0);
+    g.drain();
+    g.on_text(r#"{"t":"member_resumed","mid":1}"#, 50.0);
+    let asks: Vec<Value> = texts(&g.drain()).into_iter().filter(|t| t["t"] == "signal" && t["data"]["type"] == "restart").collect();
+    assert_eq!(asks.len(), 2, "turn and direct");
+}

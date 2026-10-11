@@ -45,6 +45,11 @@ pub struct TrialResult {
     /// Disruption scenarios: did echoes flow again by the end?
     pub recovered: Option<bool>,
     pub error: Option<String>,
+    /// Engine bots: every path change, and link stats at the end.
+    #[serde(default, skip_serializing_if = "Value::is_null")]
+    pub paths: Value,
+    #[serde(default, skip_serializing_if = "Value::is_null")]
+    pub stats: Value,
 }
 
 fn bot_cmd(t: &BotTarget, role: &str, code: Option<&str>, secs: u64) -> Vec<String> {
@@ -154,6 +159,8 @@ fn run_inner(topo: &Topo, s: &Scenario, t: &BotTarget, secs: u64, r: &mut TrialR
                 r.rtt_p95 = v["rtt_p95"].as_f64();
                 r.longest_gap_ms = v["longest_gap_ms"].as_u64();
                 r.settled = v["rung"].as_str().map(str::to_string);
+                r.paths = v["paths"].clone();
+                r.stats = v["stats"].clone();
                 if r.rung.is_none() {
                     r.rung = r.settled.clone();
                 }

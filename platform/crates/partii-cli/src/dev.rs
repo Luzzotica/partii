@@ -26,6 +26,9 @@ pub enum DevCmd {
         project: String,
         #[arg(long, default_value = "k1")]
         key_id: String,
+        /// Sign with this secret instead of the local one (staging bootstrap).
+        #[arg(long, env = "PARTII_KEY_SECRET", hide_env_values = true)]
+        secret: Option<String>,
     },
 }
 
@@ -46,7 +49,9 @@ pub struct UpArgs {
 
 pub fn run(_cli: &Cli, cmd: &DevCmd) -> CliResult {
     match cmd {
-        DevCmd::Key { project, key_id } => Ok(json!({"key": sign_key(DEV_KEY_SECRET, project, key_id)?, "project": project})),
+        DevCmd::Key { project, key_id, secret } => {
+            Ok(json!({"key": sign_key(secret.as_deref().unwrap_or(DEV_KEY_SECRET), project, key_id)?, "project": project}))
+        }
         DevCmd::Up(a) => up(a),
     }
 }

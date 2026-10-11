@@ -22,6 +22,10 @@ pub enum BotCmd {
         /// Use the ws relay only (no WebRTC).
         #[arg(long)]
         ws_only: bool,
+        /// Time in the menu before creating (an app is open a while before
+        /// its player hosts; 0 creates the moment the socket is up).
+        #[arg(long, default_value_t = 1500)]
+        menu_ms: u64,
     },
     /// Join a room and ping the host every 50 ms; report timings.
     #[command(after_help = "partii bot guest --key pk_demo_k1_... --code ABCDE --secs 20")]
@@ -61,18 +65,19 @@ fn online(e: &Engine, t0: Instant) -> Result<(), String> {
 
 pub fn run(cli: &Cli, cmd: &BotCmd) -> CliResult {
     match cmd {
-        BotCmd::Host { key, secs, ws_only } => host(cli, key, *secs, *ws_only),
+        BotCmd::Host { key, secs, ws_only, menu_ms } => host(cli, key, *secs, *ws_only, *menu_ms),
         BotCmd::Guest { key, code, secs, ws_only } => guest(cli, key, code, *secs, *ws_only),
     }
 }
 
-fn host(cli: &Cli, key: &Option<String>, secs: u64, ws_only: bool) -> CliResult {
+fn host(cli: &Cli, key: &Option<String>, secs: u64, ws_only: bool, menu_ms: u64) -> CliResult {
     let t0 = Instant::now();
     let e = engine(cli, key, ws_only)?;
     if let Err(m) = online(&e, t0) {
         line(json!({"ev": "error", "msg": m}));
         return Ok(json!({"role": "host", "error": m}));
     }
+    std::thread::sleep(Duration::from_millis(menu_ms));
     let t_create = Instant::now();
     let req = e.create("torture", Some(8), "game", "bot-host", Value::Null);
     let deadline = Instant::now() + Duration::from_secs(secs + 90);
@@ -81,7 +86,7 @@ fn host(cli: &Cli, key: &Option<String>, secs: u64, ws_only: bool) -> CliResult 
         let Some(ev) = e.next_event(Duration::from_millis(100)) else { continue };
         match ev {
             Event::Created { req: r, room } if r == req => {
-                line(json!({"ev": "created", "code": room.code, "ms": t_create.elapsed().as_millis() as u64, "online_ms": (t_create - t0).as_millis() as u64}));
+                line(json!({"ev": "created", "code": room.code, "ms": t_create.elapsed().as_millis() as u64, "online_ms": (t_create - t0).as_millis() as u64 - menu_ms as u128 as u64}));
                 code = Some(room.code);
             }
             Event::Failed { req: r, code: c, message } if r == req => {

@@ -386,6 +386,9 @@ impl Core {
                     // Its relay socket is down (or back); WebRTC paths judge themselves.
                     p.link.set_open(PathId::Ws, open, now);
                 }
+                if !suspended {
+                    self.kick_unopened(mid, now);
+                }
                 self.emit(if suspended { Event::MemberSuspended { mid } } else { Event::MemberResumed { mid } });
             }
             "room_updated" => {
@@ -487,6 +490,9 @@ impl Core {
                 self.room = Some(room);
                 for (_, p) in self.peers.iter_mut() {
                     p.link.set_open(PathId::Ws, true, now);
+                }
+                for mid in self.peers.keys().copied().collect::<Vec<_>>() {
+                    self.kick_unopened(mid, now);
                 }
             } else if self.room.is_some() {
                 self.left_room();
@@ -606,6 +612,32 @@ impl Core {
         }
     }
 
+    /// After a resume (ours or theirs), get every unopened WebRTC path going
+    /// again now: signals sent while one side was away may be lost. The
+    /// offerer restarts; the answerer asks it to.
+    fn kick_unopened(&mut self, mid: u16, now: f64) {
+        if self.cfg.no_webrtc {
+            return;
+        }
+        let offerer = self.offerer(mid);
+        let Some(p) = self.peers.get_mut(&mid) else { return };
+        let mut ask = Vec::new();
+        for (path, pc) in p.pcs.iter_mut() {
+            if pc.phase == PcPhase::Open {
+                continue;
+            }
+            if offerer {
+                pc.phase = PcPhase::Waiting { retry_at: now };
+                pc.failures = 0;
+            } else {
+                ask.push(*path);
+            }
+        }
+        for path in ask {
+            self.on_pc_signal(mid, path, self.peers[&mid].pcs[&path].gen, json!({"type": "restart"}));
+        }
+    }
+
     fn start_pc(&mut self, mid: u16, path: PathId, gen: Option<u32>, now: f64) {
         let offerer = gen.is_none();
         let (ice, relay_only) = self.ice_for(path);
@@ -630,6 +662,17 @@ impl Core {
             self.add_peer(from, now);
         }
         if self.cfg.no_webrtc {
+            return;
+        }
+        if data["type"] == "restart" {
+            if self.offerer(from) {
+                if let Some(pc) = self.peers.get_mut(&from).and_then(|p| p.pcs.get_mut(&path)) {
+                    if pc.phase != PcPhase::Open {
+                        pc.phase = PcPhase::Waiting { retry_at: now };
+                        pc.failures = 0;
+                    }
+                }
+            }
             return;
         }
         let known = self.peers[&from].pcs.get(&path).map(|p| p.gen);
