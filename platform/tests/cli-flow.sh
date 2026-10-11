@@ -20,4 +20,5 @@ step player owns it; $P player entitlements --game $GAME | j "['entitlements'][0
 step download; $P store download $GAME macos --out /tmp/dl.dmg | j "['bytes']"; cmp /tmp/dl.dmg /tmp/tankii-test.dmg
 step sales; $P sales $GAME | j "['totals']"
 step bad input is a usage error; set +e; $P games price $GAME --price-cents abc >/tmp/bad.json; code=$?; set -e; [ $code = 2 ] && grep -q '"usage"' /tmp/bad.json
+step unpublish the test game; $P games unpublish $GAME | j "['game']['status']"
 echo '{"ok":true,"flow":"complete","game":"'$GAME'"}'
