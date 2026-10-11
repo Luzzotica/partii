@@ -1,6 +1,7 @@
 // File storage: R2 when the edge has it, Workers KV otherwise (staging until
-// R2 is enabled on the account; KV caps a file at 25 MB). Handlers only see
-// this small interface.
+// R2 is enabled on the account). KV caps a value at 25 MB, so bigger files
+// are stored as chunks under `~chunks/<key>/<n>` and streamed back in order.
+// Handlers only see this small interface.
 
 export interface StoredFile {
   body: ReadableStream;
@@ -17,6 +18,11 @@ export interface Files {
 }
 
 export const KV_MAX = 25 * 1024 * 1024;
+/** Chunk size for big files on KV (under the 25 MB value cap). */
+export const KV_CHUNK = 24 * 1024 * 1024;
+const chunkKey = (key: string, n: number) => `~chunks/${key}/${n}`;
+
+type KvMeta = { size: number; uploaded: number; chunks?: number };
 
 export function files(env: { FILES?: R2Bucket; FILES_KV?: KVNamespace }): Files {
   if (env.FILES) {
@@ -42,27 +48,66 @@ export function files(env: { FILES?: R2Bucket; FILES_KV?: KVNamespace }): Files 
   const kv = env.FILES_KV;
   return {
     async get(key) {
-      const r = await kv.getWithMetadata<{ size: number }>(key, "arrayBuffer");
-      if (!r.value) return null;
-      const buf = r.value;
-      return {
-        body: new Response(buf).body!,
-        size: buf.byteLength,
-        text: async () => new TextDecoder().decode(buf),
-        arrayBuffer: async () => buf,
+      const r = await kv.getWithMetadata<KvMeta>(key, "arrayBuffer");
+      if (r.value === null) return null;
+      const chunks = r.metadata?.chunks;
+      if (!chunks) {
+        const buf = r.value;
+        return {
+          body: new Response(buf).body!,
+          size: buf.byteLength,
+          text: async () => new TextDecoder().decode(buf),
+          arrayBuffer: async () => buf,
+        };
+      }
+      const size = r.metadata!.size;
+      const read = async (n: number) => {
+        const part = await kv.get(chunkKey(key, n), "arrayBuffer");
+        if (!part) throw new Error(`file ${key} is missing chunk ${n}`);
+        return new Uint8Array(part);
       };
+      const all = async () => {
+        const out = new Uint8Array(size);
+        for (let n = 0, at = 0; n < chunks; n++) {
+          const part = await read(n);
+          out.set(part, at);
+          at += part.byteLength;
+        }
+        return out.buffer;
+      };
+      let next = 0;
+      const body = new ReadableStream<Uint8Array>({
+        async pull(ctl) {
+          if (next >= chunks) return ctl.close();
+          ctl.enqueue(await read(next++));
+        },
+      });
+      return { body, size, text: async () => new TextDecoder().decode(await all()), arrayBuffer: all };
     },
     async put(key, data) {
-      const size = typeof data === "string" ? new TextEncoder().encode(data).byteLength : data.byteLength;
-      if (size > KV_MAX) throw new Error(`files over 25 MB need R2 (enable R2 on the account)`);
-      await kv.put(key, data, { metadata: { size, uploaded: Date.now() } });
+      const bytes = typeof data === "string" ? new TextEncoder().encode(data) : data instanceof Uint8Array ? data : new Uint8Array(data);
+      const size = bytes.byteLength;
+      const old = await kv.getWithMetadata<KvMeta>(key, "arrayBuffer");
+      if (size <= KV_MAX) {
+        await kv.put(key, data, { metadata: { size, uploaded: Date.now() } satisfies KvMeta });
+      } else {
+        const chunks = Math.ceil(size / KV_CHUNK);
+        for (let n = 0; n < chunks; n++) await kv.put(chunkKey(key, n), bytes.subarray(n * KV_CHUNK, Math.min(size, (n + 1) * KV_CHUNK)));
+        // The marker goes last: a reader never sees a file whose chunks aren't all there.
+        await kv.put(key, "", { metadata: { size, uploaded: Date.now(), chunks } satisfies KvMeta });
+      }
+      const was = old.metadata?.chunks ?? 0;
+      const now = size > KV_MAX ? Math.ceil(size / KV_CHUNK) : 0;
+      for (let n = now; n < was; n++) await kv.delete(chunkKey(key, n));
     },
     async delete(key) {
+      const r = await kv.getWithMetadata<KvMeta>(key, "arrayBuffer");
       await kv.delete(key);
+      for (let n = 0; n < (r.metadata?.chunks ?? 0); n++) await kv.delete(chunkKey(key, n));
     },
     async list(prefix) {
-      const r = await kv.list<{ size: number; uploaded: number }>({ prefix });
-      return r.keys.map((k) => ({ key: k.name, size: k.metadata?.size ?? 0, uploaded: k.metadata?.uploaded ?? 0 }));
+      const r = await kv.list<KvMeta>({ prefix });
+      return r.keys.filter((k) => !k.name.startsWith("~chunks/")).map((k) => ({ key: k.name, size: k.metadata?.size ?? 0, uploaded: k.metadata?.uploaded ?? 0 }));
     },
   };
 }
