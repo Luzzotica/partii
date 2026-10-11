@@ -1,6 +1,6 @@
 //! One torture trial: a host bot creates a room, a guest bot joins it and
 //! pings through it, and the scenario's disruption (if any) hits mid-game.
-//! Bots speak the JSON-line contract in torture/legacy-bot/src/main.rs.
+//! Bots speak the JSON-line contract described in crates/partii-cli/src/bot.rs.
 
 use super::scenario::{Disruption, Scenario};
 use super::topo::{docker, Topo};
@@ -15,7 +15,8 @@ use std::time::{Duration, Instant};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, clap::ValueEnum)]
 #[serde(rename_all = "kebab-case")]
 pub enum Client {
-    /// Today's party-kit TypeScript in headless Chromium (the baseline).
+    /// The removed party-kit TypeScript client (kept so the baseline's raw
+    /// data still reports; `torture run` refuses it).
     LegacyWeb,
     /// The partii engine (`partii bot`).
     Engine,

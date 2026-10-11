@@ -1,6 +1,6 @@
 //! `partii bot host|guest`: a headless engine peer for the torture harness
-//! and quick checks. Speaks the bot contract (JSON lines on stdout; see
-//! torture/legacy-bot/src/main.rs): created, joined, connected (with the
+//! and quick checks. Speaks the bot contract (JSON lines on stdout):
+//! created, joined, connected (with the
 //! rung = the path in use), gap, summary, error, done.
 
 use crate::out::{CliError, CliResult};

@@ -20,7 +20,7 @@ pub enum TortureCmd {
     /// List the scenarios.
     Scenarios,
     /// Run trials and write a report.
-    #[command(after_help = "partii torture run --client legacy-web --api https://www.sterlinglong.me --trials 10 --label baseline\n\
+    #[command(after_help = "partii torture run --client engine --trials 10 --label after\n\
                             partii torture run --client engine --scenario cgnat --trials 50")]
     Run {
         /// Which client the bots run.
@@ -35,7 +35,7 @@ pub enum TortureCmd {
         /// Scenarios run side by side.
         #[arg(long, default_value_t = 4)]
         jobs: usize,
-        /// The game key the bots use (a publishable key, or a legacy mpk_ key for --client legacy-web).
+        /// The game key the bots use (a publishable key).
         #[arg(long, env = "PARTII_KEY", hide_env_values = true)]
         key: Option<String>,
         /// Report name (files go to <out>/<label>.md and raw/<label>.jsonl).
@@ -104,7 +104,12 @@ pub fn run(cli: &Cli, cmd: &TortureCmd) -> CliResult {
             let key = key.clone().ok_or_else(|| CliError::usage("no game key", "pass --key or set PARTII_KEY"))?;
             let platform = platform_dir.canonicalize().map_err(|_| CliError::usage("platform dir not found", "pass --platform-dir <path to platform/>"))?;
             let mounts = match client {
-                Client::LegacyWeb => vec![format!("{}:/bots/legacy-web-bot:ro", platform.join("torture/legacy-web-bot").display())],
+                Client::LegacyWeb => {
+                    return Err(CliError::usage(
+                        "the legacy party-kit client was removed",
+                        "its numbers are in docs/reports/2026-10-11-baseline.md (raw data in docs/reports/raw/); use --client engine",
+                    ))
+                }
                 Client::Engine => vec![format!("{}:/bots/bin:ro", platform.join("target-linux/bin").display())],
             };
             if cli.dry_run {
