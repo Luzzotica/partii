@@ -196,6 +196,23 @@ describe("dropped sockets", () => {
     const back = await new Client(guest.conn).open();
     expect(await back.hello()).toMatchObject({ resumed: false });
   });
+
+  it("ends a session that drops outside a room after the grace window too", async () => {
+    const c = await connected();
+    c.close();
+    const stub = (env as any).SESSION.get((env as any).SESSION.idFromName(c.conn));
+    const grace = Number((env as any).GRACE_MS);
+    // The alarm is the grace window, not the relay credential refresh hours away.
+    let alarm: number | null = null;
+    for (let i = 0; i < 40 && !(alarm && alarm - Date.now() < 60_000); i++) {
+      await sleep(10);
+      alarm = await runInDurableObject(stub, (_o, state: DurableObjectState) => state.storage.getAlarm());
+    }
+    expect(alarm! - Date.now()).toBeLessThan(grace + 1000);
+    await sleep(grace + 50);
+    await runDurableObjectAlarm(stub);
+    expect(await runInDurableObject(stub, (_o, state: DurableObjectState) => state.storage.kv.get("s"))).toBeUndefined();
+  });
 });
 
 describe("warm rooms", () => {

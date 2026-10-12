@@ -147,7 +147,9 @@ export class Session extends DurableObject<Env> {
     const s = this.load();
     if (!s) return;
     const now = Date.now();
-    if (s.disconnectedAt !== undefined && !this.socket()) {
+    // Disconnected and not resumed (a hello clears disconnectedAt): the grace
+    // window decides, whatever sockets are still listed.
+    if (s.disconnectedAt !== undefined) {
       if (now - s.disconnectedAt >= this.grace()) {
         if (s.room) await this.roomStub(s).leave(s.room.mid, "timeout");
         if (s.reserved) await this.roomStub(s, s.reserved).release(s.conn);
@@ -171,7 +173,10 @@ export class Session extends DurableObject<Env> {
     const s = this.load();
     if (!s) return;
     const times: number[] = [];
-    if (s.disconnectedAt !== undefined && !this.socket()) times.push(s.disconnectedAt + this.grace());
+    // Not `!this.socket()`: inside webSocketClose the closing socket is still
+    // listed, which used to push a no-room session's teardown out to the relay
+    // credential refresh (hours) instead of the grace window.
+    if (s.disconnectedAt !== undefined) times.push(s.disconnectedAt + this.grace());
     else if (s.ice) times.push(s.ice.ice_expires_at - ICE_REFRESH_LEAD_MS);
     if (times.length) await this.ctx.storage.setAlarm(Math.max(Math.min(...times), Date.now() + 10));
   }
