@@ -20,4 +20,12 @@ games/gyrii/spacetimedb/target
 **/*.o
 **/*.rmeta
 **/*.d
-platform
+# platform/: only the web apps (platform/apps/*) and the engine they bundle
+# (platform/sdk) deploy to Vercel; skip the Rust side.
+platform/target
+platform/target-linux
+platform/vendor
+platform/crates
+platform/torture
+platform/edge
+platform/docs/reports/raw
