@@ -35,7 +35,9 @@
         ]
       },
       "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Session", "Room"] }],
-      // Files live in KV until R2 is enabled on the account (then bind FILES).
+      // Files: R2 (FILES). The KV namespace stays bound only as the old copy
+      // (migrated to R2 on 2026-10-11); files() uses R2 when it is bound.
+      "r2_buckets": [{ "binding": "FILES", "bucket_name": "partii-staging-files" }],
       "d1_databases": [{ "binding": "DB", "database_name": "partii-staging", "database_id": "ae121fa6-576a-4a8f-899b-44f7049ee6a2", "migrations_dir": "migrations" }],
       "kv_namespaces": [{ "binding": "FILES_KV", "id": "e6275db98929438d87f10f3fde91a799" }]
     }
