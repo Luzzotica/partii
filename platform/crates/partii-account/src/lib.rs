@@ -103,8 +103,9 @@ pub fn slot_for(file: &str) -> String {
     base.trim_end_matches(".json").chars().map(|c| if c.is_ascii_alphanumeric() || "._-".contains(c) { c } else { '-' }).collect()
 }
 
-/// This install's id, made once and kept in `dir`. Creation is atomic, so
-/// two first launches racing agree on one id.
+/// This install's id, made once and kept in `dir`. Creation is exclusive
+/// (`O_EXCL`), so two first launches racing agree on one id. (Not a hard
+/// link: Android's SELinux policy forbids links in app storage.)
 pub fn device_id(dir: &Path) -> String {
     use std::io::Write;
     let path = dir.join("partii-device");
@@ -116,15 +117,22 @@ pub fn device_id(dir: &Path) -> String {
     let _ = getrandom::fill(&mut b);
     let id: String = b.iter().map(|x| b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"[(*x & 63) as usize] as char).collect();
     let _ = std::fs::create_dir_all(dir);
-    // Write to a temp file, then hard-link it into place: the link fails if
-    // another launch got there first, and the file is never seen half-written.
-    let tmp = dir.join(format!("partii-device.{}", &id[..8]));
-    if std::fs::File::create(&tmp).and_then(|mut f| f.write_all(id.as_bytes())).is_ok() {
-        let won = std::fs::hard_link(&tmp, &path).is_ok();
-        let _ = std::fs::remove_file(&tmp);
-        if won {
-            return id;
+    match std::fs::OpenOptions::new().write(true).create_new(true).open(&path) {
+        Ok(mut f) => {
+            if f.write_all(id.as_bytes()).and_then(|_| f.sync_all()).is_ok() {
+                return id;
+            }
         }
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            // Another launch won; its id may still be landing.
+            for _ in 0..50 {
+                if let Some(theirs) = read() {
+                    return theirs;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        }
+        Err(_) => {}
     }
     read().unwrap_or(id)
 }
