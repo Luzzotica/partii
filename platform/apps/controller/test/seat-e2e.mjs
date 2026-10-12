@@ -4,7 +4,7 @@
 import { chromium, devices } from "playwright";
 const a = process.argv.slice(2);
 const arg = (n, d) => (a.includes(n) ? a[a.indexOf(n) + 1] : d);
-const page = arg("--page", "https://partii-controller-staging.partii-games.workers.dev");
+const page = arg("--page", "https://partii-controller-staging.vercel.app");
 const url = `${page}/c/${arg("--code")}?k=${encodeURIComponent(arg("--key"))}&e=${encodeURIComponent(arg("--edge"))}`;
 const browser = await chromium.launch();
 const ctx = await browser.newContext({ ...devices["iPhone 13 landscape"] });

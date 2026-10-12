@@ -251,7 +251,7 @@ When the game hosts a room, show a QR code for:
 <controller page>/c/<ROOM CODE>?k=<publishable key>&e=<platform URL>
 ```
 
-The controller page is `platform/apps/controller`; the staging copy is `https://partii-controller-staging.partii-games.workers.dev`. The phone joins as a member of kind `phone` and streams input frames (10 bytes, about 30 times a second; [CONTROLLER.md](CONTROLLER.md)):
+The controller page is `platform/apps/controller`; the staging copy is `https://partii-controller-staging.vercel.app`. The phone joins as a member of kind `phone` and streams input frames (10 bytes, about 30 times a second; [CONTROLLER.md](CONTROLLER.md)):
 
 ```rust
 // In Event::Message from a phone member:
