@@ -40,6 +40,20 @@
       "r2_buckets": [{ "binding": "FILES", "bucket_name": "partii-staging-files" }],
       "d1_databases": [{ "binding": "DB", "database_name": "partii-staging", "database_id": "ae121fa6-576a-4a8f-899b-44f7049ee6a2", "migrations_dir": "migrations" }],
       "kv_namespaces": [{ "binding": "FILES_KV", "id": "e6275db98929438d87f10f3fde91a799" }]
+    },
+    "production": {
+      "name": "partii-edge",
+      "vars": { "PARTII_ENV": "production", "TURN_MODE": "cloudflare", "EMAIL_MODE": "resend", "STORE_URL": "https://partii-store.vercel.app", "R2_BUCKET": "partii-prod-files" },
+      "durable_objects": {
+        "bindings": [
+          { "name": "SESSION", "class_name": "Session" },
+          { "name": "ROOM", "class_name": "Room" }
+        ]
+      },
+      "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Session", "Room"] }],
+      "r2_buckets": [{ "binding": "FILES", "bucket_name": "partii-prod-files" }],
+      "d1_databases": [{ "binding": "DB", "database_name": "partii-prod", "database_id": "6732f165-1ebd-47e4-9256-5e3f9e921054", "migrations_dir": "migrations" }],
+      "kv_namespaces": [{ "binding": "FILES_KV", "id": "89eb23fc19534e979fcfa488edcdabdb" }]
     }
   }
 }
