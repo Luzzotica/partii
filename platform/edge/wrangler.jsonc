@@ -7,10 +7,13 @@
   "durable_objects": {
     "bindings": [
       { "name": "SESSION", "class_name": "Session" },
-      { "name": "ROOM", "class_name": "Room" }
+      { "name": "ROOM", "class_name": "Room" },
+      { "name": "USAGE", "class_name": "Usage" }
     ]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Session", "Room"] }],
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Session", "Room"] }, { "tag": "v2", "new_sqlite_classes": ["Usage"] }],
+  // Logs kept in the dashboard (Workers Logs): usage alerts are logged there.
+  "observability": { "enabled": true },
   "vars": {
     "PARTII_ENV": "dev",
     "KEY_SECRET": "dev-only-key-secret",
@@ -28,13 +31,21 @@
     "staging": {
       "name": "partii-edge-staging",
       "vars": { "PARTII_ENV": "staging", "TURN_MODE": "cloudflare", "ALLOW_FAKE_LOGIN": "1", "ALLOW_FAKE_STORE": "1", "EMAIL_MODE": "dev", "STORE_URL": "https://partii-store.vercel.app", "R2_BUCKET": "partii-staging-files" },
+      // Per-IP limits (src/limits.ts), sized far above real play. Namespace ids are account-wide.
+      "ratelimits": [
+        { "name": "RL_CONNECT", "namespace_id": "1001", "simple": { "limit": 120, "period": 60 } },
+        { "name": "RL_SESSION", "namespace_id": "1002", "simple": { "limit": 30, "period": 60 } },
+        { "name": "RL_CREATE", "namespace_id": "1003", "simple": { "limit": 30, "period": 60 } },
+        { "name": "RL_JOIN", "namespace_id": "1004", "simple": { "limit": 60, "period": 60 } }
+      ],
       "durable_objects": {
         "bindings": [
           { "name": "SESSION", "class_name": "Session" },
-          { "name": "ROOM", "class_name": "Room" }
+          { "name": "ROOM", "class_name": "Room" },
+          { "name": "USAGE", "class_name": "Usage" }
         ]
       },
-      "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Session", "Room"] }],
+      "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Session", "Room"] }, { "tag": "v2", "new_sqlite_classes": ["Usage"] }],
       // Files: R2 (FILES). The KV namespace stays bound only as the old copy
       // (migrated to R2 on 2026-10-11); files() uses R2 when it is bound.
       "r2_buckets": [{ "binding": "FILES", "bucket_name": "partii-staging-files" }],
@@ -44,13 +55,21 @@
     "production": {
       "name": "partii-edge",
       "vars": { "PARTII_ENV": "production", "TURN_MODE": "cloudflare", "EMAIL_MODE": "resend", "STORE_URL": "https://partii-store.vercel.app", "R2_BUCKET": "partii-prod-files" },
+      // Per-IP limits (src/limits.ts), sized far above real play. Namespace ids are account-wide.
+      "ratelimits": [
+        { "name": "RL_CONNECT", "namespace_id": "2001", "simple": { "limit": 120, "period": 60 } },
+        { "name": "RL_SESSION", "namespace_id": "2002", "simple": { "limit": 30, "period": 60 } },
+        { "name": "RL_CREATE", "namespace_id": "2003", "simple": { "limit": 30, "period": 60 } },
+        { "name": "RL_JOIN", "namespace_id": "2004", "simple": { "limit": 60, "period": 60 } }
+      ],
       "durable_objects": {
         "bindings": [
           { "name": "SESSION", "class_name": "Session" },
-          { "name": "ROOM", "class_name": "Room" }
+          { "name": "ROOM", "class_name": "Room" },
+          { "name": "USAGE", "class_name": "Usage" }
         ]
       },
-      "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Session", "Room"] }],
+      "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Session", "Room"] }, { "tag": "v2", "new_sqlite_classes": ["Usage"] }],
       "r2_buckets": [{ "binding": "FILES", "bucket_name": "partii-prod-files" }],
       "d1_databases": [{ "binding": "DB", "database_name": "partii-prod", "database_id": "6732f165-1ebd-47e4-9256-5e3f9e921054", "migrations_dir": "migrations" }],
       "kv_namespaces": [{ "binding": "FILES_KV", "id": "89eb23fc19534e979fcfa488edcdabdb" }]

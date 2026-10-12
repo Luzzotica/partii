@@ -7,6 +7,8 @@ export function operations(t: Transport) {
     health: () => t.call("GET", `/health`, "public", {}, undefined, "json"),
     /** Create a developer and their first token (platform operators). (admin) */
     adminCreateDeveloper: (body: Record<string, unknown> = {}) => t.call("POST", `/v1/admin/developers`, "admin", {}, body, "json"),
+    /** Live sessions and rooms, peaks, rate-limit hits and recent alerts, per project (platform operators). (admin) */
+    adminUsage: (query: { project?: string | number } = {}) => t.call("GET", `/v1/admin/usage`, "admin", query, undefined, "json"),
     /** The developer this token belongs to. (developer) */
     me: () => t.call("GET", `/v1/me`, "developer", {}, undefined, "json"),
     /** Your developer tokens (without secrets). (developer) */

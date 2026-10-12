@@ -17,6 +17,13 @@ export const ROUTES: Route[] = [
     "body": "json"
   },
   {
+    "op": "adminUsage",
+    "method": "GET",
+    "path": "/v1/admin/usage",
+    "auth": "admin",
+    "body": "none"
+  },
+  {
     "op": "me",
     "method": "GET",
     "path": "/v1/me",

@@ -15,6 +15,12 @@ export function newConn(): string {
   return `conn${Date.now().toString(36)}x${(n++).toString(36)}aaaaaaaa`.slice(0, 40);
 }
 
+let ipN = 0;
+export function newIp(): string {
+  ipN++;
+  return `10.${(ipN >> 16) & 255}.${(ipN >> 8) & 255}.${ipN & 255}`;
+}
+
 type Frame = Record<string, any>;
 
 export class Client {
@@ -24,10 +30,11 @@ export class Client {
   private seq = 0;
   closed = false;
 
-  constructor(public conn = newConn()) {}
+  /** Each client gets its own IP unless a test shares one (the rate limits are per IP). */
+  constructor(public conn = newConn(), public ip = newIp()) {}
 
   async open(): Promise<this> {
-    const res = await SELF.fetch(`https://edge/v1/connect?conn=${this.conn}`, { headers: { upgrade: "websocket" } });
+    const res = await SELF.fetch(`https://edge/v1/connect?conn=${this.conn}`, { headers: { upgrade: "websocket", "cf-connecting-ip": this.ip } });
     if (!res.webSocket) throw new Error(`no websocket: ${res.status} ${await res.text()}`);
     this.ws = res.webSocket;
     (this.ws as any).binaryType = "arraybuffer";

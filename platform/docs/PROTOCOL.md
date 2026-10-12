@@ -65,3 +65,16 @@ client relies on the `ws` path. The edge never hands out a STUN-only list.
 ## Errors
 
 `err` codes: `bad_request`, `unauthorized`, `not_found`, `full`, `closed`, `not_joinable`, `already_in_room`, `not_in_room`, `not_host`, `rate_limited`, `internal`.
+
+### Limits
+
+Staging and production limit each IP (sized far above real play; `edge/src/limits.ts`, numbers in `edge/wrangler.jsonc`):
+
+| What | Per IP | Refused with |
+|---|---|---|
+| WebSocket upgrades on `/v1/connect` | 120 / min | HTTP 429, before any session |
+| New sessions (a `hello` that is not a resume) | 30 / min | `err` `rate_limited` (no `id`), then the socket closes with code 4029; clients back off and reconnect |
+| `create` | 30 / min | `err` `rate_limited` |
+| `join` | 60 / min | `err` `rate_limited` |
+
+Relayed packets on the `ws` path have a budget per session: 2000 deliveries a second (one frame to one member is one delivery; a broadcast to seven members is seven), with a burst of 4000. Over budget, frames are dropped and counted; the engine's link resends what is reliable.

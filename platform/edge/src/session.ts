@@ -8,6 +8,8 @@ import { DurableObject } from "cloudflare:workers";
 import type { Env } from "./index";
 import { type IceGrant, mintIce } from "./ice";
 import { verifyKey } from "./keys";
+import { allowed, Bucket, type LimitKind, RELAY_BURST, RELAY_RATE } from "./limits";
+import { usage } from "./usage";
 import {
   BROADCAST,
   BUFFER_LIMIT,
@@ -39,6 +41,12 @@ interface SessState {
 }
 
 type Msg = Record<string, unknown> & { t?: unknown; id?: unknown };
+type Attachment = { hello: boolean; conn: string; ip: string };
+
+/** Close code for a socket refused by a rate limit (clients back off and retry). */
+export const CLOSE_RATE_LIMITED = 4029;
+/** Dropped relay deliveries are reported to usage at most this often. */
+const RELAY_REPORT_MS = 10_000;
 
 const ICE_REFRESH_LEAD_MS = 10 * 60_000;
 
@@ -51,6 +59,9 @@ function unwrap<T>(r: RoomResult<T>): T {
 export class Session extends DurableObject<Env> {
   private st: SessState | null | undefined;
   private reserving: Promise<void> | null = null;
+  private relayBudget = new Bucket(RELAY_RATE, RELAY_BURST);
+  private relayDropped = 0;
+  private relayReportedAt = 0;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -86,7 +97,8 @@ export class Session extends DurableObject<Env> {
     for (const old of this.ctx.getWebSockets()) old.close(4000, "replaced by a newer connection");
     const pair = new WebSocketPair();
     this.ctx.acceptWebSocket(pair[1]);
-    pair[1].serializeAttachment({ hello: false, conn: new URL(req.url).searchParams.get("conn") ?? "" });
+    const att: Attachment = { hello: false, conn: new URL(req.url).searchParams.get("conn") ?? "", ip: req.headers.get("cf-connecting-ip") ?? "" };
+    pair[1].serializeAttachment(att);
     return new Response(null, { status: 101, webSocket: pair[0] });
   }
 
@@ -100,7 +112,7 @@ export class Session extends DurableObject<Env> {
     } catch {
       return this.send(ws, { t: "err", code: "bad_request", message: "frames must be JSON objects" });
     }
-    const helloDone = (ws.deserializeAttachment() as { hello: boolean } | null)?.hello;
+    const helloDone = (ws.deserializeAttachment() as Attachment | null)?.hello;
     if (!helloDone && msg.t !== "hello") {
       return this.send(ws, { t: "err", id: msg.id, code: "unauthorized", message: "send hello first" });
     }
@@ -139,6 +151,7 @@ export class Session extends DurableObject<Env> {
       if (now - s.disconnectedAt >= this.grace()) {
         if (s.room) await this.roomStub(s).leave(s.room.mid, "timeout");
         if (s.reserved) await this.roomStub(s, s.reserved).release(s.conn);
+        usage(this.env, s.project).down("session", s.conn).catch(() => {});
         this.save(null);
         this.ctx.storage.kv.delete("buf");
         return;
@@ -146,6 +159,8 @@ export class Session extends DurableObject<Env> {
     } else if (s.ice && s.ice.ice_expires_at - now < ICE_REFRESH_LEAD_MS) {
       s.ice = await mintIce(this.env);
       this.save(s);
+      // Still alive: keeps the session counted (usage drops rows not seen for hours).
+      usage(this.env, s.project).up(s.project, "session", s.conn).catch(() => {});
       const ws = this.socket();
       if (ws) this.send(ws, { t: "ice", ice_servers: s.ice.ice_servers, ice_expires_at: s.ice.ice_expires_at, relay: s.ice.relay });
     }
@@ -168,8 +183,10 @@ export class Session extends DurableObject<Env> {
       case "hello":
         return this.hello(ws, m);
       case "create":
+        await this.limit(ws, "create");
         return this.create(m);
       case "join":
+        await this.limit(ws, "join");
         return this.join(m);
       case "leave": {
         const s = this.need();
@@ -217,6 +234,15 @@ export class Session extends DurableObject<Env> {
     }
   }
 
+  /** Refuse with `rate_limited` when this client's IP is over its limit. */
+  private async limit(ws: WebSocket, kind: LimitKind) {
+    const ip = (ws.deserializeAttachment() as Attachment).ip;
+    if (await allowed(this.env, kind, ip)) return;
+    const s = this.load();
+    if (s) usage(this.env, s.project).hit(s.project, kind).catch(() => {});
+    throw new ProtoError("rate_limited", `too many ${kind === "create" ? "rooms created" : "joins"} from this network; try again in a minute`);
+  }
+
   private need(): SessState {
     const s = this.load();
     if (!s) throw new ProtoError("unauthorized", "send hello first");
@@ -232,7 +258,7 @@ export class Session extends DurableObject<Env> {
     if (m.v !== PROTOCOL_VERSION) throw new ProtoError("bad_request", `protocol v${PROTOCOL_VERSION} only`);
     const claims = await verifyKey(this.env.KEY_SECRET, m.key);
     if (!claims) throw new ProtoError("unauthorized", "bad publishable key");
-    const conn = (ws.deserializeAttachment() as { conn: string }).conn;
+    const { conn, ip } = ws.deserializeAttachment() as Attachment;
     let s = this.load();
     let resumed = false;
     let room: Joined["room"] | undefined;
@@ -251,12 +277,21 @@ export class Session extends DurableObject<Env> {
         }
       }
     } else {
+      // A new session mints relay credentials and warms a room: limited per IP.
+      // The socket is closed so the client backs off and retries.
+      if (!(await allowed(this.env, "session", ip))) {
+        usage(this.env, claims.project).hit(claims.project, "session").catch(() => {});
+        this.send(ws, { t: "err", code: "rate_limited", message: "too many new connections from this network; try again in a minute" });
+        ws.close(CLOSE_RATE_LIMITED, "rate_limited");
+        return null;
+      }
       s = { conn, project: claims.project, keyId: claims.keyId, conns: {} };
+      usage(this.env, s.project).up(s.project, "session", conn).catch(() => {});
     }
     s.client = str(m.client, 120);
     if (!s.ice || s.ice.ice_expires_at - Date.now() < ICE_REFRESH_LEAD_MS) s.ice = await mintIce(this.env);
     this.save(s);
-    ws.serializeAttachment({ hello: true, conn });
+    ws.serializeAttachment({ hello: true, conn, ip } satisfies Attachment);
     this.send(ws, {
       t: "welcome",
       conn: s.conn,
@@ -383,6 +418,18 @@ export class Session extends DurableObject<Env> {
     const payload = data.slice(3);
     const me = s.room.mid;
     const targets = to === BROADCAST ? Object.entries(s.conns).filter(([mid]) => Number(mid) !== me).map(([, c]) => c) : [s.conns[to]].filter(Boolean);
+    // Each delivery is a Durable Object request: over budget, frames are dropped
+    // (the engine's own reliability resends what matters) and counted.
+    if (!this.relayBudget.take(targets.length)) {
+      this.relayDropped += targets.length;
+      const now = Date.now();
+      if (now - this.relayReportedAt >= RELAY_REPORT_MS) {
+        usage(this.env, s.project).hit(s.project, "relay", this.relayDropped).catch(() => {});
+        this.relayDropped = 0;
+        this.relayReportedAt = now;
+      }
+      return;
+    }
     for (const conn of targets) this.peer(conn).relay(me, payload, kind).catch(() => {});
   }
 

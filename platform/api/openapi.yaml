@@ -136,6 +136,16 @@ paths:
       requestBody: { content: { application/json: { schema: { type: object, required: [email], properties: { email: { type: string }, name: { type: string } } } } } }
       responses: { "200": { description: "{developer, token}" } }
 
+  /v1/admin/usage:
+    get:
+      operationId: adminUsage
+      summary: Live sessions and rooms, peaks, rate-limit hits and recent alerts, per project (platform operators).
+      x-auth: admin
+      x-cli: admin usage
+      parameters:
+        - { name: project, in: query, schema: { type: string } }
+      responses: { "200": { description: "{projects}" } }
+
   /v1/me:
     get:
       operationId: me

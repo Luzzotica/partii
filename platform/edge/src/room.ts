@@ -5,6 +5,7 @@
 
 import { DurableObject } from "cloudflare:workers";
 import type { Env } from "./index";
+import { usage } from "./usage";
 import { DEFAULT_MAX_MEMBERS, MAX_MEMBERS, RESERVATION_MS, type Joined, type Member, ProtoError, type RoomView } from "./protocol";
 
 interface MemberRec extends Member {
@@ -69,6 +70,11 @@ export class Room extends DurableObject<Env> {
     return { room: this.view(s, you), conns };
   }
 
+  /** Report the room as live to its project's usage (on open, and refreshed on each join). */
+  private counted(s: RoomState) {
+    usage(this.env, s.project).up(s.project, "room", `${s.project}:${s.code}`).catch(() => {});
+  }
+
   /** Tell every member except `skip` (best effort, in parallel). */
   private tell(s: RoomState, ev: Record<string, unknown>, skip?: number) {
     for (const m of Object.values(s.members)) {
@@ -98,8 +104,9 @@ export class Room extends DurableObject<Env> {
         reserved: args.reserved || undefined,
       };
       this.save(s);
-      // An unclaimed reservation cleans itself up.
+      // An unclaimed reservation cleans itself up (and is not counted until claimed).
       if (s.reserved) await this.ctx.storage.setAlarm(Date.now() + RESERVATION_MS);
+      else this.counted(s);
       return { ok: true, value: this.joined(s, 1) };
     } catch (e) {
       return fail(e);
@@ -118,6 +125,7 @@ export class Room extends DurableObject<Env> {
       s.members[1] = { mid: 1, status: "active", ...args.host };
       s.createdAt = Date.now();
       this.save(s);
+      this.counted(s);
       await this.ctx.storage.deleteAlarm();
       return { ok: true, value: this.joined(s, 1) };
     } catch (e) {
@@ -151,6 +159,7 @@ export class Room extends DurableObject<Env> {
       const m: MemberRec = { mid: s.nextMid++, status: "active", ...args };
       s.members[m.mid] = m;
       this.save(s);
+      this.counted(s);
       const { conn, ...pub } = m;
       this.tell(s, { t: "member_joined", member: pub, _conn: conn }, m.mid);
       return { ok: true, value: this.joined(s, m.mid) };
@@ -165,6 +174,7 @@ export class Room extends DurableObject<Env> {
     if (mid === s.host) {
       delete s.members[mid];
       this.tell(s, { t: "room_closed", reason: "host_left" });
+      usage(this.env, s.project).down("room", `${s.project}:${s.code}`).catch(() => {});
       this.save(null);
       return { ok: true, value: null };
     }

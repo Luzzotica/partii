@@ -21,6 +21,7 @@ Auth (`x-auth`):
 |---|---|---|---|
 | `health` | `GET /health` | public | `partii status` |
 | `adminCreateDeveloper` | `POST /v1/admin/developers` | admin | `partii admin developers create` |
+| `adminUsage` | `GET /v1/admin/usage` | admin | `partii admin usage` |
 | `me` | `GET /v1/me` | developer | `partii whoami` |
 | `tokensList` | `GET /v1/tokens` | developer | `partii tokens list` |
 | `tokensCreate` | `POST /v1/tokens` | developer | `partii tokens create` |
@@ -91,6 +92,15 @@ Is the edge up?
 Create a developer and their first token (platform operators).
 
 Body fields: `email` (required), `name`
+
+### adminUsage
+
+`GET /v1/admin/usage` (auth: admin) · `partii admin usage`
+
+Live sessions and rooms, peaks, rate-limit hits and recent alerts, per project (platform operators).
+
+Parameters:
+- `project` (query)
 
 ### me
 

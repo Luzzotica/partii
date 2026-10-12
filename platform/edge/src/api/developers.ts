@@ -1,6 +1,7 @@
 // Developers, their tokens, projects, publishable keys and connection timings.
 
 import { signKey } from "../keys";
+import { EDGE_USAGE, usage } from "../usage";
 import { bad, forgetKey, now, ownProject, randomId, randomSlug, sha256hex } from "./core";
 import type { Handlers } from "./index";
 
@@ -26,6 +27,14 @@ export const developerHandlers: Handlers = {
     }
     const token = await newDevToken(env, dev.id as string, "first");
     return { developer: dev, token: token.token };
+  },
+
+  async adminUsage({ env, query }) {
+    const ids = query.project
+      ? [query.project]
+      : [EDGE_USAGE, ...(await env.DB.prepare("SELECT id FROM projects ORDER BY id").all<{ id: string }>()).results.map((r) => r.id)];
+    const projects = await Promise.all(ids.map(async (id) => ({ ...(await usage(env, id).view()), project: id })));
+    return { projects };
   },
 
   async me({ caller }) {
