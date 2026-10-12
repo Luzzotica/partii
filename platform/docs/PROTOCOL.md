@@ -68,7 +68,7 @@ client relies on the `ws` path. The edge never hands out a STUN-only list.
 
 ### Limits
 
-Staging and production limit each IP (sized far above real play; `edge/src/limits.ts`, numbers in `edge/wrangler.jsonc`):
+Staging and production limit each IP (sized far above real play; `LIMITS` in `edge/src/limits.ts`, switched on by the `RATE_LIMITS` var):
 
 | What | Per IP | Refused with |
 |---|---|---|
