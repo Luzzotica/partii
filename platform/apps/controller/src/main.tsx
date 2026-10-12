@@ -24,7 +24,12 @@ function storedName(): string {
   }
 }
 
-type Phase = { kind: "connecting" } | { kind: "joined"; host: number } | { kind: "error"; message: string } | { kind: "closed" };
+/** Shown while the platform refuses this network for a minute (many players behind one IP); the engine keeps retrying. */
+const BUSY = "Lots of players are on this network right now. Still trying, this can take up to a minute…";
+/** A refused join is retried after this long. */
+const JOIN_RETRY_MS = 10_000;
+
+type Phase = { kind: "connecting"; note?: string } | { kind: "joined"; host: number } | { kind: "error"; message: string } | { kind: "closed" };
 
 function Controller({ code, keyStr, edge, name }: { code: string; keyStr: string; edge: string; name: string }) {
   const [phase, setPhase] = useState<Phase>({ kind: "connecting" });
@@ -48,7 +53,15 @@ function Controller({ code, keyStr, edge, name }: { code: string; keyStr: string
           for (const ev of e.poll()) {
             if (ev.ev === "online" && !joined) {
               joined = true;
+              setPhase({ kind: "connecting" });
               e.join(code, "phone", name, { name });
+            } else if (ev.ev === "error" && !joined) {
+              // A refused hello (rate_limited) has no request id, so it comes as a
+              // plain error; the engine reconnects by itself.
+              setPhase({ kind: "connecting", note: /too many/i.test(ev.message ?? "") ? BUSY : ev.message });
+            } else if (ev.ev === "failed" && ev.code === "rate_limited") {
+              setPhase({ kind: "connecting", note: BUSY });
+              window.setTimeout(() => e.join(code, "phone", name, { name }), JOIN_RETRY_MS);
             } else if (ev.ev === "joined") {
               host = ev.room.host;
               const to = ev.room.host;
@@ -120,6 +133,7 @@ function Controller({ code, keyStr, edge, name }: { code: string; keyStr: string
         )}
         <button className="start" data-testid="start" {...hold(BUTTON.START)}>START</button>
       </header>
+      {phase.kind === "connecting" && phase.note && <p className="note" data-testid="note">{phase.note}</p>}
       <Stick label="MOVE" onChange={(v) => (move.current = v)} testId="move" />
       <div className="right">
         <Stick label="AIM" onChange={(v) => (aim.current = v)} testId="aim" />
