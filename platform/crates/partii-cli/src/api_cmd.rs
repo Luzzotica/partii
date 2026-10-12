@@ -152,6 +152,13 @@ pub fn run(op: &Op, rest: &[String]) -> i32 {
         },
         None => None,
     };
+    // A build's download name keeps the file's extension (`.zip`, `.apk`)
+    // unless --filename says otherwise.
+    if op.id == "buildsUpload" && !args.contains_key("filename") {
+        if let Some(name) = default_build_filename(&args, m.try_get_one::<String>("file").ok().flatten().map(String::as_str)) {
+            args.insert("filename".into(), name);
+        }
+    }
     // Builds go straight to storage when the platform supports it.
     if op.id == "buildsUpload" && !m.get_flag("dry-run") {
         if let (Some(bytes), Some(game)) = (raw.as_deref(), args.get("game")) {
@@ -252,5 +259,26 @@ mod tests {
         for op in OPS {
             command(op).debug_assert();
         }
+    }
+}
+
+/// `<game>-<version>-<platform>.<ext of the file>`; None without an extension.
+fn default_build_filename(args: &BTreeMap<String, String>, file: Option<&str>) -> Option<String> {
+    let ext = std::path::Path::new(file?).extension()?.to_str()?.to_ascii_lowercase();
+    let (game, version, platform) = (args.get("game")?, args.get("version")?, args.get("platform")?);
+    let name = format!("{game}-{version}-{platform}.{ext}");
+    name.bytes().all(|b| b.is_ascii_alphanumeric() || b"._+-".contains(&b)).then_some(name)
+}
+
+#[cfg(test)]
+mod filename_tests {
+    use super::*;
+
+    #[test]
+    fn build_filename_keeps_the_extension() {
+        let args: BTreeMap<String, String> = [("game", "tankii"), ("version", "0.4.54"), ("platform", "macos")].into_iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+        assert_eq!(default_build_filename(&args, Some("/x/Tankii-macos.ZIP")).as_deref(), Some("tankii-0.4.54-macos.zip"));
+        assert_eq!(default_build_filename(&args, Some("/x/tankii")), None);
+        assert_eq!(default_build_filename(&args, None), None);
     }
 }
