@@ -59,7 +59,7 @@ pub struct AccountConfig {
 impl Default for AccountConfig {
     fn default() -> Self {
         AccountConfig {
-            edge: "https://partii-edge-staging.partii-games.workers.dev".into(),
+            edge: "https://partii-edge.partii-games.workers.dev".into(),
             key: None,
             player_token: None,
             game: String::new(),

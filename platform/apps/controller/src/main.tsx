@@ -8,7 +8,7 @@ import { Stick, type Vec } from "./stick";
 import { fetchProfile, finishEmail, signOut, startEmail, storedPlayer } from "./account";
 import "./style.css";
 
-const DEFAULT_EDGE = "https://partii-edge-staging.partii-games.workers.dev";
+const DEFAULT_EDGE = "https://partii-edge.partii-games.workers.dev";
 
 function params() {
   const m = /^\/c\/([A-Za-z]{4,8})/.exec(location.pathname);

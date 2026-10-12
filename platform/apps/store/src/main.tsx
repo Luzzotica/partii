@@ -6,7 +6,7 @@ import { createRoot } from "react-dom/client";
 import { createClient, PartiiError } from "../../../sdk/ts/src/client";
 import "./style.css";
 
-const API = import.meta.env.VITE_PARTII_API ?? "https://partii-edge-staging.partii-games.workers.dev";
+const API = import.meta.env.VITE_PARTII_API ?? "https://partii-edge.partii-games.workers.dev";
 const KEY = import.meta.env.VITE_PARTII_KEY ?? "";
 const api = createClient({ base: API, key: KEY });
 
