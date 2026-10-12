@@ -49,6 +49,10 @@ export function operations(t: Transport) {
     buildsList: (game: string) => t.call("GET", `/v1/games/${encodeURIComponent(game)}/builds`, "developer", {}, undefined, "json"),
     /** Upload a build (the request body is the file). (developer) */
     buildsUpload: (game: string, query: { platform?: string | number; version?: string | number; channel?: string | number; filename?: string | number } = {}, body: BodyInit) => t.call("POST", `/v1/games/${encodeURIComponent(game)}/builds`, "developer", query, body, "json"),
+    /** Start a direct upload; returns a signed URL to PUT the file to storage (no size cap). `partii builds upload` uses this when the platform has R2. (developer) */
+    buildsUploadStart: (game: string, body: Record<string, unknown> = {}) => t.call("POST", `/v1/games/${encodeURIComponent(game)}/builds/uploads`, "developer", {}, body, "json"),
+    /** Record a build after its direct upload (checks the stored size). (developer) */
+    buildsUploadFinish: (game: string, upload: string, body: Record<string, unknown> = {}) => t.call("POST", `/v1/games/${encodeURIComponent(game)}/builds/uploads/${encodeURIComponent(upload)}`, "developer", {}, body, "json"),
     /** The game's redeemable keys. (developer) */
     codesList: (game: string) => t.call("GET", `/v1/games/${encodeURIComponent(game)}/codes`, "developer", {}, undefined, "json"),
     /** Make redeemable keys (for press, bundles, friends). (developer) */

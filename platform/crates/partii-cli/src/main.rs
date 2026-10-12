@@ -8,6 +8,7 @@ mod bot;
 mod dev;
 mod help;
 mod out;
+mod upload;
 mod torture;
 
 use clap::{Parser, Subcommand};

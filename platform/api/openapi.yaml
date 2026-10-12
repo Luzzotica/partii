@@ -315,6 +315,28 @@ paths:
         - { name: filename, in: query, schema: { type: string } }
       responses: { "200": { description: "{build}" } }
 
+  /v1/games/{game}/builds/uploads:
+    post:
+      operationId: buildsUploadStart
+      summary: Start a direct upload; returns a signed URL to PUT the file to storage (no size cap). `partii builds upload` uses this when the platform has R2.
+      x-auth: developer
+      x-cli: builds upload-start
+      parameters: [{ name: game, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [platform, version, size, sha256], properties: { platform: { type: string }, version: { type: string }, channel: { type: string }, filename: { type: string }, size: { type: integer }, sha256: { type: string, description: "hex; storage rejects bytes that don't match" } } } } } }
+      responses: { "200": { description: "{upload: {id, url, method, headers, expires_at}}" } }
+
+  /v1/games/{game}/builds/uploads/{upload}:
+    post:
+      operationId: buildsUploadFinish
+      summary: Record a build after its direct upload (checks the stored size).
+      x-auth: developer
+      x-cli: builds upload-finish
+      parameters:
+        - { name: game, in: path, required: true, schema: { type: string } }
+        - { name: upload, in: path, required: true, schema: { type: string } }
+      requestBody: { content: { application/json: { schema: { type: object, required: [platform, version, size, sha256], properties: { platform: { type: string }, version: { type: string }, channel: { type: string }, filename: { type: string }, size: { type: integer }, sha256: { type: string } } } } } }
+      responses: { "200": { description: "{build}" } }
+
   /v1/games/{game}/codes:
     get:
       operationId: codesList

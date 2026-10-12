@@ -152,6 +152,21 @@ pub fn run(op: &Op, rest: &[String]) -> i32 {
         },
         None => None,
     };
+    // Builds go straight to storage when the platform supports it.
+    if op.id == "buildsUpload" && !m.get_flag("dry-run") {
+        if let (Some(bytes), Some(game)) = (raw.as_deref(), args.get("game")) {
+            match crate::upload::direct(&client, game, &args, bytes) {
+                Ok(crate::upload::Outcome::Done(v)) => {
+                    let ok = v.get("ok").and_then(Value::as_bool).unwrap_or(false);
+                    let s = if pretty { serde_json::to_string_pretty(&v) } else { serde_json::to_string(&v) };
+                    println!("{}", s.unwrap_or_default());
+                    return if ok { 0 } else { 1 };
+                }
+                Ok(crate::upload::Outcome::Fallback) => {}
+                Err(e) => return print(Err(CliError::new("upload", e, "try again; the build was not recorded")), pretty),
+            }
+        }
+    }
     match client.call(op, &args, body.as_ref(), raw, m.get_flag("dry-run")) {
         Err(e) => print(Err(CliError { code: e.code, message: e.message, hint: e.hint, exit: if e.code == "usage" { 2 } else { 1 } }), pretty),
         Ok(Reply::Json { body, .. }) => {

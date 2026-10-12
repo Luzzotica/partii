@@ -205,7 +205,7 @@ partii games put mygame --project mystudio --title "My Game" --tagline "One line
   --description "What it is." --price-cents 499 \
   --field 'platforms=["macos","windows","ios","android"]' \
   --field 'demo={"free_levels":20}'                   # a free part; `demo=null` = no free part (the whole game is paid)
-partii builds upload mygame --platform macos --version 1.0.0 --file MyGame.dmg   # optional for publishing
+partii builds upload mygame --platform macos --version 1.0.0 --file MyGame.dmg   # optional for publishing; any size
 partii games publish mygame                           # now on the store (needs nothing else)
 partii games sale mygame --percent 25                 # a week-long sale (or --starts-at/--ends-at, ms)
 partii codes create mygame --count 10 --note press    # redeemable keys
@@ -232,6 +232,8 @@ partii test players create --name Tester            # → player id + player_tok
 partii test purchase --game mygame --player p_...   # Stripe test mode, or the fake store locally
 partii sales mygame                                  # purchases and totals (gross_cents counts real sales only; test purchases are test_count)
 ```
+
+Uploads go straight to storage: the CLI gets a signed URL (`buildsUploadStart`), PUTs the file with its sha256 (storage refuses bytes that don't match), then records it (`buildsUploadFinish`). Locally, `partii dev` takes the file through the API instead; the command is the same.
 
 Body fields are also flags: `--price-cents 500` and `--field price_cents=500` are the same; use `--field` for JSON values (lists, objects, `null`).
 

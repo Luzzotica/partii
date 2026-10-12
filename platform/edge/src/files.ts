@@ -14,6 +14,8 @@ export interface Files {
   get(key: string): Promise<StoredFile | null>;
   put(key: string, data: ArrayBuffer | Uint8Array | string, opts?: { contentType?: string; contentDisposition?: string }): Promise<void>;
   delete(key: string): Promise<void>;
+  /** Size of a stored file, or null if it isn't there. */
+  head(key: string): Promise<{ size: number } | null>;
   list(prefix: string): Promise<{ key: string; size: number; uploaded: number }[]>;
 }
 
@@ -37,6 +39,10 @@ export function files(env: { FILES?: R2Bucket; FILES_KV?: KVNamespace }): Files 
       },
       async delete(key) {
         await r2.delete(key);
+      },
+      async head(key) {
+        const o = await r2.head(key);
+        return o ? { size: o.size } : null;
       },
       async list(prefix) {
         const r = await r2.list({ prefix });
@@ -99,6 +105,11 @@ export function files(env: { FILES?: R2Bucket; FILES_KV?: KVNamespace }): Files 
       const was = old.metadata?.chunks ?? 0;
       const now = size > KV_MAX ? Math.ceil(size / KV_CHUNK) : 0;
       for (let n = now; n < was; n++) await kv.delete(chunkKey(key, n));
+    },
+    async head(key) {
+      const r = await kv.getWithMetadata<KvMeta>(key, "arrayBuffer");
+      if (r.value === null) return null;
+      return { size: r.metadata?.size ?? r.value.byteLength };
     },
     async delete(key) {
       const r = await kv.getWithMetadata<KvMeta>(key, "arrayBuffer");

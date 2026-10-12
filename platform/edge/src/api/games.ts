@@ -1,12 +1,38 @@
+import { AwsClient } from "aws4fetch";
 import { files } from "../files";
 // Games: store pages, prices and sales, builds, keys, entitlements, live content.
 
-import { bad, b64url, fromB64url, gameView, now, ownGame, ownProject, randomSlug, sha256hex, type GameRow } from "./core";
+import { ApiError, bad, b64url, fromB64url, gameView, now, ownGame, ownProject, randomSlug, sha256hex, type GameRow } from "./core";
 import type { Handlers } from "./index";
 
 const GAME_ID = /^[a-z0-9-]{1,40}$/;
 const PLATFORMS = ["macos", "windows", "linux", "ios", "android", "web"];
 const MAX_BUILD = 512 * 1024 * 1024;
+
+type BuildFields = { platform: string; version: string; channel: string; filename: string; size: number; sha256: string };
+
+/** Validated fields of a direct build upload (same rules as buildsUpload). */
+function buildFields(game: string, body: Record<string, unknown>): BuildFields {
+  const platform = String(body.platform ?? "");
+  if (!PLATFORMS.includes(platform)) throw bad(`platform must be one of ${PLATFORMS.join(", ")}`);
+  const version = String(body.version ?? "");
+  if (!/^[A-Za-z0-9._+-]{1,40}$/.test(version)) throw bad("version is required (letters, digits, . _ + -)");
+  const filename = String(body.filename ?? `${game}-${version}-${platform}`);
+  if (!/^[A-Za-z0-9._+-]{1,120}$/.test(filename)) throw bad("filename: letters, digits, . _ + - only");
+  const size = Number(body.size);
+  if (!Number.isInteger(size) || size <= 0) throw bad("size is the file's byte count");
+  const sha256 = String(body.sha256 ?? "").toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(sha256)) throw bad("sha256 is the file's hex digest");
+  return { platform, version, channel: String(body.channel ?? "stable"), filename, size, sha256 };
+}
+
+const buildKey = (game: string, b: BuildFields, id: string) => `builds/${game}/${b.platform}/${b.version}/${id}/${b.filename}`;
+
+function hexToB64(hex: string): string {
+  let s = "";
+  for (let i = 0; i < hex.length; i += 2) s += String.fromCharCode(parseInt(hex.slice(i, i + 2), 16));
+  return btoa(s);
+}
 
 export async function grant(env: { DB: D1Database }, player: string, game: string, source: string, ref: string) {
   await env.DB.prepare(
@@ -144,6 +170,41 @@ export const gameHandlers: Handlers = {
     const build = { id, game: params.game, platform, version, channel, filename, size: bytes.byteLength, sha256: sha, created_at: now() };
     await env.DB.prepare("INSERT INTO builds (id, game_id, platform, version, channel, filename, r2_key, size, sha256, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
       .bind(id, params.game, platform, version, channel, filename, key, build.size, sha, build.created_at)
+      .run();
+    return { build };
+  },
+
+  async buildsUploadStart({ env, caller, params, body, dryRun }) {
+    await ownGame(env, caller, params.game);
+    const b = buildFields(params.game, body);
+    if (!env.R2_ACCESS_KEY_ID || !env.R2_SECRET_ACCESS_KEY || !env.R2_ENDPOINT || !env.R2_BUCKET) {
+      throw new ApiError(501, "direct_upload_unavailable", "this platform has no direct uploads (no R2 S3 credentials)", "upload through the API instead (`partii builds upload` does this by itself)");
+    }
+    const id = randomSlug(12);
+    const key = buildKey(params.game, b, id);
+    const expires = 3600;
+    if (dryRun) return { dry_run: true, upload: { id, key } };
+    const aws = new AwsClient({ accessKeyId: env.R2_ACCESS_KEY_ID, secretAccessKey: env.R2_SECRET_ACCESS_KEY, service: "s3", region: "auto" });
+    const url = new URL(`${env.R2_ENDPOINT.replace(/\/$/, "")}/${env.R2_BUCKET}/${key.split("/").map(encodeURIComponent).join("/")}`);
+    url.searchParams.set("X-Amz-Expires", String(expires));
+    // The checksum header is signed: R2 refuses bytes whose sha256 differs.
+    const headers = { "x-amz-checksum-sha256": hexToB64(b.sha256), "content-type": "application/octet-stream" };
+    const signed = await aws.sign(new Request(url, { method: "PUT", headers }), { aws: { signQuery: true } });
+    return { upload: { id, url: signed.url, method: "PUT", headers, expires_at: now() + expires * 1000 } };
+  },
+
+  async buildsUploadFinish({ env, caller, params, body, dryRun }) {
+    await ownGame(env, caller, params.game);
+    const b = buildFields(params.game, body);
+    if (!/^[a-z0-9]{12}$/.test(String(params.upload))) throw bad("not an upload id");
+    const key = buildKey(params.game, b, params.upload);
+    const stored = await files(env).head(key);
+    if (!stored) throw new ApiError(409, "not_uploaded", "nothing was uploaded for this id yet", "PUT the file to the url from buildsUploadStart first");
+    if (stored.size !== b.size) throw new ApiError(409, "size_mismatch", `stored ${stored.size} bytes, expected ${b.size}`, "upload again");
+    const build = { id: params.upload, game: params.game, platform: b.platform, version: b.version, channel: b.channel, filename: b.filename, size: b.size, sha256: b.sha256, created_at: now() };
+    if (dryRun) return { dry_run: true, build };
+    await env.DB.prepare("INSERT INTO builds (id, game_id, platform, version, channel, filename, r2_key, size, sha256, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING")
+      .bind(build.id, params.game, b.platform, b.version, b.channel, b.filename, key, b.size, b.sha256, build.created_at)
       .run();
     return { build };
   },

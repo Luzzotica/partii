@@ -26,6 +26,11 @@ export interface Env extends IceEnv {
   STORE_URL?: string;
   STRIPE_SECRET_KEY?: string;
   STRIPE_WEBHOOK_SECRET?: string;
+  /** R2's S3 API, for signed direct uploads (builds). Unset: uploads go through the Worker. */
+  R2_ACCESS_KEY_ID?: string;
+  R2_SECRET_ACCESS_KEY?: string;
+  R2_ENDPOINT?: string;
+  R2_BUCKET?: string;
   APPLE_CLIENT_IDS?: string;
   GOOGLE_CLIENT_IDS?: string;
   DISCORD_CLIENT_ID?: string;

@@ -126,6 +126,35 @@ describe("games and the store", () => {
     expect((await api("PUT", `/v1/games/${game}/price`, { token, body: { price_cents: 4.5 } })).status).toBe(400);
   });
 
+  it("direct uploads: signed URL with the checksum, then finish checks what landed", async () => {
+    const { token, game } = await setup({ demo: null });
+    const bytes = new Uint8Array(300_000).map((_, i) => i % 251);
+    const sha = [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))].map((b) => b.toString(16).padStart(2, "0")).join("");
+    const body = { platform: "android", version: "2.0.0", filename: "tankii.apk", size: bytes.byteLength, sha256: sha };
+    const start = await api("POST", `/v1/games/${game}/builds/uploads`, { token, body });
+    expect(start.json.ok).toBe(true);
+    const up = start.json.upload;
+    const url = new URL(up.url);
+    expect(url.origin).toBe("https://acct.r2.example");
+    expect(url.pathname).toBe(`/partii-dev-files/builds/${game}/android/2.0.0/${up.id}/tankii.apk`);
+    expect(url.searchParams.get("X-Amz-Signature")).toMatch(/^[0-9a-f]{64}$/);
+    expect(url.searchParams.get("X-Amz-SignedHeaders")).toContain("x-amz-checksum-sha256");
+    expect(up.headers["x-amz-checksum-sha256"]).toBe(btoa(String.fromCharCode(...sha.match(/../g)!.map((h: string) => parseInt(h, 16)))));
+    // Nothing uploaded yet.
+    expect((await api("POST", `/v1/games/${game}/builds/uploads/${up.id}`, { token, body })).json.error.code).toBe("not_uploaded");
+    // What the PUT to R2 does, done through the binding here.
+    const key = url.pathname.replace("/partii-dev-files/", "");
+    await (env as any).FILES.put(key, bytes.slice(0, 1000));
+    expect((await api("POST", `/v1/games/${game}/builds/uploads/${up.id}`, { token, body })).json.error.code).toBe("size_mismatch");
+    await (env as any).FILES.put(key, bytes);
+    const fin = await api("POST", `/v1/games/${game}/builds/uploads/${up.id}`, { token, body });
+    expect(fin.json.build).toMatchObject({ id: up.id, platform: "android", size: 300_000, sha256: sha });
+    expect((await api("GET", `/v1/games/${game}/builds`, { token })).json.builds.map((b: any) => b.id)).toContain(up.id);
+    // Someone else's game: no.
+    const other = await developer();
+    expect((await api("POST", `/v1/games/${game}/builds/uploads`, { token: other, body })).status).toBe(404); // not yours: as if absent
+  });
+
   it("builds upload and download only for owners (no demo, paid)", async () => {
     const { token, key, game } = await setup({ demo: null });
     const bytes = new Uint8Array([1, 2, 3, 4, 5, 250]);

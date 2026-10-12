@@ -42,6 +42,8 @@ Auth (`x-auth`):
 | `gamesSaleEnd` | `DELETE /v1/games/{game}/sale` | developer | `partii games sale-end` |
 | `buildsList` | `GET /v1/games/{game}/builds` | developer | `partii builds list` |
 | `buildsUpload` | `POST /v1/games/{game}/builds` | developer | `partii builds upload` |
+| `buildsUploadStart` | `POST /v1/games/{game}/builds/uploads` | developer | `partii builds upload-start` |
+| `buildsUploadFinish` | `POST /v1/games/{game}/builds/uploads/{upload}` | developer | `partii builds upload-finish` |
 | `codesList` | `GET /v1/games/{game}/codes` | developer | `partii codes list` |
 | `codesCreate` | `POST /v1/games/{game}/codes` | developer | `partii codes create` |
 | `entitlementsList` | `GET /v1/games/{game}/entitlements` | developer | `partii entitlements list` |
@@ -283,6 +285,29 @@ Parameters:
 - `filename` (query)
 
 Body: the file's bytes.
+
+### buildsUploadStart
+
+`POST /v1/games/{game}/builds/uploads` (auth: developer) · `partii builds upload-start`
+
+Start a direct upload; returns a signed URL to PUT the file to storage (no size cap). `partii builds upload` uses this when the platform has R2.
+
+Parameters:
+- `game` (path, required)
+
+Body fields: `platform` (required), `version` (required), `channel`, `filename`, `size` (required), `sha256` (required)
+
+### buildsUploadFinish
+
+`POST /v1/games/{game}/builds/uploads/{upload}` (auth: developer) · `partii builds upload-finish`
+
+Record a build after its direct upload (checks the stored size).
+
+Parameters:
+- `game` (path, required)
+- `upload` (path, required)
+
+Body fields: `platform` (required), `version` (required), `channel`, `filename`, `size` (required), `sha256` (required)
 
 ### codesList
 

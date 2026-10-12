@@ -164,6 +164,20 @@ export const ROUTES: Route[] = [
     "body": "binary"
   },
   {
+    "op": "buildsUploadStart",
+    "method": "POST",
+    "path": "/v1/games/:game/builds/uploads",
+    "auth": "developer",
+    "body": "json"
+  },
+  {
+    "op": "buildsUploadFinish",
+    "method": "POST",
+    "path": "/v1/games/:game/builds/uploads/:upload",
+    "auth": "developer",
+    "body": "json"
+  },
+  {
     "op": "codesList",
     "method": "GET",
     "path": "/v1/games/:game/codes",

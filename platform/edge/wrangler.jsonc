@@ -27,7 +27,7 @@
   "env": {
     "staging": {
       "name": "partii-edge-staging",
-      "vars": { "PARTII_ENV": "staging", "TURN_MODE": "cloudflare", "ALLOW_FAKE_LOGIN": "1", "ALLOW_FAKE_STORE": "1", "EMAIL_MODE": "dev", "STORE_URL": "https://partii-store-staging.vercel.app" },
+      "vars": { "PARTII_ENV": "staging", "TURN_MODE": "cloudflare", "ALLOW_FAKE_LOGIN": "1", "ALLOW_FAKE_STORE": "1", "EMAIL_MODE": "dev", "STORE_URL": "https://partii-store-staging.vercel.app", "R2_BUCKET": "partii-staging-files" },
       "durable_objects": {
         "bindings": [
           { "name": "SESSION", "class_name": "Session" },
