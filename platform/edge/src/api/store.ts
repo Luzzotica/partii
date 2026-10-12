@@ -119,6 +119,7 @@ export const storeHandlers: Handlers = {
     if (!player) throw bad(`no player ${body.player}`, "make one with `partii test players create`");
     const amount = currentPrice(g);
     if (!env.STRIPE_SECRET_KEY) {
+      if (env.PARTII_ENV === "production") throw new ApiError(403, "live_mode", "production has no fake store", "make test purchases on staging");
       const ref = `fake:${randomSlug(12)}`;
       const entitlement = await recordPurchase(env, { player: player.id, game, store: "fake", ref, amount, currency: g.currency, test: true });
       return { purchase: { store: "fake", ref, amount_cents: amount }, entitlement };

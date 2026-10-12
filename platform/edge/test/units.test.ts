@@ -52,3 +52,13 @@ describe("relay credentials", () => {
     expect(await mintIce({})).toMatchObject({ relay: "ws", ice_servers: [] });
   });
 });
+
+describe("production safety", () => {
+  it("never returns an email sign-in code without a mail provider", async () => {
+    const { env } = await import("cloudflare:test");
+    const { playerHandlers } = await import("../src/api/players");
+    const start = (e: Record<string, unknown>) => (playerHandlers.playersEmailStart as any)({ env: { ...env, ...e }, body: { email: "a@b.co" } });
+    expect((await start({ PARTII_ENV: "staging" })).code).toMatch(/^\d{6}$/);
+    await expect(start({ PARTII_ENV: "production" })).rejects.toMatchObject({ code: "email_unavailable" });
+  });
+});

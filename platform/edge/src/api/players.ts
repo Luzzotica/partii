@@ -96,9 +96,15 @@ export const playerHandlers: Handlers = {
       .bind(email, await sha256hex(`${email}:${code}`), now() + 10 * 60_000)
       .run();
     const sent = await sendEmail(env, email, code);
+    if (sent) return { sent: true };
+    // Production never hands the code to the caller: that would let anyone
+    // sign in as any address.
+    if (env.PARTII_ENV === "production") {
+      throw new ApiError(503, "email_unavailable", "sign-in emails can't be sent right now", "sign in with another provider, or try again later");
+    }
     // Without a mail provider (dev, staging) the code comes back so tests and
     // agents can finish the flow.
-    return sent ? { sent: true } : { sent: false, code, note: "no mail provider configured; the code is returned instead" };
+    return { sent: false, code, note: "no mail provider configured; the code is returned instead" };
   },
 
   async playersLogin(ctx) {
