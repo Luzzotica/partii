@@ -2475,7 +2475,8 @@ fn test_assoc_delayed_ack() -> Result<()> {
     }
     let delay = (pair.time.duration_since(since).as_millis() as f64) / 1000.0;
     debug!("received in {} seconds", delay);
-    assert!(delay >= 0.2, "should be >= 200msec");
+    // partii: the delayed-ACK interval is 20 ms (upstream: 200 ms).
+    assert!(delay >= 0.02, "should be >= 20msec");
 
     pair.drive();
 

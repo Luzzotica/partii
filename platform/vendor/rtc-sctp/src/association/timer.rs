@@ -282,8 +282,9 @@ mod tests {
     }
 
     #[test]
-    fn rto_manager_uses_rfc9260_initial_rto() {
-        assert_eq!(RTO_INITIAL, 1000);
+    fn rto_manager_uses_the_partii_initial_rto() {
+        // partii: 300 ms (RFC 9260 says 1000); games can't wait a second.
+        assert_eq!(RTO_INITIAL, 300);
         assert_eq!(RtoManager::new().get_rto(), RTO_INITIAL);
     }
 
@@ -294,7 +295,7 @@ mod tests {
 
         timers.start(Timer::T1Init, now, RtoManager::new().get_rto());
 
-        assert_eq!(timers.next_timeout(), Some(now + Duration::from_secs(1)));
+        assert_eq!(timers.next_timeout(), Some(now + Duration::from_millis(RTO_INITIAL)));
     }
 
     #[test]
@@ -309,7 +310,8 @@ mod tests {
             // backoff. Later DATA RTT updates/backoffs cannot compound it.
             timers.start(timer, now, 8000);
             assert_eq!(Some(now + Duration::from_secs(8)), timers.get(timer));
-            for interval in [16, 32, 60, 60] {
+            // partii: backoff is capped at RTO_MAX (3 s; RFC says 60 s).
+            for interval in [RTO_MAX / 1000; 4] {
                 now = timers.get(timer).unwrap();
                 assert_eq!((true, false), {
                     let (expired, failed, _) = timers.is_expired(timer, now);

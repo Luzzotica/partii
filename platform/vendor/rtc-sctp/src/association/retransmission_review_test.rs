@@ -221,11 +221,12 @@ fn t2_backoff_does_not_compound_simultaneous_t3_expirations() -> Result<()> {
         let mut now = Instant::now();
         a.timers.start(Timer::T2Shutdown, now, 1000);
         a.timers.start(Timer::T3RTX, now, 1000);
-        for interval in [2, 4, 8, 16] {
+        // partii: doubling stops at RTO_MAX = 3 s (RFC: 60 s).
+        for interval in [2000, 3000, 3000, 3000] {
             now = a.timers.get(Timer::T2Shutdown).unwrap();
             assert_eq!(Some(now), a.timers.get(Timer::T3RTX));
             a.handle_timeout(now);
-            let deadline = now + Duration::from_secs(interval);
+            let deadline = now + Duration::from_millis(interval);
             assert_eq!(Some(deadline), a.timers.get(Timer::T2Shutdown));
             let packets = a.gather_outbound(now).0;
             assert!(!packets.is_empty());
@@ -302,7 +303,8 @@ fn public_rtt_reports_measurements_independently_of_backoff() {
         a.rto_mgr.backoff();
         assert_eq!(Duration::from_millis(80), a.rtt());
     }
-    assert_eq!(16_000, a.rto_mgr.get_rto());
+    // partii: four doublings of 1 s stop at RTO_MAX = 3 s (RFC: 16 s).
+    assert_eq!(3_000, a.rto_mgr.get_rto());
     a.rto_mgr.set_new_rtt(160);
     assert_eq!(Duration::from_millis(90), a.rtt());
 }
