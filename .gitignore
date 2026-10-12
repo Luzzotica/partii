@@ -57,3 +57,4 @@ test-results/
 playwright-report/
 # Consolidated marketing deliverables + pipeline workspaces (local-only).
 /marketing/
+.env*.local
