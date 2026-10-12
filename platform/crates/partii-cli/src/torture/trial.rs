@@ -73,7 +73,10 @@ fn spawn(container: &str, t: &BotTarget, cmd: Vec<String>) -> Result<(Child, Rec
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
-        .map_err(|e| CliError::new("docker_missing", e.to_string(), "install and start Docker"))?;
+        .map_err(|e| match e.kind() {
+            std::io::ErrorKind::NotFound => CliError::new("docker_missing", e.to_string(), "install and start Docker"),
+            _ => CliError::new("spawn_failed", e.to_string(), "check the process limit (ulimit -u) and for leftover docker exec processes"),
+        })?;
     let stdout = child.stdout.take().unwrap();
     let (tx, rx) = channel();
     std::thread::spawn(move || {
@@ -86,6 +89,14 @@ fn spawn(container: &str, t: &BotTarget, cmd: Vec<String>) -> Result<(Child, Rec
         }
     });
     Ok((child, rx))
+}
+
+/// Kill and wait: an unwaited `docker exec` stays a zombie, and a long run
+/// piles up two per trial until spawns fail with EAGAIN (the per-user
+/// process cap, 4000 on macOS).
+fn reap(child: &mut Child) {
+    let _ = child.kill();
+    let _ = child.wait();
 }
 
 fn kill_bots(container: &str) {
@@ -114,18 +125,24 @@ fn run_inner(topo: &Topo, s: &Scenario, t: &BotTarget, secs: u64, r: &mut TrialR
             }
             Ok(v) if v["ev"] == "error" => {
                 r.error = Some(format!("host: {}", v["msg"].as_str().unwrap_or("?")));
-                let _ = host.kill();
+                reap(&mut host);
                 return Ok(());
             }
             Ok(_) => continue,
             Err(_) => {
                 r.error = Some("host: no room within 45 s".into());
-                let _ = host.kill();
+                reap(&mut host);
                 return Ok(());
             }
         }
     };
-    let (mut guest, grx) = spawn(&topo.guest, t, bot_cmd(t, "guest", Some(&code), secs))?;
+    let (mut guest, grx) = match spawn(&topo.guest, t, bot_cmd(t, "guest", Some(&code), secs)) {
+        Ok(g) => g,
+        Err(e) => {
+            reap(&mut host);
+            return Err(e);
+        }
+    };
     let deadline = Instant::now() + Duration::from_secs(secs + 60);
     let mut disrupted: Option<std::thread::JoinHandle<Result<(), CliError>>> = None;
     while Instant::now() < deadline {
@@ -184,7 +201,7 @@ fn run_inner(topo: &Topo, s: &Scenario, t: &BotTarget, secs: u64, r: &mut TrialR
             r.error.get_or_insert(format!("disruption: {}", e.message));
         }
     }
-    let _ = guest.kill();
-    let _ = host.kill();
+    reap(&mut guest);
+    reap(&mut host);
     Ok(())
 }
