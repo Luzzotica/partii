@@ -7,6 +7,7 @@ import { EDGE_USAGE, usage } from "./usage";
 export { Session } from "./session";
 export { Room } from "./room";
 export { Usage } from "./usage";
+export { Limiter } from "./limits";
 import type { Session } from "./session";
 import type { Room } from "./room";
 import type { Usage } from "./usage";

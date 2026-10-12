@@ -1,6 +1,6 @@
 import { env, SELF } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
-import { allowed, Bucket } from "../src/limits";
+import { allowed, Bucket, LIMIT_WINDOW_MS, LIMITS, limitsFor } from "../src/limits";
 import { type Alert, sendAlert, STALE_MS, usage } from "../src/usage";
 import { Client, connected, newConn, sleep } from "./client";
 
@@ -19,14 +19,20 @@ async function until<T>(f: () => Promise<T>, pred: (v: T) => boolean, ms = 3000)
 }
 
 describe("rate limits", () => {
-  it("allow when no limiter is bound, or the limiter fails", async () => {
-    expect(await allowed({}, "create", "1.2.3.4")).toBe(true);
-    const failing = { limit: async () => { throw new Error("down"); } };
-    expect(await allowed({ RL_CREATE: failing }, "create", "1.2.3.4")).toBe(true);
-    const keys: string[] = [];
-    const no = { limit: async ({ key }: { key: string }) => (keys.push(key), { success: false }) };
-    expect(await allowed({ RL_JOIN: no }, "join", "1.2.3.4")).toBe(false);
-    expect(keys).toEqual(["join:1.2.3.4"]);
+  it("are off unless RATE_LIMITS is set, and take overrides", async () => {
+    expect(limitsFor({})).toBeNull();
+    expect(limitsFor({ RATE_LIMITS: "off" })).toBeNull();
+    expect(limitsFor({ RATE_LIMITS: "on" })).toEqual(LIMITS);
+    expect(limitsFor({ RATE_LIMITS: '{"session":3}' })).toEqual({ ...LIMITS, session: 3 });
+    expect(await allowed({ RATE_LIMITS: "on" }, "create", "1.2.3.4")).toBe(true); // no LIMITER bound
+  });
+
+  it("count each kind per IP in one-minute windows", async () => {
+    const l = E.LIMITER.get(E.LIMITER.idFromName("203.0.113.1"));
+    const t = 1_000_000;
+    expect([await l.take("create", 2, t), await l.take("create", 2, t + 1), await l.take("create", 2, t + 2)]).toEqual([true, true, false]);
+    expect(await l.take("join", 2, t + 3)).toBe(true);
+    expect(await l.take("create", 2, t + LIMIT_WINDOW_MS)).toBe(true);
   });
 
   it("new sessions per IP: over the limit the socket gets rate_limited and is closed", async () => {
