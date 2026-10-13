@@ -67,12 +67,16 @@ function errorResponse(c: Context, e: unknown) {
   return c.json({ ok: false, error: { code: "internal", message: String(e), hint: "this is a platform bug; the request was not applied" } }, 500);
 }
 
+/** Player content routes, switched on per environment by the UGC var. */
+const isUgc = (op: string) => /^ugc[A-Z]/.test(op) || op === "adminUgcModerate";
+
 export function registerApi(app: Hono<{ Bindings: Env }>) {
   for (const route of ROUTES) {
     const handler = HANDLERS[route.op];
     if (!handler) throw new Error(`no handler for ${route.op}`);
     app.on(route.method, route.path, async (c) => {
       try {
+        if (isUgc(route.op) && c.env.UGC !== "on") throw new ApiError(404, "not_available", "player content isn't available on this platform yet", "it's on staging");
         const req = c.req.raw;
         const caller = await authorize(route, c.env, req);
         let body: Record<string, any> = {};

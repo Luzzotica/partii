@@ -18,6 +18,7 @@
   "vars": {
     "PARTII_ENV": "dev",
     "KEY_SECRET": "dev-only-key-secret",
+    "UGC": "on",
     // Dev only; staging and production set SECRETS_KEY as a secret.
     "SECRETS_KEY": "ZGV2LW9ubHktc2VjcmV0cy1rZXktMzItYnl0ZXMhISE",
     "TURN_MODE": "none",
@@ -33,7 +34,7 @@
   "env": {
     "staging": {
       "name": "partii-edge-staging",
-      "vars": { "PARTII_ENV": "staging", "RATE_LIMITS": "on", "TURN_MODE": "cloudflare", "ALLOW_FAKE_LOGIN": "1", "ALLOW_FAKE_STORE": "1", "EMAIL_MODE": "dev", "STORE_URL": "https://partii-store.vercel.app", "R2_BUCKET": "partii-staging-files" },
+      "vars": { "PARTII_ENV": "staging", "RATE_LIMITS": "on", "TURN_MODE": "cloudflare", "ALLOW_FAKE_LOGIN": "1", "ALLOW_FAKE_STORE": "1", "EMAIL_MODE": "dev", "STORE_URL": "https://partii-store.vercel.app", "R2_BUCKET": "partii-staging-files", "UGC": "on" },
       "durable_objects": {
         "bindings": [
           { "name": "SESSION", "class_name": "Session" },

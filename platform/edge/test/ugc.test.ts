@@ -236,3 +236,18 @@ describe("player content: unpublish and moderation", () => {
     expect((await api("GET", `/v1/ugc/${a.id}`, { key: s.key })).status).toBe(404);
   });
 });
+
+describe("player content switch", () => {
+  it("without UGC=on (production for now) the routes answer not_available; other routes are unaffected", async () => {
+    const { Hono } = await import("hono");
+    const { registerApi } = await import("../src/api");
+    const app = new Hono();
+    registerApi(app as any);
+    const off = { ...(env as any), UGC: undefined };
+    const r = await app.request("/v1/games/tankii/ugc", {}, off);
+    expect(r.status).toBe(404);
+    expect(((await r.json()) as any).error.code).toBe("not_available");
+    expect((await app.request("/v1/admin/ugc/u_x/moderate", { method: "POST" }, off)).status).toBe(404);
+    expect((await app.request("/health", {}, off)).status).toBe(200);
+  });
+});

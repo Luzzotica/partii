@@ -19,7 +19,8 @@ import { gameSecret } from "./secrets";
 
 const OPENID = "https://steamcommunity.com/openid/login";
 const CLAIMED = /^https:\/\/steamcommunity\.com\/openid\/id\/(\d{17})$/;
-const OPENID_TTL = 10 * 60_000;
+/** Long enough for a player to find the browser tab, sign in to Steam and approve. */
+const OPENID_TTL = 30 * 60_000;
 /** Ticket checks tried per login when the game doesn't say which app issued it. */
 const MAX_APPS_TRIED = 5;
 
@@ -113,7 +114,7 @@ export const steamHandlers: Handlers = {
   async steamOpenidReturn({ env, req, query }) {
     const id = String(query.state ?? "");
     const row = /^[a-z0-9]{20}$/.test(id) ? await env.DB.prepare("SELECT status, expires_at FROM steam_openid WHERE id = ?").bind(id).first<{ status: string; expires_at: number }>() : null;
-    if (!row || row.expires_at < now()) return page("Sign-in expired", "Start signing in from the game again.", 410);
+    if (!row || row.expires_at < now()) return page("Sign-in expired", "This sign-in timed out. Go back to the game and press Sign in with Steam again.", 410);
     if (row.status !== "pending") return page("Already signed in", "You can close this tab and go back to the game.");
     if (query["openid.mode"] !== "id_res") return page("Sign-in cancelled", "Steam didn't sign you in. Start again from the game.", 400);
     const claimed = CLAIMED.exec(String(query["openid.claimed_id"] ?? ""));

@@ -413,10 +413,10 @@ fn after_login(c: &Client, cfg: &AccountConfig, st: &Mutex<State>, cache: &Path)
     }
 }
 
-/// Poll a browser sign-in (every 2 s, up to its 10 minutes) on its own thread,
+/// Poll a browser sign-in (every 2 s, up to its 30 minutes) on its own thread,
 /// so queued saves keep flowing meanwhile.
 fn poll_browser_login(c: Client, poll: String, st: Arc<Mutex<State>>, jobs: Sender<Job>) {
-    let until = std::time::Instant::now() + std::time::Duration::from_secs(11 * 60);
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(31 * 60);
     while std::time::Instant::now() < until {
         std::thread::sleep(std::time::Duration::from_secs(2));
         let Ok(v) = c.json("steamOpenidPoll", &[], Some(json!({ "poll": poll }))) else { continue };
