@@ -52,7 +52,7 @@
     },
     "production": {
       "name": "partii-edge",
-      "vars": { "PARTII_ENV": "production", "RATE_LIMITS": "on", "TURN_MODE": "cloudflare", "EMAIL_MODE": "resend", "STORE_URL": "https://partii-store.vercel.app", "R2_BUCKET": "partii-prod-files" },
+      "vars": { "PARTII_ENV": "production", "RATE_LIMITS": "on", "TURN_MODE": "cloudflare", "EMAIL_MODE": "resend", "STORE_URL": "https://partii-store.vercel.app", "R2_BUCKET": "partii-prod-files", "UGC": "on" },
       "durable_objects": {
         "bindings": [
           { "name": "SESSION", "class_name": "Session" },
