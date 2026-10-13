@@ -83,6 +83,8 @@ struct State {
     /// Sign-in providers linked to the player ("device" alone: a guest).
     providers: Option<Vec<String>>,
     login: Option<Result<(), String>>,
+    /// A "Sign in through Steam" page to open in the browser.
+    browser_url: Option<String>,
     /// SKUs owned ("full", …); None until known (fresh install offline).
     owns: Option<Vec<String>>,
     /// slot → (rev, JSON text) as the platform has it.
@@ -98,6 +100,10 @@ enum Job {
     Refresh,
     Checkout,
     Login(Value),
+    /// Carries a sender for the poller, held only while it polls.
+    SteamBrowser(Sender<Job>),
+    /// Signed in elsewhere (the browser poller): use this token from now on.
+    SignedIn(String),
 }
 
 pub struct Account {
@@ -105,6 +111,7 @@ pub struct Account {
     jobs: Sender<Job>,
     edge: String,
     key: Option<String>,
+    game: String,
 }
 
 /// A save slot name for a file path ("mygame/campaign-saves.json" → "campaign-saves").
@@ -191,7 +198,7 @@ impl Account {
                 lock(&st).owns = Some(c.owns);
             }
         }
-        let (edge, key) = (cfg.edge.clone(), cfg.key.clone());
+        let (edge, key, game) = (cfg.edge.clone(), cfg.key.clone(), cfg.game.clone());
         let (tx, rx) = channel::<Job>();
         let shared = st.clone();
         std::thread::Builder::new()
@@ -260,12 +267,7 @@ impl Account {
                                 Ok(v) if v["ok"] == true => {
                                     c.player_token = v["player_token"].as_str().map(str::to_string);
                                     signed_in(&shared, &v);
-                                    // A merge can change what the player owns and has saved.
-                                    refresh(&c, &cfg.game, &shared, &cache_path);
-                                    let slots: Vec<String> = lock(&shared).saves.keys().cloned().chain(cfg.slots.iter().cloned()).collect();
-                                    for slot in slots {
-                                        fetch(&c, &cfg.game, &shared, &slot);
-                                    }
+                                    after_login(&c, &cfg, &shared, &cache_path);
                                     Ok(())
                                 }
                                 Ok(v) => Err(v["error"]["message"].as_str().unwrap_or("sign-in refused").to_string()),
@@ -273,11 +275,29 @@ impl Account {
                             };
                             lock(&shared).login = Some(out);
                         }
+                        Job::SteamBrowser(jobs) => {
+                            // The guest's token goes along, so the guest merges into the Steam account.
+                            match c.json("steamOpenidStart", &[], Some(json!({ "game": cfg.game }))) {
+                                Ok(v) if v["ok"] == true => {
+                                    lock(&shared).browser_url = v["url"].as_str().map(str::to_string);
+                                    let poll = v["poll"].as_str().unwrap_or_default().to_string();
+                                    let (pc, ps, back) = (c.clone(), shared.clone(), jobs);
+                                    std::thread::spawn(move || poll_browser_login(pc, poll, ps, back));
+                                }
+                                Ok(v) => lock(&shared).login = Some(Err(v["error"]["message"].as_str().unwrap_or("Steam sign-in refused").to_string())),
+                                Err(e) => lock(&shared).login = Some(Err(e.message)),
+                            }
+                        }
+                        Job::SignedIn(token) => {
+                            c.player_token = Some(token);
+                            after_login(&c, &cfg, &shared, &cache_path);
+                            lock(&shared).login = Some(Ok(()));
+                        }
                     }
                 }
             })
             .expect("partii-account thread");
-        Account { st, jobs: tx, edge, key }
+        Account { st, jobs: tx, edge, key, game }
     }
 
     /// Signed in and the first fetch is done.
@@ -316,11 +336,28 @@ impl Account {
     pub fn login(&self, provider: &str, fields: Value) {
         let mut body = if fields.is_object() { fields } else { json!({}) };
         body["provider"] = json!(provider);
+        if body.get("game").is_none() {
+            body["game"] = json!(self.game);
+        }
         lock(&self.st).login = None;
         let _ = self.jobs.send(Job::Login(body));
     }
     pub fn take_login(&self) -> Option<Result<(), String>> {
         lock(&self.st).login.take()
+    }
+    /// "Sign in through Steam" in the browser: needs no Steam key, so it
+    /// works for every game (and is the fallback when `login("steam", …)`
+    /// answers `steam_not_set_up`). Open the URL from `take_browser_url` in
+    /// the browser; the outcome arrives via `take_login`.
+    pub fn steam_browser_login(&self) {
+        let mut s = lock(&self.st);
+        s.login = None;
+        s.browser_url = None;
+        drop(s);
+        let _ = self.jobs.send(Job::SteamBrowser(self.jobs.clone()));
+    }
+    pub fn take_browser_url(&self) -> Option<String> {
+        lock(&self.st).browser_url.take()
     }
     /// Does the player own `sku` (e.g. "full")? None while unknown.
     pub fn owns(&self, sku: &str) -> Option<bool> {
@@ -365,6 +402,40 @@ impl Account {
     pub fn pending_writes(&self) -> usize {
         lock(&self.st).pending
     }
+}
+
+/// After signing in to an account: a merge can change what the player owns and has saved.
+fn after_login(c: &Client, cfg: &AccountConfig, st: &Mutex<State>, cache: &Path) {
+    refresh(c, &cfg.game, st, cache);
+    let slots: Vec<String> = lock(st).saves.keys().cloned().chain(cfg.slots.iter().cloned()).collect();
+    for slot in slots {
+        fetch(c, &cfg.game, st, &slot);
+    }
+}
+
+/// Poll a browser sign-in (every 2 s, up to its 10 minutes) on its own thread,
+/// so queued saves keep flowing meanwhile.
+fn poll_browser_login(c: Client, poll: String, st: Arc<Mutex<State>>, jobs: Sender<Job>) {
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(11 * 60);
+    while std::time::Instant::now() < until {
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        let Ok(v) = c.json("steamOpenidPoll", &[], Some(json!({ "poll": poll }))) else { continue };
+        match v["status"].as_str() {
+            Some("pending") => continue,
+            Some("done") => {
+                signed_in(&st, &v);
+                lock(&st).browser_url = None;
+                if let Some(t) = v["player_token"].as_str() {
+                    let _ = jobs.send(Job::SignedIn(t.to_string()));
+                }
+                return;
+            }
+            _ => break,
+        }
+    }
+    let mut s = lock(&st);
+    s.browser_url = None;
+    s.login = Some(Err("Steam sign-in wasn't finished in time".into()));
 }
 
 fn fetch(c: &Client, game: &str, st: &Mutex<State>, slot: &str) {

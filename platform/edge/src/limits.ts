@@ -8,7 +8,7 @@
 
 import { DurableObject } from "cloudflare:workers";
 
-export type LimitKind = "connect" | "session" | "create" | "join";
+export type LimitKind = "connect" | "session" | "create" | "join" | "login";
 
 /** Per IP, per minute. */
 export const LIMITS: Record<LimitKind, number> = {
@@ -19,6 +19,8 @@ export const LIMITS: Record<LimitKind, number> = {
   create: 30,
   /** A join to a missing code still wakes a Room object. */
   join: 60,
+  /** Browser sign-ins started (Sign in through Steam). */
+  login: 30,
 };
 export const LIMIT_WINDOW_MS = 60_000;
 /** A limiter slower than this allows: a limiter problem must not stop play. */

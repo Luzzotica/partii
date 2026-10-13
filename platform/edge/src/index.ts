@@ -24,6 +24,8 @@ export interface Env extends IceEnv, LimitEnv {
   ALERT_RELAY_DROPPED?: string;
   PARTII_ENV: string;
   KEY_SECRET: string;
+  /** 32 bytes, base64url: encrypts per-game secrets (secrets.ts). */
+  SECRETS_KEY?: string;
   GRACE_MS?: string;
   DB: D1Database;
   FILES?: R2Bucket;

@@ -68,7 +68,18 @@ pub fn command(op: &Op) -> Command {
     globals(c)
 }
 
+/// A field value of `-` is read from stdin (secrets stay out of shell history and process lists).
+fn stdin_or(v: &str) -> Result<String, String> {
+    if v != "-" {
+        return Ok(v.to_string());
+    }
+    let mut s = String::new();
+    std::io::Read::read_to_string(&mut std::io::stdin(), &mut s).map_err(|e| format!("reading stdin: {e}"))?;
+    Ok(s.trim_end_matches(['\r', '\n']).to_string())
+}
+
 fn typed(ty: &str, v: &str) -> Result<Value, String> {
+    let v = &stdin_or(v)?;
     match ty {
         "integer" => v.parse::<i64>().map(Value::from).map_err(|_| format!("{v} is not a whole number")),
         "number" => v.parse::<f64>().map(Value::from).map_err(|_| format!("{v} is not a number")),

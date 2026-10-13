@@ -450,7 +450,7 @@ paths:
       summary: Sign in with a provider (email code, apple, google, discord, steam, fake in dev). With a guest token, the guest is merged in.
       x-auth: key
       x-cli: player login
-      requestBody: { content: { application/json: { schema: { type: object, required: [provider], properties: { provider: { type: string }, email: { type: string }, code: { type: string }, id_token: { type: string }, ticket: { type: string }, identity: { type: string, description: "Steam: the GetAuthTicketForWebApi identity" }, app_id: { type: string, description: "Steam: the app that issued the ticket" }, subject: { type: string } } } } } }
+      requestBody: { content: { application/json: { schema: { type: object, required: [provider], properties: { provider: { type: string }, email: { type: string }, code: { type: string }, id_token: { type: string }, ticket: { type: string }, identity: { type: string, description: "Steam: the GetAuthTicketForWebApi identity" }, app_id: { type: string, description: "Steam: the app that issued the ticket" }, game: { type: string, description: "Steam: whose Steam key checks the ticket (default: the key's project's only game)" }, subject: { type: string } } } } } }
       responses: { "200": { description: "{player, player_token, merged}" } }
   /v1/players/me:
     get:
@@ -736,6 +736,60 @@ paths:
       x-cli: ugc mine
       parameters: [{ name: game, in: query, schema: { type: string } }]
       responses: { "200": { description: "{items}" } }
+
+  # ── Per-game secrets (src/api/secrets.ts) and Steam sign-in (src/api/steam.ts) ──
+  /v1/games/{game}/secrets:
+    get:
+      operationId: secretsList
+      summary: The game's secrets and config. Secret values are never shown (only set, last 4, updated); config values are.
+      x-auth: developer
+      x-cli: secrets list
+      parameters: [{ name: game, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: "{secrets}" } }
+  /v1/games/{game}/secrets/{name}:
+    put:
+      operationId: secretsSet
+      summary: Store or replace a secret or config value (steam.web_api_key, steam.app_ids). From the CLI, --value - reads it from stdin.
+      x-auth: developer
+      x-cli: secrets set
+      parameters:
+        - { name: game, in: path, required: true, schema: { type: string } }
+        - { name: name, in: path, required: true, schema: { type: string } }
+      requestBody: { content: { application/json: { schema: { type: object, required: [value], properties: { value: { type: string } } } } } }
+      responses: { "200": { description: "{secret}" } }
+    delete:
+      operationId: secretsDelete
+      summary: Delete a secret or config value.
+      x-auth: developer
+      x-cli: secrets delete
+      parameters:
+        - { name: game, in: path, required: true, schema: { type: string } }
+        - { name: name, in: path, required: true, schema: { type: string } }
+      responses: { "200": { description: "{deleted}" } }
+  /v1/players/steam/openid/start:
+    post:
+      operationId: steamOpenidStart
+      summary: Start "Sign in through Steam" in the browser (needs no Steam key). Open url, then poll. Send the guest's player token too to merge the guest.
+      x-auth: key
+      x-cli: player steam-start
+      requestBody: { content: { application/json: { schema: { type: object, properties: { game: { type: string } } } } } }
+      responses: { "200": { description: "{url, poll, expires_at}" } }
+  /v1/players/steam/openid/poll:
+    post:
+      operationId: steamOpenidPoll
+      summary: Poll a browser Steam sign-in. status is pending, done (with player and player_token, once), expired or used.
+      x-auth: key
+      x-cli: player steam-poll
+      requestBody: { content: { application/json: { schema: { type: object, required: [poll], properties: { poll: { type: string } } } } } }
+      responses: { "200": { description: "{status, player?, player_token?, merged?}" } }
+  /v1/players/steam/openid/return:
+    get:
+      operationId: steamOpenidReturn
+      summary: Where Steam sends the browser back (a page that says to return to the game).
+      x-auth: public
+      x-response: binary
+      parameters: [{ name: state, in: query, required: true, schema: { type: string } }]
+      responses: { "200": { description: "an HTML page" } }
 
   /v1/store/games:
     get:

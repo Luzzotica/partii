@@ -88,6 +88,12 @@ Auth (`x-auth`):
 | `ugcModerate` | `POST /v1/ugc/{id}/moderate` | developer | `partii ugc moderate` |
 | `adminUgcModerate` | `POST /v1/admin/ugc/{id}/moderate` | admin | `partii admin ugc moderate` |
 | `ugcMine` | `GET /v1/players/me/ugc` | player | `partii ugc mine` |
+| `secretsList` | `GET /v1/games/{game}/secrets` | developer | `partii secrets list` |
+| `secretsSet` | `PUT /v1/games/{game}/secrets/{name}` | developer | `partii secrets set` |
+| `secretsDelete` | `DELETE /v1/games/{game}/secrets/{name}` | developer | `partii secrets delete` |
+| `steamOpenidStart` | `POST /v1/players/steam/openid/start` | key | `partii player steam-start` |
+| `steamOpenidPoll` | `POST /v1/players/steam/openid/poll` | key | `partii player steam-poll` |
+| `steamOpenidReturn` | `GET /v1/players/steam/openid/return` | public | – |
 | `storeGames` | `GET /v1/store/games` | public | `partii store list` |
 | `storeGame` | `GET /v1/store/games/{game}` | public | `partii store get` |
 | `storeCheckout` | `POST /v1/store/games/{game}/checkout` | player | `partii store checkout` |
@@ -445,7 +451,7 @@ Body fields: `email` (required)
 
 Sign in with a provider (email code, apple, google, discord, steam, fake in dev). With a guest token, the guest is merged in.
 
-Body fields: `provider` (required), `email`, `code`, `id_token`, `ticket`, `identity`, `app_id`, `subject`
+Body fields: `provider` (required), `email`, `code`, `id_token`, `ticket`, `identity`, `app_id`, `game`, `subject`
 
 ### playersMe
 
@@ -756,6 +762,62 @@ The player's own items, hidden ones included (unpublished ones are not).
 
 Parameters:
 - `game` (query)
+
+### secretsList
+
+`GET /v1/games/{game}/secrets` (auth: developer) · `partii secrets list`
+
+The game's secrets and config. Secret values are never shown (only set, last 4, updated); config values are.
+
+Parameters:
+- `game` (path, required)
+
+### secretsSet
+
+`PUT /v1/games/{game}/secrets/{name}` (auth: developer) · `partii secrets set`
+
+Store or replace a secret or config value (steam.web_api_key, steam.app_ids). From the CLI, --value - reads it from stdin.
+
+Parameters:
+- `game` (path, required)
+- `name` (path, required)
+
+Body fields: `value` (required)
+
+### secretsDelete
+
+`DELETE /v1/games/{game}/secrets/{name}` (auth: developer) · `partii secrets delete`
+
+Delete a secret or config value.
+
+Parameters:
+- `game` (path, required)
+- `name` (path, required)
+
+### steamOpenidStart
+
+`POST /v1/players/steam/openid/start` (auth: key) · `partii player steam-start`
+
+Start "Sign in through Steam" in the browser (needs no Steam key). Open url, then poll. Send the guest's player token too to merge the guest.
+
+Body fields: `game`
+
+### steamOpenidPoll
+
+`POST /v1/players/steam/openid/poll` (auth: key) · `partii player steam-poll`
+
+Poll a browser Steam sign-in. status is pending, done (with player and player_token, once), expired or used.
+
+Body fields: `poll` (required)
+
+### steamOpenidReturn
+
+`GET /v1/players/steam/openid/return` (auth: public)
+
+Where Steam sends the browser back (a page that says to return to the game).
+
+Parameters:
+- `state` (query, required)
 
 ### storeGames
 

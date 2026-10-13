@@ -9,6 +9,7 @@ import { ApiError, bad, now, playerToken, randomSlug, sha256hex, signClaims } fr
 import { grant } from "./games";
 import type { Ctx, Handlers } from "./index";
 import { verifyProvider } from "./providers";
+import { steamTicketSubject } from "./steam";
 import { deleteUgcOf, mergeUgc } from "./ugc";
 
 const OFFLINE_TTL = 7 * 86400_000;
@@ -58,7 +59,7 @@ async function merge(env: Env, guest: string, into: string) {
 }
 
 /** The guest calling (if a valid player token came along). */
-async function currentPlayer(ctx: Ctx): Promise<string | null> {
+export async function currentPlayer(ctx: Ctx): Promise<string | null> {
   const h = ctx.req.headers.get("authorization") ?? "";
   if (!h.startsWith("Bearer pt_")) return null;
   const { verifyClaims } = await import("./core");
@@ -76,6 +77,32 @@ async function sendEmail(env: Env, to: string, code: string): Promise<boolean> {
     body: JSON.stringify({ from: env.EMAIL_FROM ?? "partii <login@partii.dev>", to, subject: `Your partii code: ${code}`, text: `Your sign-in code is ${code}. It works for 10 minutes.` }),
   });
   return res.ok;
+}
+
+/**
+ * Sign in to the player who owns this identity. A guest calling (`current`)
+ * is linked to it, or merged into the player who already has it.
+ */
+export async function signIn(env: Env, provider: string, subject: string, current: string | null, name: string) {
+  const owner = await env.DB.prepare("SELECT player_id FROM identities WHERE provider = ? AND subject = ?").bind(provider, subject).first<{ player_id: string }>();
+  let playerId: string;
+  let merged = false;
+  if (owner) {
+    playerId = owner.player_id;
+    if (current && current !== playerId) {
+      await merge(env, current, playerId);
+      merged = true;
+    }
+  } else if (current) {
+    playerId = current; // upgrade the guest: link this identity to it
+    await env.DB.prepare("INSERT INTO identities (provider, subject, player_id, created_at) VALUES (?, ?, ?, ?)").bind(provider, subject, playerId, now()).run();
+  } else {
+    const p = await newPlayer(env, name);
+    playerId = p.id;
+    await env.DB.prepare("INSERT INTO identities (provider, subject, player_id, created_at) VALUES (?, ?, ?, ?)").bind(provider, subject, playerId, now()).run();
+  }
+  const p = await env.DB.prepare("SELECT id, display_name, test_developer_id, created_at FROM players WHERE id = ?").bind(playerId).first<{ id: string; display_name: string }>();
+  return { player: await view(env, p!), player_token: await playerToken(env, playerId), merged };
 }
 
 export const playerHandlers: Handlers = {
@@ -112,27 +139,10 @@ export const playerHandlers: Handlers = {
   async playersLogin(ctx) {
     const { env, body } = ctx;
     const provider = String(body.provider ?? "");
-    const subject = await verifyProvider(env, provider, body);
-    const current = await currentPlayer(ctx);
-    const owner = await env.DB.prepare("SELECT player_id FROM identities WHERE provider = ? AND subject = ?").bind(provider, subject).first<{ player_id: string }>();
-    let playerId: string;
-    let merged = false;
-    if (owner) {
-      playerId = owner.player_id;
-      if (current && current !== playerId) {
-        await merge(env, current, playerId);
-        merged = true;
-      }
-    } else if (current) {
-      playerId = current; // upgrade the guest: link this identity to it
-      await env.DB.prepare("INSERT INTO identities (provider, subject, player_id, created_at) VALUES (?, ?, ?, ?)").bind(provider, subject, playerId, now()).run();
-    } else {
-      const p = await newPlayer(env, String(body.display_name ?? (provider === "email" ? String(body.email).split("@")[0] : "Player")));
-      playerId = p.id;
-      await env.DB.prepare("INSERT INTO identities (provider, subject, player_id, created_at) VALUES (?, ?, ?, ?)").bind(provider, subject, playerId, now()).run();
-    }
-    const p = await env.DB.prepare("SELECT id, display_name, test_developer_id, created_at FROM players WHERE id = ?").bind(playerId).first<{ id: string; display_name: string }>();
-    return { player: await view(env, p!), player_token: await playerToken(env, playerId), merged };
+    // Steam checks the ticket with the game's own key when it has one.
+    const subject = provider === "steam" ? await steamTicketSubject(env, ctx.caller.project!, body) : await verifyProvider(env, provider, body);
+    const name = String(body.display_name ?? (provider === "email" ? String(body.email).split("@")[0] : "Player"));
+    return signIn(env, provider, subject, await currentPlayer(ctx), name);
   },
 
   async playersMe({ env, caller }) {

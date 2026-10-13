@@ -6,7 +6,8 @@
 
 import type { Env } from "../index";
 import { ApiError, bad, b64url, fromB64url, randomSlug } from "./core";
-import { steamAppIds, verifySteamTicket } from "./providers";
+import { steamAppIds, steamTicket } from "./providers";
+import { gameSecret } from "./secrets";
 
 export interface Verified {
   store: string;
@@ -31,9 +32,13 @@ export async function verifyReceipt(env: Env, store: string, game: string, body:
     case "play":
       return play(env, String(body.purchase_token ?? ""), String(body.product_id ?? page.play_product_id ?? ""), fetcher);
     case "steam": {
-      const steamId = await verifySteamTicket(env, String(body.ticket ?? ""), fetcher);
-      const appId = page.steam_app_id ?? steamAppIds(env)[0];
-      const res = await fetcher(`https://partner.steam-api.com/ISteamUser/CheckAppOwnership/v2/?key=${env.STEAM_WEBAPI_KEY}&steamid=${steamId}&appid=${appId}`);
+      // The game's own Steam key and apps when it has them, else the platform's.
+      const key = (await gameSecret(env, game, "steam.web_api_key")) ?? env.STEAM_WEBAPI_KEY;
+      const apps = ((await gameSecret(env, game, "steam.app_ids")) ?? "").split(",").filter(Boolean);
+      const appId = page.steam_app_id ?? apps[0] ?? steamAppIds(env)[0];
+      if (!key || !appId) throw new ApiError(409, "steam_not_set_up", `Steam purchases aren't set up for ${game}`, "the developer stores steam.web_api_key and steam.app_ids with `partii secrets set`");
+      const steamId = await steamTicket(key, appId, String(body.ticket ?? ""), body.identity === undefined ? undefined : String(body.identity), fetcher);
+      const res = await fetcher(`https://partner.steam-api.com/ISteamUser/CheckAppOwnership/v2/?key=${encodeURIComponent(key)}&steamid=${steamId}&appid=${appId}`);
       const j = (await res.json().catch(() => ({}))) as { appownership?: { ownsapp: boolean } };
       if (!j.appownership?.ownsapp) throw new ApiError(402, "not_owned", "this Steam account does not own the game");
       return { store: "steam", ref: `steam:${steamId}:${appId}`, test: false };

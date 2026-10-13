@@ -486,6 +486,48 @@ export const ROUTES: Route[] = [
     "body": "none"
   },
   {
+    "op": "secretsList",
+    "method": "GET",
+    "path": "/v1/games/:game/secrets",
+    "auth": "developer",
+    "body": "none"
+  },
+  {
+    "op": "secretsSet",
+    "method": "PUT",
+    "path": "/v1/games/:game/secrets/:name",
+    "auth": "developer",
+    "body": "json"
+  },
+  {
+    "op": "secretsDelete",
+    "method": "DELETE",
+    "path": "/v1/games/:game/secrets/:name",
+    "auth": "developer",
+    "body": "none"
+  },
+  {
+    "op": "steamOpenidStart",
+    "method": "POST",
+    "path": "/v1/players/steam/openid/start",
+    "auth": "key",
+    "body": "json"
+  },
+  {
+    "op": "steamOpenidPoll",
+    "method": "POST",
+    "path": "/v1/players/steam/openid/poll",
+    "auth": "key",
+    "body": "json"
+  },
+  {
+    "op": "steamOpenidReturn",
+    "method": "GET",
+    "path": "/v1/players/steam/openid/return",
+    "auth": "public",
+    "body": "none"
+  },
+  {
     "op": "storeGames",
     "method": "GET",
     "path": "/v1/store/games",

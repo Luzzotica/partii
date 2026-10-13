@@ -191,10 +191,17 @@ The API, in types:
 | `player_token()`, `client()` | `Option<String>`, `Option<partii_api::Client>`: call any player operation (e.g. `ugcPublish`) as this player; calls block, so make them off the frame; ask again after `login` |
 | `is_guest()`, `providers()` | `Option<bool>` (None until known), `Vec<String>` |
 | `login(provider, fields)`, `take_login()` | `()`, `Option<Result<(), String>>`: link a provider; the guest becomes or merges into that account |
+| `steam_browser_login()`, `take_browser_url()` | `()`, `Option<String>`: "Sign in through Steam" in the browser (no Steam key needed); open the URL, the outcome arrives via `take_login` |
 
 **When `owns` is fresh.** Before `ready()`, `owns` returns last week's cached answer (or `None` on a fresh install). Once `ready()` is true it reflects the platform at sign-in. After a purchase made elsewhere (the browser, another device), call `refresh()`; `owns` updates when the answer arrives.
 
 - **Sign-in.** On first launch the install becomes a guest player (a random device id kept in `data_dir`), with no form. Later `acct.login(provider, fields)` links Steam (`{"ticket": hex}`; add `"identity"` if you made the ticket with `GetAuthTicketForWebApi(identity)`), email (`{"email", "code"}`, after `playersEmailStart`), Apple or Google (`{"id_token"}`) or Discord (`{"code"}`). The guest becomes, or merges into, that account, so saves, purchases and votes follow the player to every device, and this device signs in to that account from then on. Show "Sign in to publish" while `is_guest()` is `Some(true)`.
+- **Steam.** Two ways in, both reaching the same player. *Ticket:* `acct.login("steam", json!({"ticket": hex, "identity": "partii"}))` with a ticket from `GetAuthTicketForWebApi("partii")`. It is checked with **your game's own** Steamworks key, which you store once:
+  ```sh
+  partii secrets set <game> steam.web_api_key --value -     # paste the key, then Ctrl-D (stdin keeps it out of shell history)
+  partii secrets set <game> steam.app_ids --value 4971410,4971420   # full game, demo, …
+  ```
+  Secrets are encrypted, tied to the game, and never shown again (`partii secrets list <game>` shows the last 4 characters). *Browser:* if the game has no key, `login` fails with `steam_not_set_up`. Call `acct.steam_browser_login()` instead and open the URL from `take_browser_url()`; the player signs in at steamcommunity.com and the game picks it up. This needs no key, so it works for any game.
 - **Saves.** Named JSON slots per game. If another device wrote first, your `merge` function gets both copies and the merged result is written. Every write keeps a backup (`savesHistory`, `savesRestore`).
 - **Offline.** The last entitlement answer is cached for a week, so a paid game stays unlocked without a network.
 - **Tests.** Set `AccountConfig::player_token` (e.g. from `partii test players create`) to act as a specific player.

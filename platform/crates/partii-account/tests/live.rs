@@ -97,6 +97,38 @@ fn a_guest_signs_in_and_calls_player_operations() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
+/// Steam: a ticket for a game without a Steam key says so (the cue for the
+/// browser), and the browser sign-in hands out a steamcommunity.com URL.
+/// (Finishing it needs a person at a browser.) Needs `PARTII_STEAM_GAME`: a
+/// game on the platform with no Steam key.
+#[test]
+fn steam_sign_in_paths() {
+    let (Ok(edge), Ok(key), Ok(game)) = (std::env::var("PARTII_API"), std::env::var("PARTII_KEY"), std::env::var("PARTII_STEAM_GAME")) else {
+        eprintln!("skip: set PARTII_API, PARTII_KEY and PARTII_STEAM_GAME");
+        return;
+    };
+    let dir = std::env::temp_dir().join(format!("partii-account-steam-{}", std::process::id()));
+    let a = Account::start(AccountConfig { edge, key: Some(key), game, data_dir: dir.clone(), ..AccountConfig::default() });
+    wait("signed in", || a.ready());
+    a.login("steam", json!({ "ticket": "abcdef0123456789", "identity": "partii" }));
+    let mut out = None;
+    wait("ticket login answer", || {
+        out = a.take_login();
+        out.is_some()
+    });
+    let err = out.unwrap().unwrap_err();
+    assert!(err.contains("isn't set up"), "{err}");
+    a.steam_browser_login();
+    let mut url = None;
+    wait("browser url", || {
+        url = a.take_browser_url();
+        url.is_some()
+    });
+    assert!(url.unwrap().starts_with("https://steamcommunity.com/openid/login?"));
+    assert_eq!(a.is_guest(), Some(true));
+    let _ = std::fs::remove_dir_all(dir);
+}
+
 fn sha256_hex(b: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     Sha256::digest(b).iter().map(|x| format!("{x:02x}")).collect()

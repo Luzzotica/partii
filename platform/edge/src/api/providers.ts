@@ -26,6 +26,7 @@ export async function verifyProvider(env: Env, provider: string, body: Record<st
     case "discord":
       return verifyDiscord(env, body, fetcher);
     case "steam":
+      // Games sign in with their own Steam key (steam.ts); this is the platform-wide fallback.
       return verifySteamTicket(env, String(body.ticket ?? ""), fetcher, body.identity === undefined ? undefined : String(body.identity), body.app_id === undefined ? undefined : String(body.app_id));
     default:
       throw bad(`unknown provider ${provider}`, "one of email, apple, google, discord, steam");
@@ -103,17 +104,25 @@ export function steamAppIds(env: Env): string[] {
 }
 
 /**
- * Check a Steam ticket with Valve; the Steam id. `identity`: the string a
- * GetAuthTicketForWebApi ticket was made for (none for GetAuthSessionTicket).
- * `appId`: the app that issued it (one of STEAM_APP_ID; default the first).
+ * Check a Steam ticket with the platform's own key (STEAM_WEBAPI_KEY); the
+ * Steam id. Games normally use their own key instead (steam.ts).
  */
 export async function verifySteamTicket(env: Env, ticket: string, fetcher: typeof fetch = fetch, identity?: string, appId?: string): Promise<string> {
   const apps = steamAppIds(env);
   if (!env.STEAM_WEBAPI_KEY || !apps.length) throw unconfigured("Steam", "STEAM_WEBAPI_KEY and STEAM_APP_ID");
-  if (!/^[0-9a-fA-F]{16,}$/.test(ticket)) throw bad("ticket must be the hex auth session ticket");
   const app = appId ?? apps[0];
   if (!apps.includes(app)) throw bad(`app_id ${app} is not a Steam app this platform accepts`, `one of ${apps.join(", ")}`);
-  const url = `https://partner.steam-api.com/ISteamUserAuth/AuthenticateUserTicket/v1/?key=${env.STEAM_WEBAPI_KEY}&appid=${app}&ticket=${ticket}${identity ? `&identity=${encodeURIComponent(identity)}` : ""}`;
+  return steamTicket(env.STEAM_WEBAPI_KEY, app, ticket, identity, fetcher);
+}
+
+/**
+ * Ask Valve whether `ticket` was issued for `app`; the Steam id. `identity`:
+ * the string a GetAuthTicketForWebApi ticket was made for (none for
+ * GetAuthSessionTicket).
+ */
+export async function steamTicket(key: string, app: string, ticket: string, identity: string | undefined, fetcher: typeof fetch = fetch): Promise<string> {
+  if (!/^[0-9a-fA-F]{16,}$/.test(ticket)) throw bad("ticket must be the hex auth session ticket");
+  const url = `https://partner.steam-api.com/ISteamUserAuth/AuthenticateUserTicket/v1/?key=${encodeURIComponent(key)}&appid=${encodeURIComponent(app)}&ticket=${ticket}${identity ? `&identity=${encodeURIComponent(identity)}` : ""}`;
   const res = await fetcher(url);
   const j = (await res.json().catch(() => ({}))) as { response?: { params?: { result: string; steamid: string }; error?: { errordesc?: string } } };
   const p = j.response?.params;

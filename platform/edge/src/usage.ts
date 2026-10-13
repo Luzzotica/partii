@@ -8,7 +8,7 @@ import { DurableObject } from "cloudflare:workers";
 import type { Env } from "./index";
 
 export type LiveKind = "session" | "room";
-export type HitKind = "connect" | "session" | "create" | "join" | "relay";
+export type HitKind = "connect" | "session" | "create" | "join" | "login" | "relay";
 
 /** Defaults, sized for the demo (about 200 players and 50 rooms); override with vars. */
 export const ALERT_DEFAULTS = {
@@ -123,7 +123,7 @@ export class Usage extends DurableObject<Env> {
       await this.check("relay_dropped", this.hourCount("relay_dropped", now), now);
     } else {
       this.bump(`limited_${kind}`, n, now);
-      await this.check("limited", this.hourCount(["limited_connect", "limited_session", "limited_create", "limited_join"], now), now);
+      await this.check("limited", this.hourCount(["limited_connect", "limited_session", "limited_create", "limited_join", "limited_login"], now), now);
     }
   }
 

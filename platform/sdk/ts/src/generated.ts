@@ -141,6 +141,18 @@ export function operations(t: Transport) {
     adminUgcModerate: (id: string, body: Record<string, unknown> = {}) => t.call("POST", `/v1/admin/ugc/${encodeURIComponent(id)}/moderate`, "admin", {}, body, "json"),
     /** The player's own items, hidden ones included (unpublished ones are not). (player) */
     ugcMine: (query: { game?: string | number } = {}) => t.call("GET", `/v1/players/me/ugc`, "player", query, undefined, "json"),
+    /** The game's secrets and config. Secret values are never shown (only set, last 4, updated); config values are. (developer) */
+    secretsList: (game: string) => t.call("GET", `/v1/games/${encodeURIComponent(game)}/secrets`, "developer", {}, undefined, "json"),
+    /** Store or replace a secret or config value (steam.web_api_key, steam.app_ids). From the CLI, --value - reads it from stdin. (developer) */
+    secretsSet: (game: string, name: string, body: Record<string, unknown> = {}) => t.call("PUT", `/v1/games/${encodeURIComponent(game)}/secrets/${encodeURIComponent(name)}`, "developer", {}, body, "json"),
+    /** Delete a secret or config value. (developer) */
+    secretsDelete: (game: string, name: string) => t.call("DELETE", `/v1/games/${encodeURIComponent(game)}/secrets/${encodeURIComponent(name)}`, "developer", {}, undefined, "json"),
+    /** Start "Sign in through Steam" in the browser (needs no Steam key). Open url, then poll. Send the guest's player token too to merge the guest. (key) */
+    steamOpenidStart: (body: Record<string, unknown> = {}) => t.call("POST", `/v1/players/steam/openid/start`, "key", {}, body, "json"),
+    /** Poll a browser Steam sign-in. status is pending, done (with player and player_token, once), expired or used. (key) */
+    steamOpenidPoll: (body: Record<string, unknown> = {}) => t.call("POST", `/v1/players/steam/openid/poll`, "key", {}, body, "json"),
+    /** Where Steam sends the browser back (a page that says to return to the game). (public) */
+    steamOpenidReturn: (query: { state?: string | number } = {}) => t.call("GET", `/v1/players/steam/openid/return`, "public", query, undefined, "binary"),
     /** Every published game. (public) */
     storeGames: () => t.call("GET", `/v1/store/games`, "public", {}, undefined, "json"),
     /** A published game's store page. (public) */
