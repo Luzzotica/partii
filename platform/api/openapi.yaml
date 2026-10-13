@@ -569,6 +569,174 @@ paths:
         - { name: sha, in: path, required: true, schema: { type: string } }
       responses: { "200": { description: "the file" } }
 
+  # ── Player content (UGC): levels, worlds, replays. docs/GUIDE.md §4 ──
+  /v1/games/{game}/ugc/uploads:
+    post:
+      operationId: ugcUploadStart
+      summary: Start uploading a file or thumbnail by its hash. Returns where to PUT the bytes, or exists=true when that hash is already stored.
+      x-auth: player
+      x-cli: ugc upload-start
+      parameters: [{ name: game, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [size, sha256], properties: { kind: { type: string, enum: [file, thumbnail] }, size: { type: integer }, sha256: { type: string } } } } } }
+      responses: { "200": { description: "{exists} or {upload: {url, method, headers, expires_at}}" } }
+  /v1/games/{game}/ugc/blobs/{sha256}:
+    get:
+      operationId: ugcBlob
+      summary: A stored file or thumbnail, by its hash (cache forever). The download_url and thumbnail_url in item views point here.
+      x-auth: public
+      x-cli: ugc blob
+      x-response: binary
+      parameters:
+        - { name: game, in: path, required: true, schema: { type: string } }
+        - { name: sha256, in: path, required: true, schema: { type: string } }
+      responses: { "200": { description: "the bytes" } }
+    put:
+      operationId: ugcBlobPut
+      summary: Upload the bytes to a url from ugcUploadStart when the platform has no direct uploads (the url carries a signed ticket).
+      x-auth: public
+      x-body: binary
+      parameters:
+        - { name: game, in: path, required: true, schema: { type: string } }
+        - { name: sha256, in: path, required: true, schema: { type: string } }
+        - { name: ticket, in: query, required: true, schema: { type: string } }
+      responses: { "200": { description: "{stored}" } }
+  /v1/games/{game}/ugc:
+    get:
+      operationId: ugcList
+      summary: Browse and search public items. sort is new, top or played; tags is comma-separated (all must match); pass next_cursor as cursor for the next page.
+      x-auth: key
+      x-cli: ugc list
+      parameters:
+        - { name: game, in: path, required: true, schema: { type: string } }
+        - { name: kind, in: query, schema: { type: string } }
+        - { name: tags, in: query, schema: { type: string } }
+        - { name: q, in: query, schema: { type: string } }
+        - { name: author, in: query, schema: { type: string } }
+        - { name: sort, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer } }
+        - { name: cursor, in: query, schema: { type: string } }
+      responses: { "200": { description: "{items, next_cursor}" } }
+    post:
+      operationId: ugcPublish
+      summary: Publish an item from uploaded files (signed-in players, not guests). refs lists the hashes a World pins.
+      x-auth: player
+      x-cli: ugc publish
+      parameters: [{ name: game, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [kind, title, sha256, client_version], properties: { kind: { type: string, enum: [level, world, replay] }, title: { type: string }, description: { type: string }, tags: { type: array }, visibility: { type: string, enum: [public, unlisted] }, sha256: { type: string }, client_version: { type: string }, thumbnail_sha256: { type: string }, refs: { type: array }, notes: { type: string } } } } } }
+      responses: { "200": { description: "{item}" } }
+  /v1/games/{game}/ugc/code/{code}:
+    get:
+      operationId: ugcByCode
+      summary: The item with this share code (works for unlisted items).
+      x-auth: key
+      x-cli: ugc code
+      parameters:
+        - { name: game, in: path, required: true, schema: { type: string } }
+        - { name: code, in: path, required: true, schema: { type: string } }
+      responses: { "200": { description: "{item}" } }
+  /v1/games/{game}/ugc/hash/{sha256}:
+    get:
+      operationId: ugcByHash
+      summary: The items and versions stored under this hash (a World's pinned Levels).
+      x-auth: key
+      x-cli: ugc hash
+      parameters:
+        - { name: game, in: path, required: true, schema: { type: string } }
+        - { name: sha256, in: path, required: true, schema: { type: string } }
+      responses: { "200": { description: "{sha256, size, download_url, versions}" } }
+  /v1/games/{game}/ugc/reports:
+    get:
+      operationId: ugcReports
+      summary: Reported items of your game, most reported first (unresolved reports only).
+      x-auth: developer
+      x-cli: ugc reports
+      parameters: [{ name: game, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: "{items}" } }
+  /v1/ugc/{id}:
+    get:
+      operationId: ugcGet
+      summary: One item with all its versions. With a player token, my_vote is included.
+      x-auth: key
+      x-cli: ugc get
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: "{item}" } }
+    patch:
+      operationId: ugcUpdate
+      summary: Change an item's title, description, tags, visibility or thumbnail (author only).
+      x-auth: player
+      x-cli: ugc update
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { title: { type: string }, description: { type: string }, tags: { type: array }, visibility: { type: string, enum: [public, unlisted] }, thumbnail_sha256: { type: string } } } } } }
+      responses: { "200": { description: "{item}" } }
+    delete:
+      operationId: ugcDelete
+      summary: Unpublish an item (author only). Its files stay downloadable by hash while Worlds pin them.
+      x-auth: player
+      x-cli: ugc delete
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: "{deleted}" } }
+  /v1/ugc/{id}/versions:
+    post:
+      operationId: ugcVersion
+      summary: Publish a new version of an item (author only). Old versions stay downloadable by hash.
+      x-auth: player
+      x-cli: ugc version
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [sha256, client_version], properties: { sha256: { type: string }, client_version: { type: string }, notes: { type: string }, refs: { type: array } } } } } }
+      responses: { "200": { description: "{item}" } }
+  /v1/ugc/{id}/vote:
+    put:
+      operationId: ugcVote
+      summary: Vote an item up (1), down (-1) or clear your vote (0). One vote per player per item.
+      x-auth: player
+      x-cli: ugc vote
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [value], properties: { value: { type: integer, enum: [1, 0, -1] } } } } } }
+      responses: { "200": { description: "{votes, my_vote}" } }
+  /v1/ugc/{id}/plays:
+    post:
+      operationId: ugcPlay
+      summary: Count a play (fire and forget). plays counts players, so repeats by the same player don't add.
+      x-auth: player
+      x-cli: ugc play
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: "{counted}" } }
+  /v1/ugc/{id}/report:
+    post:
+      operationId: ugcReport
+      summary: Report an item to the game's moderators.
+      x-auth: player
+      x-cli: ugc report
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [reason], properties: { reason: { type: string } } } } } }
+      responses: { "200": { description: "{reported}" } }
+  /v1/ugc/{id}/moderate:
+    post:
+      operationId: ugcModerate
+      summary: Hide an item (and its files) or bring it back, as the game's developer. Resolves its reports.
+      x-auth: developer
+      x-cli: ugc moderate
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [action], properties: { action: { type: string, enum: [hide, unhide] }, reason: { type: string } } } } } }
+      responses: { "200": { description: "{item}" } }
+  /v1/admin/ugc/{id}/moderate:
+    post:
+      operationId: adminUgcModerate
+      summary: Hide an item (and its files) or bring it back, as a platform operator (takedowns).
+      x-auth: admin
+      x-cli: admin ugc moderate
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [action], properties: { action: { type: string, enum: [hide, unhide] }, reason: { type: string } } } } } }
+      responses: { "200": { description: "{item}" } }
+  /v1/players/me/ugc:
+    get:
+      operationId: ugcMine
+      summary: The player's own items, hidden ones included (unpublished ones are not).
+      x-auth: player
+      x-cli: ugc mine
+      parameters: [{ name: game, in: query, schema: { type: string } }]
+      responses: { "200": { description: "{items}" } }
+
   /v1/store/games:
     get:
       operationId: storeGames

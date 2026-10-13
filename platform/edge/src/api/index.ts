@@ -11,6 +11,7 @@ import { gameHandlers } from "./games";
 import { playerHandlers } from "./players";
 import { saveHandlers } from "./saves";
 import { storeHandlers } from "./store";
+import { ugcHandlers } from "./ugc";
 
 export interface Ctx {
   env: Env;
@@ -34,6 +35,7 @@ export const HANDLERS: Handlers = {
   ...playerHandlers,
   ...saveHandlers,
   ...storeHandlers,
+  ...ugcHandlers,
 };
 
 async function authorize(route: Route, env: Env, req: Request): Promise<Caller> {

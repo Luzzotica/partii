@@ -70,6 +70,24 @@ Auth (`x-auth`):
 | `savesRestore` | `POST /v1/saves/{game}/{slot}/restore` | player | `partii saves restore` |
 | `contentManifest` | `GET /v1/content/{game}/manifest` | key | `partii content manifest` |
 | `contentFile` | `GET /v1/content/{game}/files/{sha}` | key | `partii content file` |
+| `ugcUploadStart` | `POST /v1/games/{game}/ugc/uploads` | player | `partii ugc upload-start` |
+| `ugcBlob` | `GET /v1/games/{game}/ugc/blobs/{sha256}` | public | `partii ugc blob` |
+| `ugcBlobPut` | `PUT /v1/games/{game}/ugc/blobs/{sha256}` | public | – |
+| `ugcList` | `GET /v1/games/{game}/ugc` | key | `partii ugc list` |
+| `ugcPublish` | `POST /v1/games/{game}/ugc` | player | `partii ugc publish` |
+| `ugcByCode` | `GET /v1/games/{game}/ugc/code/{code}` | key | `partii ugc code` |
+| `ugcByHash` | `GET /v1/games/{game}/ugc/hash/{sha256}` | key | `partii ugc hash` |
+| `ugcReports` | `GET /v1/games/{game}/ugc/reports` | developer | `partii ugc reports` |
+| `ugcGet` | `GET /v1/ugc/{id}` | key | `partii ugc get` |
+| `ugcUpdate` | `PATCH /v1/ugc/{id}` | player | `partii ugc update` |
+| `ugcDelete` | `DELETE /v1/ugc/{id}` | player | `partii ugc delete` |
+| `ugcVersion` | `POST /v1/ugc/{id}/versions` | player | `partii ugc version` |
+| `ugcVote` | `PUT /v1/ugc/{id}/vote` | player | `partii ugc vote` |
+| `ugcPlay` | `POST /v1/ugc/{id}/plays` | player | `partii ugc play` |
+| `ugcReport` | `POST /v1/ugc/{id}/report` | player | `partii ugc report` |
+| `ugcModerate` | `POST /v1/ugc/{id}/moderate` | developer | `partii ugc moderate` |
+| `adminUgcModerate` | `POST /v1/admin/ugc/{id}/moderate` | admin | `partii admin ugc moderate` |
+| `ugcMine` | `GET /v1/players/me/ugc` | player | `partii ugc mine` |
 | `storeGames` | `GET /v1/store/games` | public | `partii store list` |
 | `storeGame` | `GET /v1/store/games/{game}` | public | `partii store get` |
 | `storeCheckout` | `POST /v1/store/games/{game}/checkout` | player | `partii store checkout` |
@@ -546,6 +564,198 @@ One content file, addressed by its hash (cache forever).
 Parameters:
 - `game` (path, required)
 - `sha` (path, required)
+
+### ugcUploadStart
+
+`POST /v1/games/{game}/ugc/uploads` (auth: player) · `partii ugc upload-start`
+
+Start uploading a file or thumbnail by its hash. Returns where to PUT the bytes, or exists=true when that hash is already stored.
+
+Parameters:
+- `game` (path, required)
+
+Body fields: `kind`, `size` (required), `sha256` (required)
+
+### ugcBlob
+
+`GET /v1/games/{game}/ugc/blobs/{sha256}` (auth: public) · `partii ugc blob`
+
+A stored file or thumbnail, by its hash (cache forever). The download_url and thumbnail_url in item views point here.
+
+Parameters:
+- `game` (path, required)
+- `sha256` (path, required)
+
+### ugcBlobPut
+
+`PUT /v1/games/{game}/ugc/blobs/{sha256}` (auth: public)
+
+Upload the bytes to a url from ugcUploadStart when the platform has no direct uploads (the url carries a signed ticket).
+
+Parameters:
+- `game` (path, required)
+- `sha256` (path, required)
+- `ticket` (query, required)
+
+Body: the file's bytes.
+
+### ugcList
+
+`GET /v1/games/{game}/ugc` (auth: key) · `partii ugc list`
+
+Browse and search public items. sort is new, top or played; tags is comma-separated (all must match); pass next_cursor as cursor for the next page.
+
+Parameters:
+- `game` (path, required)
+- `kind` (query)
+- `tags` (query)
+- `q` (query)
+- `author` (query)
+- `sort` (query)
+- `limit` (query)
+- `cursor` (query)
+
+### ugcPublish
+
+`POST /v1/games/{game}/ugc` (auth: player) · `partii ugc publish`
+
+Publish an item from uploaded files (signed-in players, not guests). refs lists the hashes a World pins.
+
+Parameters:
+- `game` (path, required)
+
+Body fields: `kind` (required), `title` (required), `description`, `tags`, `visibility`, `sha256` (required), `client_version` (required), `thumbnail_sha256`, `refs`, `notes`
+
+### ugcByCode
+
+`GET /v1/games/{game}/ugc/code/{code}` (auth: key) · `partii ugc code`
+
+The item with this share code (works for unlisted items).
+
+Parameters:
+- `game` (path, required)
+- `code` (path, required)
+
+### ugcByHash
+
+`GET /v1/games/{game}/ugc/hash/{sha256}` (auth: key) · `partii ugc hash`
+
+The items and versions stored under this hash (a World's pinned Levels).
+
+Parameters:
+- `game` (path, required)
+- `sha256` (path, required)
+
+### ugcReports
+
+`GET /v1/games/{game}/ugc/reports` (auth: developer) · `partii ugc reports`
+
+Reported items of your game, most reported first (unresolved reports only).
+
+Parameters:
+- `game` (path, required)
+
+### ugcGet
+
+`GET /v1/ugc/{id}` (auth: key) · `partii ugc get`
+
+One item with all its versions. With a player token, my_vote is included.
+
+Parameters:
+- `id` (path, required)
+
+### ugcUpdate
+
+`PATCH /v1/ugc/{id}` (auth: player) · `partii ugc update`
+
+Change an item's title, description, tags, visibility or thumbnail (author only).
+
+Parameters:
+- `id` (path, required)
+
+Body fields: `title`, `description`, `tags`, `visibility`, `thumbnail_sha256`
+
+### ugcDelete
+
+`DELETE /v1/ugc/{id}` (auth: player) · `partii ugc delete`
+
+Unpublish an item (author only). Its files stay downloadable by hash while Worlds pin them.
+
+Parameters:
+- `id` (path, required)
+
+### ugcVersion
+
+`POST /v1/ugc/{id}/versions` (auth: player) · `partii ugc version`
+
+Publish a new version of an item (author only). Old versions stay downloadable by hash.
+
+Parameters:
+- `id` (path, required)
+
+Body fields: `sha256` (required), `client_version` (required), `notes`, `refs`
+
+### ugcVote
+
+`PUT /v1/ugc/{id}/vote` (auth: player) · `partii ugc vote`
+
+Vote an item up (1), down (-1) or clear your vote (0). One vote per player per item.
+
+Parameters:
+- `id` (path, required)
+
+Body fields: `value` (required)
+
+### ugcPlay
+
+`POST /v1/ugc/{id}/plays` (auth: player) · `partii ugc play`
+
+Count a play (fire and forget). plays counts players, so repeats by the same player don't add.
+
+Parameters:
+- `id` (path, required)
+
+### ugcReport
+
+`POST /v1/ugc/{id}/report` (auth: player) · `partii ugc report`
+
+Report an item to the game's moderators.
+
+Parameters:
+- `id` (path, required)
+
+Body fields: `reason` (required)
+
+### ugcModerate
+
+`POST /v1/ugc/{id}/moderate` (auth: developer) · `partii ugc moderate`
+
+Hide an item (and its files) or bring it back, as the game's developer. Resolves its reports.
+
+Parameters:
+- `id` (path, required)
+
+Body fields: `action` (required), `reason`
+
+### adminUgcModerate
+
+`POST /v1/admin/ugc/{id}/moderate` (auth: admin) · `partii admin ugc moderate`
+
+Hide an item (and its files) or bring it back, as a platform operator (takedowns).
+
+Parameters:
+- `id` (path, required)
+
+Body fields: `action` (required), `reason`
+
+### ugcMine
+
+`GET /v1/players/me/ugc` (auth: player) · `partii ugc mine`
+
+The player's own items, hidden ones included (unpublished ones are not).
+
+Parameters:
+- `game` (query)
 
 ### storeGames
 

@@ -360,6 +360,132 @@ export const ROUTES: Route[] = [
     "body": "none"
   },
   {
+    "op": "ugcUploadStart",
+    "method": "POST",
+    "path": "/v1/games/:game/ugc/uploads",
+    "auth": "player",
+    "body": "json"
+  },
+  {
+    "op": "ugcBlob",
+    "method": "GET",
+    "path": "/v1/games/:game/ugc/blobs/:sha256",
+    "auth": "public",
+    "body": "none"
+  },
+  {
+    "op": "ugcBlobPut",
+    "method": "PUT",
+    "path": "/v1/games/:game/ugc/blobs/:sha256",
+    "auth": "public",
+    "body": "binary"
+  },
+  {
+    "op": "ugcList",
+    "method": "GET",
+    "path": "/v1/games/:game/ugc",
+    "auth": "key",
+    "body": "none"
+  },
+  {
+    "op": "ugcPublish",
+    "method": "POST",
+    "path": "/v1/games/:game/ugc",
+    "auth": "player",
+    "body": "json"
+  },
+  {
+    "op": "ugcByCode",
+    "method": "GET",
+    "path": "/v1/games/:game/ugc/code/:code",
+    "auth": "key",
+    "body": "none"
+  },
+  {
+    "op": "ugcByHash",
+    "method": "GET",
+    "path": "/v1/games/:game/ugc/hash/:sha256",
+    "auth": "key",
+    "body": "none"
+  },
+  {
+    "op": "ugcReports",
+    "method": "GET",
+    "path": "/v1/games/:game/ugc/reports",
+    "auth": "developer",
+    "body": "none"
+  },
+  {
+    "op": "ugcGet",
+    "method": "GET",
+    "path": "/v1/ugc/:id",
+    "auth": "key",
+    "body": "none"
+  },
+  {
+    "op": "ugcUpdate",
+    "method": "PATCH",
+    "path": "/v1/ugc/:id",
+    "auth": "player",
+    "body": "json"
+  },
+  {
+    "op": "ugcDelete",
+    "method": "DELETE",
+    "path": "/v1/ugc/:id",
+    "auth": "player",
+    "body": "none"
+  },
+  {
+    "op": "ugcVersion",
+    "method": "POST",
+    "path": "/v1/ugc/:id/versions",
+    "auth": "player",
+    "body": "json"
+  },
+  {
+    "op": "ugcVote",
+    "method": "PUT",
+    "path": "/v1/ugc/:id/vote",
+    "auth": "player",
+    "body": "json"
+  },
+  {
+    "op": "ugcPlay",
+    "method": "POST",
+    "path": "/v1/ugc/:id/plays",
+    "auth": "player",
+    "body": "none"
+  },
+  {
+    "op": "ugcReport",
+    "method": "POST",
+    "path": "/v1/ugc/:id/report",
+    "auth": "player",
+    "body": "json"
+  },
+  {
+    "op": "ugcModerate",
+    "method": "POST",
+    "path": "/v1/ugc/:id/moderate",
+    "auth": "developer",
+    "body": "json"
+  },
+  {
+    "op": "adminUgcModerate",
+    "method": "POST",
+    "path": "/v1/admin/ugc/:id/moderate",
+    "auth": "admin",
+    "body": "json"
+  },
+  {
+    "op": "ugcMine",
+    "method": "GET",
+    "path": "/v1/players/me/ugc",
+    "auth": "player",
+    "body": "none"
+  },
+  {
     "op": "storeGames",
     "method": "GET",
     "path": "/v1/store/games",

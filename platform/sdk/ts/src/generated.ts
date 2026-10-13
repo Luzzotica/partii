@@ -105,6 +105,42 @@ export function operations(t: Transport) {
     contentManifest: (game: string, query: { channel?: string | number } = {}) => t.call("GET", `/v1/content/${encodeURIComponent(game)}/manifest`, "key", query, undefined, "json"),
     /** One content file, addressed by its hash (cache forever). (key) */
     contentFile: (game: string, sha: string) => t.call("GET", `/v1/content/${encodeURIComponent(game)}/files/${encodeURIComponent(sha)}`, "key", {}, undefined, "binary"),
+    /** Start uploading a file or thumbnail by its hash. Returns where to PUT the bytes, or exists=true when that hash is already stored. (player) */
+    ugcUploadStart: (game: string, body: Record<string, unknown> = {}) => t.call("POST", `/v1/games/${encodeURIComponent(game)}/ugc/uploads`, "player", {}, body, "json"),
+    /** A stored file or thumbnail, by its hash (cache forever). The download_url and thumbnail_url in item views point here. (public) */
+    ugcBlob: (game: string, sha256: string) => t.call("GET", `/v1/games/${encodeURIComponent(game)}/ugc/blobs/${encodeURIComponent(sha256)}`, "public", {}, undefined, "binary"),
+    /** Upload the bytes to a url from ugcUploadStart when the platform has no direct uploads (the url carries a signed ticket). (public) */
+    ugcBlobPut: (game: string, sha256: string, query: { ticket?: string | number } = {}, body: BodyInit) => t.call("PUT", `/v1/games/${encodeURIComponent(game)}/ugc/blobs/${encodeURIComponent(sha256)}`, "public", query, body, "json"),
+    /** Browse and search public items. sort is new, top or played; tags is comma-separated (all must match); pass next_cursor as cursor for the next page. (key) */
+    ugcList: (game: string, query: { kind?: string | number; tags?: string | number; q?: string | number; author?: string | number; sort?: string | number; limit?: string | number; cursor?: string | number } = {}) => t.call("GET", `/v1/games/${encodeURIComponent(game)}/ugc`, "key", query, undefined, "json"),
+    /** Publish an item from uploaded files (signed-in players, not guests). refs lists the hashes a World pins. (player) */
+    ugcPublish: (game: string, body: Record<string, unknown> = {}) => t.call("POST", `/v1/games/${encodeURIComponent(game)}/ugc`, "player", {}, body, "json"),
+    /** The item with this share code (works for unlisted items). (key) */
+    ugcByCode: (game: string, code: string) => t.call("GET", `/v1/games/${encodeURIComponent(game)}/ugc/code/${encodeURIComponent(code)}`, "key", {}, undefined, "json"),
+    /** The items and versions stored under this hash (a World's pinned Levels). (key) */
+    ugcByHash: (game: string, sha256: string) => t.call("GET", `/v1/games/${encodeURIComponent(game)}/ugc/hash/${encodeURIComponent(sha256)}`, "key", {}, undefined, "json"),
+    /** Reported items of your game, most reported first (unresolved reports only). (developer) */
+    ugcReports: (game: string) => t.call("GET", `/v1/games/${encodeURIComponent(game)}/ugc/reports`, "developer", {}, undefined, "json"),
+    /** One item with all its versions. With a player token, my_vote is included. (key) */
+    ugcGet: (id: string) => t.call("GET", `/v1/ugc/${encodeURIComponent(id)}`, "key", {}, undefined, "json"),
+    /** Change an item's title, description, tags, visibility or thumbnail (author only). (player) */
+    ugcUpdate: (id: string, body: Record<string, unknown> = {}) => t.call("PATCH", `/v1/ugc/${encodeURIComponent(id)}`, "player", {}, body, "json"),
+    /** Unpublish an item (author only). Its files stay downloadable by hash while Worlds pin them. (player) */
+    ugcDelete: (id: string) => t.call("DELETE", `/v1/ugc/${encodeURIComponent(id)}`, "player", {}, undefined, "json"),
+    /** Publish a new version of an item (author only). Old versions stay downloadable by hash. (player) */
+    ugcVersion: (id: string, body: Record<string, unknown> = {}) => t.call("POST", `/v1/ugc/${encodeURIComponent(id)}/versions`, "player", {}, body, "json"),
+    /** Vote an item up (1), down (-1) or clear your vote (0). One vote per player per item. (player) */
+    ugcVote: (id: string, body: Record<string, unknown> = {}) => t.call("PUT", `/v1/ugc/${encodeURIComponent(id)}/vote`, "player", {}, body, "json"),
+    /** Count a play (fire and forget). plays counts players, so repeats by the same player don't add. (player) */
+    ugcPlay: (id: string) => t.call("POST", `/v1/ugc/${encodeURIComponent(id)}/plays`, "player", {}, undefined, "json"),
+    /** Report an item to the game's moderators. (player) */
+    ugcReport: (id: string, body: Record<string, unknown> = {}) => t.call("POST", `/v1/ugc/${encodeURIComponent(id)}/report`, "player", {}, body, "json"),
+    /** Hide an item (and its files) or bring it back, as the game's developer. Resolves its reports. (developer) */
+    ugcModerate: (id: string, body: Record<string, unknown> = {}) => t.call("POST", `/v1/ugc/${encodeURIComponent(id)}/moderate`, "developer", {}, body, "json"),
+    /** Hide an item (and its files) or bring it back, as a platform operator (takedowns). (admin) */
+    adminUgcModerate: (id: string, body: Record<string, unknown> = {}) => t.call("POST", `/v1/admin/ugc/${encodeURIComponent(id)}/moderate`, "admin", {}, body, "json"),
+    /** The player's own items, hidden ones included (unpublished ones are not). (player) */
+    ugcMine: (query: { game?: string | number } = {}) => t.call("GET", `/v1/players/me/ugc`, "player", query, undefined, "json"),
     /** Every published game. (public) */
     storeGames: () => t.call("GET", `/v1/store/games`, "public", {}, undefined, "json"),
     /** A published game's store page. (public) */
