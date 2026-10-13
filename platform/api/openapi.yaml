@@ -766,6 +766,62 @@ paths:
         - { name: game, in: path, required: true, schema: { type: string } }
         - { name: name, in: path, required: true, schema: { type: string } }
       responses: { "200": { description: "{deleted}" } }
+  /v1/games/{game}/theme:
+    get:
+      operationId: themeGet
+      summary: The game's look on partii's pages (the phone controller), with file names replaced by URLs. Public; theme is null when none is set.
+      x-auth: public
+      x-cli: theme get
+      parameters:
+        - { name: game, in: path, required: true, schema: { type: string } }
+      responses: { "200": { description: "{theme, files, updated_at}" } }
+    put:
+      operationId: themeSet
+      summary: "Set the game's theme (replaces it): name, colors {role: #hex}, fonts {heading, body} (an uploaded font file or a font-family list), radius, border, lip, caps, letter_spacing, background_image, logo. Upload files first. From the CLI: --body @theme.json. See docs/CONTROLLER.md."
+      x-auth: developer
+      x-cli: theme set
+      parameters:
+        - { name: game, in: path, required: true, schema: { type: string } }
+      requestBody: { content: { application/json: { schema: { type: object } } } }
+      responses: { "200": { description: "{theme, files, updated_at}" } }
+    delete:
+      operationId: themeDelete
+      summary: Remove the game's theme and its files (pages go back to partii's look).
+      x-auth: developer
+      x-cli: theme delete
+      parameters:
+        - { name: game, in: path, required: true, schema: { type: string } }
+      responses: { "200": { description: "{deleted}" } }
+  /v1/games/{game}/theme/uploads/{name}:
+    put:
+      operationId: themeFilePut
+      summary: Upload or replace a theme file (woff2, woff, ttf, otf, png, webp, jpg; up to 1 MB, 12 files, 4 MB in all). The theme refers to it by name.
+      x-auth: developer
+      x-body: binary
+      x-cli: theme file
+      parameters:
+        - { name: game, in: path, required: true, schema: { type: string } }
+        - { name: name, in: path, required: true, schema: { type: string } }
+      responses: { "200": { description: "{file}" } }
+    delete:
+      operationId: themeFileDelete
+      summary: Delete a theme file the theme no longer uses.
+      x-auth: developer
+      x-cli: theme file-delete
+      parameters:
+        - { name: game, in: path, required: true, schema: { type: string } }
+        - { name: name, in: path, required: true, schema: { type: string } }
+      responses: { "200": { description: "{deleted}" } }
+  /v1/games/{game}/theme/files/{sha256}:
+    get:
+      operationId: themeFile
+      summary: A theme file by its hash (cache forever). The URLs in themeGet point here.
+      x-auth: public
+      x-response: binary
+      parameters:
+        - { name: game, in: path, required: true, schema: { type: string } }
+        - { name: sha256, in: path, required: true, schema: { type: string } }
+      responses: { "200": { description: "the bytes" } }
   /v1/players/steam/openid/start:
     post:
       operationId: steamOpenidStart

@@ -7,8 +7,10 @@ A phone joins a game's room as a member of kind `phone`, from a page opened by s
 The game shows a QR code for:
 
 ```
-<controller page>/c/<ROOM CODE>?k=<publishable key>&e=<edge url>
+<controller page>/c/<ROOM CODE>?k=<publishable key>&e=<edge url>&g=<game id>
 ```
+
+`g` lets the page put on the game's theme before it first shows (see "Looking like the game"). Without it the page shows partii's look until it has joined, then switches.
 
 The page connects with the engine (wasm) and joins with `kind: "phone"` and `meta: {"name": "..."}`. Signing in on the page adds a player token, so the game can use that player's name and look.
 
@@ -51,3 +53,48 @@ All of these are reliable JSON:
 - `{"t": "rumble", "ms": 120}`: vibrate if the phone can.
 
 A phone that stops sending for 3 s counts as a pad that went idle. When its member leaves the room, the pad disconnects.
+
+## Looking like the game
+
+A game can give the controller page its own look: colours, fonts, corner radius, button lips, a logo and a background. Upload the files, then set the theme, which names them:
+
+```
+partii theme file tankii heading.woff2 --file fonts/heading.woff2
+partii theme file tankii logo.png --file art/logo.png
+partii theme set tankii --body @theme.json
+partii theme get tankii
+```
+
+```json
+{
+  "name": "Tankii",
+  "colors": {
+    "background": "#EFE6D4", "surface": "#E3D6BD", "border": "#8B6F47", "ink": "#3A2F1F", "muted": "#8B6F47",
+    "primary": "#4F8EF7", "primary_lip": "#2F64C4", "primary_ink": "#FFFFFF",
+    "secondary": "#E3D6BD", "secondary_lip": "#C9B894", "secondary_ink": "#3A2F1F",
+    "stick": "#E3D6BD", "stick_ring": "#8B6F47", "knob": "#6D5536", "error": "#C8403A"
+  },
+  "fonts": { "heading": "heading.woff2", "body": "Trebuchet MS, sans-serif" },
+  "radius": 12,
+  "border": 3,
+  "lip": 4,
+  "caps": true,
+  "letter_spacing": 0.08,
+  "background_image": "paper.webp",
+  "logo": "logo.png"
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `colors` | `#rgb`, `#rrggbb` or `#rrggbbaa` per role. `background`: the page. `surface`: inputs and quiet fills. `border`: outlines. `ink`, `muted`: text. `primary*`: FIRE and the join button (fill, the lip under it, its text). `secondary*`: the other buttons. `stick`, `stick_ring`, `knob`: the sticks. `error`: error text. |
+| `fonts.heading`, `fonts.body` | An uploaded font file (`.woff2` best), or a font-family list (`"Trebuchet MS, sans-serif"`; only fonts the phone has). Headings cover buttons, labels and the status line. |
+| `radius`, `border`, `lip` | Pixels: corner radius (0–40), outline width (0–8), and the darker lip under buttons (0–12) that they press down into. |
+| `caps`, `letter_spacing` | Capital letters on buttons, labels and headings; spacing in em (0–0.4). |
+| `background_image`, `logo` | Uploaded images (png, webp, jpg). The logo sits at the top left, 32 px tall. |
+
+Every field is optional; whatever a theme leaves out stays partii's. The seat colour from `{"t":"seat"}` stays the player's own: it outlines the pad, colours the status line, and is the knob and FIRE colour unless the theme sets `knob` or `primary`.
+
+Files: up to 1 MB each, 12 files, 4 MB in all; fonts are woff2, woff, ttf or otf, and images png, webp or jpg (no SVG). Uploading a file again under the same name replaces it. Only the game's developer can change the theme; anyone can read it. Phones cache it and refresh it on every visit, so a change shows from the next time a phone opens the page (the edge caches it for a minute). `partii theme delete <game>` goes back to partii's look.
+
+Check a font's licence before uploading it: the file is served to every phone. Trebuchet MS, for example, may be used by name (phones that have it show it) but not uploaded.

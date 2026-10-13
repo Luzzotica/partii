@@ -91,6 +91,12 @@ Auth (`x-auth`):
 | `secretsList` | `GET /v1/games/{game}/secrets` | developer | `partii secrets list` |
 | `secretsSet` | `PUT /v1/games/{game}/secrets/{name}` | developer | `partii secrets set` |
 | `secretsDelete` | `DELETE /v1/games/{game}/secrets/{name}` | developer | `partii secrets delete` |
+| `themeGet` | `GET /v1/games/{game}/theme` | public | `partii theme get` |
+| `themeSet` | `PUT /v1/games/{game}/theme` | developer | `partii theme set` |
+| `themeDelete` | `DELETE /v1/games/{game}/theme` | developer | `partii theme delete` |
+| `themeFilePut` | `PUT /v1/games/{game}/theme/uploads/{name}` | developer | `partii theme file` |
+| `themeFileDelete` | `DELETE /v1/games/{game}/theme/uploads/{name}` | developer | `partii theme file-delete` |
+| `themeFile` | `GET /v1/games/{game}/theme/files/{sha256}` | public | – |
 | `steamOpenidStart` | `POST /v1/players/steam/openid/start` | key | `partii player steam-start` |
 | `steamOpenidPoll` | `POST /v1/players/steam/openid/poll` | key | `partii player steam-poll` |
 | `steamOpenidReturn` | `GET /v1/players/steam/openid/return` | public | – |
@@ -793,6 +799,65 @@ Delete a secret or config value.
 Parameters:
 - `game` (path, required)
 - `name` (path, required)
+
+### themeGet
+
+`GET /v1/games/{game}/theme` (auth: public) · `partii theme get`
+
+The game's look on partii's pages (the phone controller), with file names replaced by URLs. Public; theme is null when none is set.
+
+Parameters:
+- `game` (path, required)
+
+### themeSet
+
+`PUT /v1/games/{game}/theme` (auth: developer) · `partii theme set`
+
+Set the game's theme (replaces it): name, colors {role: #hex}, fonts {heading, body} (an uploaded font file or a font-family list), radius, border, lip, caps, letter_spacing, background_image, logo. Upload files first. From the CLI: --body @theme.json. See docs/CONTROLLER.md.
+
+Parameters:
+- `game` (path, required)
+
+### themeDelete
+
+`DELETE /v1/games/{game}/theme` (auth: developer) · `partii theme delete`
+
+Remove the game's theme and its files (pages go back to partii's look).
+
+Parameters:
+- `game` (path, required)
+
+### themeFilePut
+
+`PUT /v1/games/{game}/theme/uploads/{name}` (auth: developer) · `partii theme file`
+
+Upload or replace a theme file (woff2, woff, ttf, otf, png, webp, jpg; up to 1 MB, 12 files, 4 MB in all). The theme refers to it by name.
+
+Parameters:
+- `game` (path, required)
+- `name` (path, required)
+
+Body: the file's bytes.
+
+### themeFileDelete
+
+`DELETE /v1/games/{game}/theme/uploads/{name}` (auth: developer) · `partii theme file-delete`
+
+Delete a theme file the theme no longer uses.
+
+Parameters:
+- `game` (path, required)
+- `name` (path, required)
+
+### themeFile
+
+`GET /v1/games/{game}/theme/files/{sha256}` (auth: public)
+
+A theme file by its hash (cache forever). The URLs in themeGet point here.
+
+Parameters:
+- `game` (path, required)
+- `sha256` (path, required)
 
 ### steamOpenidStart
 

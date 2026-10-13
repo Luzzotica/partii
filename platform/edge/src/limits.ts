@@ -14,8 +14,9 @@ export type LimitKind = "connect" | "session" | "create" | "join" | "login";
 export const LIMITS: Record<LimitKind, number> = {
   /** WebSocket upgrades (checked in the Worker, before any session). */
   connect: 120,
-  /** New sessions: each mints relay credentials and warms a room. */
-  session: 30,
+  /** New sessions: each mints relay credentials and warms a room. A party of
+   * one host and 15 phones on one home network is 16; this fits two waves. */
+  session: 60,
   create: 30,
   /** A join to a missing code still wakes a Room object. */
   join: 60,

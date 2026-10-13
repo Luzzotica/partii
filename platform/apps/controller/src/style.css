@@ -1,10 +1,38 @@
-:root {
-  --bg: #1f2937;
-  --ink: #f9fafb;
-  --muted: #9ca3af;
+/* partii's own look. A game's theme (theme.ts) sets the --t-* variables;
+   whatever it leaves unset falls back to these. --tint is the seat colour,
+   set on .pad, so the variables built from it are declared there too. */
+:root,
+.pad {
+  --bg: var(--t-background, #1f2937);
+  --surface: var(--t-surface, rgba(255, 255, 255, 0.12));
+  --line: var(--t-border, #374151);
+  --ink: var(--t-ink, #f9fafb);
+  --muted: var(--t-muted, #9ca3af);
   --tint: #3b82f6;
+  --primary: var(--t-primary, var(--tint));
+  --primary-lip: var(--t-primary-lip, transparent);
+  --primary-ink: var(--t-primary-ink, var(--ink));
+  --secondary: var(--t-secondary, var(--surface));
+  --secondary-lip: var(--t-secondary-lip, transparent);
+  --secondary-ink: var(--t-secondary-ink, var(--ink));
+  --stick: var(--t-stick, rgba(255, 255, 255, 0.06));
+  --stick-ring: var(--t-stick-ring, color-mix(in srgb, var(--tint) 55%, transparent));
+  --knob: var(--t-knob, var(--tint));
+  --error: var(--t-error, #f87171);
+  --radius: var(--t-radius, 16px);
+  --border: var(--t-border-width, 0px);
+  --lip: var(--t-lip, 0px);
+  --caps: var(--t-caps, none);
+  --spacing: var(--t-letter-spacing, 0.08em);
+  --font-body: var(--t-font-body, ui-rounded, system-ui, -apple-system, "Segoe UI", sans-serif);
+  --font-heading: var(--t-font-heading, var(--font-body));
+}
+:root {
   color-scheme: dark;
-  font-family: ui-rounded, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family: var(--font-body);
+}
+:root.themed {
+  color-scheme: light dark;
 }
 * {
   box-sizing: border-box;
@@ -22,6 +50,24 @@ body,
   overscroll-behavior: none;
   touch-action: none;
 }
+body {
+  background-image: var(--t-bg-image, none);
+  background-size: cover;
+  background-position: center;
+}
+#root {
+  background: transparent;
+}
+h1,
+.status,
+button,
+.label {
+  font-family: var(--font-heading);
+}
+h1 {
+  text-transform: var(--caps);
+  letter-spacing: var(--spacing);
+}
 .pad {
   height: 100%;
   display: grid;
@@ -30,16 +76,26 @@ body,
   gap: 12px;
   padding: max(12px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
 }
+/* The seat colour outlines the pad, like the player's card in the game's lobby. */
+.pad.seated {
+  box-shadow: inset 0 0 0 4px var(--tint);
+}
 header {
   grid-column: 1 / 3;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 10px;
+}
+.logo {
+  height: 32px;
+  width: auto;
 }
 .status {
   font-weight: 700;
   color: var(--tint);
-  letter-spacing: 0.05em;
+  letter-spacing: var(--spacing);
+  text-transform: var(--caps);
 }
 .note {
   position: absolute;
@@ -66,17 +122,21 @@ header {
   width: min(42vw, 60vh);
   aspect-ratio: 1;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.06);
-  border: 3px solid color-mix(in srgb, var(--tint) 55%, transparent);
+  background: var(--stick);
+  border: 3px solid var(--stick-ring);
   align-self: center;
   justify-self: center;
   touch-action: none;
+}
+/* The aim stick shares its column with the buttons: smaller, so both fit a phone held sideways. */
+.right .stick {
+  width: min(42vw, 46vh);
 }
 .knob {
   position: absolute;
   inset: 30%;
   border-radius: 50%;
-  background: var(--tint);
+  background: var(--knob);
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
   pointer-events: none;
 }
@@ -89,6 +149,7 @@ header {
   font-size: 12px;
   color: var(--muted);
   letter-spacing: 0.15em;
+  text-transform: var(--caps);
 }
 .buttons {
   display: flex;
@@ -96,33 +157,44 @@ header {
   width: 100%;
   justify-content: center;
 }
+/* Buttons sit on a darker "lip" (--lip tall) and press down into it. */
 button {
   font: inherit;
+  font-family: var(--font-heading);
   font-weight: 800;
-  letter-spacing: 0.08em;
-  border: 0;
-  border-radius: 16px;
-  color: var(--ink);
+  letter-spacing: var(--spacing);
+  text-transform: var(--caps);
+  border: var(--border) solid var(--line);
+  border-radius: var(--radius);
+  color: var(--secondary-ink);
+  background: var(--secondary);
+  box-shadow: 0 var(--lip) 0 var(--secondary-lip);
   touch-action: none;
+  transition: transform 40ms, box-shadow 40ms;
 }
 button:active {
-  filter: brightness(1.25);
+  filter: brightness(1.15);
+  transform: translateY(var(--lip));
+  box-shadow: 0 0 0 transparent;
+}
+.fire,
+.join button {
+  color: var(--primary-ink);
+  background: var(--primary);
+  box-shadow: 0 var(--lip) 0 var(--primary-lip);
 }
 .fire {
   flex: 1;
   max-width: 220px;
   padding: 22px 0;
-  background: var(--tint);
 }
 .second {
   flex: 0.7;
   max-width: 160px;
   padding: 22px 0;
-  background: rgba(255, 255, 255, 0.12);
 }
 .start {
   padding: 10px 18px;
-  background: rgba(255, 255, 255, 0.12);
 }
 .message,
 .join {
@@ -140,9 +212,9 @@ button:active {
   font-size: 22px;
   width: min(320px, 90vw);
   padding: 14px;
-  border-radius: 12px;
-  border: 2px solid #374151;
-  background: #111827;
+  border-radius: var(--radius);
+  border: max(2px, var(--border)) solid var(--line);
+  background: var(--t-surface, #111827);
   color: var(--ink);
   text-align: center;
   user-select: text;
@@ -151,7 +223,6 @@ button:active {
 .join button {
   width: min(320px, 90vw);
   padding: 16px;
-  background: var(--tint);
 }
 .join button:disabled {
   opacity: 0.4;
@@ -159,7 +230,10 @@ button:active {
 .message a {
   color: var(--tint);
 }
+:root.themed .message a {
+  color: var(--primary);
+}
 
 .signin-link { color: inherit; opacity: 0.8; font-size: 0.85rem; margin-left: auto; margin-right: 0.75rem; }
 .join p, .message p { opacity: 0.8; }
-.error { color: #f87171; }
+.error { color: var(--error); }

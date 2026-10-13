@@ -507,6 +507,48 @@ export const ROUTES: Route[] = [
     "body": "none"
   },
   {
+    "op": "themeGet",
+    "method": "GET",
+    "path": "/v1/games/:game/theme",
+    "auth": "public",
+    "body": "none"
+  },
+  {
+    "op": "themeSet",
+    "method": "PUT",
+    "path": "/v1/games/:game/theme",
+    "auth": "developer",
+    "body": "json"
+  },
+  {
+    "op": "themeDelete",
+    "method": "DELETE",
+    "path": "/v1/games/:game/theme",
+    "auth": "developer",
+    "body": "none"
+  },
+  {
+    "op": "themeFilePut",
+    "method": "PUT",
+    "path": "/v1/games/:game/theme/uploads/:name",
+    "auth": "developer",
+    "body": "binary"
+  },
+  {
+    "op": "themeFileDelete",
+    "method": "DELETE",
+    "path": "/v1/games/:game/theme/uploads/:name",
+    "auth": "developer",
+    "body": "none"
+  },
+  {
+    "op": "themeFile",
+    "method": "GET",
+    "path": "/v1/games/:game/theme/files/:sha256",
+    "auth": "public",
+    "body": "none"
+  },
+  {
     "op": "steamOpenidStart",
     "method": "POST",
     "path": "/v1/players/steam/openid/start",

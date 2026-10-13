@@ -1,4 +1,4 @@
-// The phone controller: open from a game's QR code (/c/CODE?k=KEY&e=EDGE),
+// The phone controller: open from a game's QR code (/c/CODE?k=KEY&e=EDGE&g=GAME),
 // or type a room code. Joins the room as a `phone` member and plays as one
 // more gamepad (docs/CONTROLLER.md).
 import { StrictMode, useEffect, useRef, useState } from "react";
@@ -6,6 +6,7 @@ import { createRoot } from "react-dom/client";
 import { BUTTON, inputFrame, startEngine, type Engine } from "./engine";
 import { Stick, type Vec } from "./stick";
 import { fetchProfile, finishEmail, signOut, startEmail, storedPlayer } from "./account";
+import { bootTheme, currentTheme, THEME_EVENT, themeFor } from "./theme";
 import "./style.css";
 
 const DEFAULT_EDGE = "https://partii-edge.partii-games.workers.dev";
@@ -13,7 +14,20 @@ const DEFAULT_EDGE = "https://partii-edge.partii-games.workers.dev";
 function params() {
   const m = /^\/c\/([A-Za-z]{4,8})/.exec(location.pathname);
   const q = new URLSearchParams(location.search);
-  return { code: m ? m[1].toUpperCase() : null, key: q.get("k") ?? "", edge: q.get("e") ?? DEFAULT_EDGE };
+  // The sign-in page carries the controller's link in ?back=.
+  const back = new URLSearchParams((q.get("back") ?? "").split("?")[1] ?? "");
+  return { code: m ? m[1].toUpperCase() : null, key: q.get("k") ?? "", edge: q.get("e") ?? back.get("e") ?? DEFAULT_EDGE, game: q.get("g") ?? back.get("g") };
+}
+
+/** The applied theme, re-read whenever another one is applied. */
+function useTheme() {
+  const [t, setT] = useState(currentTheme);
+  useEffect(() => {
+    const on = () => setT(currentTheme());
+    window.addEventListener(THEME_EVENT, on);
+    return () => window.removeEventListener(THEME_EVENT, on);
+  }, []);
+  return t;
 }
 
 function storedName(): string {
@@ -31,7 +45,8 @@ const JOIN_RETRY_MS = 10_000;
 
 type Phase = { kind: "connecting"; note?: string } | { kind: "joined"; host: number } | { kind: "error"; message: string } | { kind: "closed" };
 
-function Controller({ code, keyStr, edge, name }: { code: string; keyStr: string; edge: string; name: string }) {
+function Controller({ code, keyStr, edge, name, game }: { code: string; keyStr: string; edge: string; name: string; game: string | null }) {
+  const theme = useTheme();
   const [phase, setPhase] = useState<Phase>({ kind: "connecting" });
   const [seat, setSeat] = useState<{ label: string; color: string } | null>(null);
   const [labels, setLabels] = useState<string[]>(["FIRE", "SECONDARY"]);
@@ -66,6 +81,8 @@ function Controller({ code, keyStr, edge, name }: { code: string; keyStr: string
               host = ev.room.host;
               const to = ev.room.host;
               setPhase({ kind: "joined", host: to });
+              // A typed code: the link didn't name the game, so theme the page now.
+              if (!game) themeFor(edge, ev.room.game);
               // Signed in: bring the player's own name and look for this game.
               const player = storedPlayer();
               const hello = (profile: Record<string, unknown> | null) =>
@@ -106,7 +123,7 @@ function Controller({ code, keyStr, edge, name }: { code: string; keyStr: string
       window.clearInterval(timer);
       engine.current?.leave();
     };
-  }, [code, keyStr, edge, name]);
+  }, [code, keyStr, edge, name, game]);
 
   const hold = (bit: number) => ({
     onPointerDown: (ev: React.PointerEvent) => {
@@ -123,8 +140,9 @@ function Controller({ code, keyStr, edge, name }: { code: string; keyStr: string
 
   const tint = seat?.color ?? "#3b82f6";
   return (
-    <div className="pad" style={{ ["--tint" as string]: tint }}>
+    <div className={seat ? "pad seated" : "pad"} style={{ ["--tint" as string]: tint }}>
       <header>
+        {theme?.logo && <img className="logo" src={theme.logo} alt={theme.name ?? ""} />}
         <span className="status" data-testid="status">{phase.kind === "joined" ? `${seat?.label ?? "Connected"} · ${code}` : `Joining ${code}…`}</span>
         {!storedPlayer() && (
           <a className="signin-link" data-testid="signin-link" href={`/signin?back=${encodeURIComponent(location.pathname + location.search)}`}>
@@ -228,11 +246,15 @@ function App() {
   const p = params();
   if (location.pathname.startsWith("/signin")) return <SignIn />;
   if (!p.code) return <Join />;
-  return <Controller code={p.code} keyStr={p.key} edge={p.edge} name={storedPlayer()?.name || storedName() || "Phone"} />;
+  return <Controller code={p.code} keyStr={p.key} edge={p.edge} game={p.game} name={storedPlayer()?.name || storedName() || "Phone"} />;
 }
 
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
+// The game's theme goes on before the first render (no flash of partii's look).
+const boot = params();
+bootTheme(boot.edge, boot.game).finally(() =>
+  createRoot(document.getElementById("root")!).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  ),
 );

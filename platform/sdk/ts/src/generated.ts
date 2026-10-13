@@ -147,6 +147,18 @@ export function operations(t: Transport) {
     secretsSet: (game: string, name: string, body: Record<string, unknown> = {}) => t.call("PUT", `/v1/games/${encodeURIComponent(game)}/secrets/${encodeURIComponent(name)}`, "developer", {}, body, "json"),
     /** Delete a secret or config value. (developer) */
     secretsDelete: (game: string, name: string) => t.call("DELETE", `/v1/games/${encodeURIComponent(game)}/secrets/${encodeURIComponent(name)}`, "developer", {}, undefined, "json"),
+    /** The game's look on partii's pages (the phone controller), with file names replaced by URLs. Public; theme is null when none is set. (public) */
+    themeGet: (game: string) => t.call("GET", `/v1/games/${encodeURIComponent(game)}/theme`, "public", {}, undefined, "json"),
+    /** Set the game's theme (replaces it): name, colors {role: #hex}, fonts {heading, body} (an uploaded font file or a font-family list), radius, border, lip, caps, letter_spacing, background_image, logo. Upload files first. From the CLI: --body @theme.json. See docs/CONTROLLER.md. (developer) */
+    themeSet: (game: string, body: Record<string, unknown> = {}) => t.call("PUT", `/v1/games/${encodeURIComponent(game)}/theme`, "developer", {}, body, "json"),
+    /** Remove the game's theme and its files (pages go back to partii's look). (developer) */
+    themeDelete: (game: string) => t.call("DELETE", `/v1/games/${encodeURIComponent(game)}/theme`, "developer", {}, undefined, "json"),
+    /** Upload or replace a theme file (woff2, woff, ttf, otf, png, webp, jpg; up to 1 MB, 12 files, 4 MB in all). The theme refers to it by name. (developer) */
+    themeFilePut: (game: string, name: string, body: BodyInit) => t.call("PUT", `/v1/games/${encodeURIComponent(game)}/theme/uploads/${encodeURIComponent(name)}`, "developer", {}, body, "json"),
+    /** Delete a theme file the theme no longer uses. (developer) */
+    themeFileDelete: (game: string, name: string) => t.call("DELETE", `/v1/games/${encodeURIComponent(game)}/theme/uploads/${encodeURIComponent(name)}`, "developer", {}, undefined, "json"),
+    /** A theme file by its hash (cache forever). The URLs in themeGet point here. (public) */
+    themeFile: (game: string, sha256: string) => t.call("GET", `/v1/games/${encodeURIComponent(game)}/theme/files/${encodeURIComponent(sha256)}`, "public", {}, undefined, "binary"),
     /** Start "Sign in through Steam" in the browser (needs no Steam key). Open url, then poll. Send the guest's player token too to merge the guest. (key) */
     steamOpenidStart: (body: Record<string, unknown> = {}) => t.call("POST", `/v1/players/steam/openid/start`, "key", {}, body, "json"),
     /** Poll a browser Steam sign-in. status is pending, done (with player and player_token, once), expired or used. (key) */

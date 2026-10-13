@@ -274,7 +274,7 @@ Games read `GET /v1/content/{game}/manifest` at launch and fetch changed files b
 When the game hosts a room, show a QR code for:
 
 ```
-<controller page>/c/<ROOM CODE>?k=<publishable key>&e=<platform URL>
+<controller page>/c/<ROOM CODE>?k=<publishable key>&e=<platform URL>&g=<game id>
 ```
 
 The controller page is `platform/apps/controller`, hosted on Vercel at `https://partii-controller.vercel.app`. The phone joins as a member of kind `phone` and streams input frames (10 bytes, about 30 times a second; [CONTROLLER.md](CONTROLLER.md)):
@@ -291,6 +291,8 @@ if bytes.len() >= 9 && bytes[0] == 0x50 {
 ```
 
 Tell the phone its seat so it can colour itself: `engine.send(mid, true, br#"{"t":"seat","label":"P2","color":"#3B82F6"}"#.to_vec())`. Rename its buttons with `{"t":"layout","buttons":["JUMP","GRAB"]}`.
+
+Make the page look like your game with a theme (colours, fonts, button lips, logo): `partii theme set <game> --body @theme.json` after uploading its files with `partii theme file`. The format is in [CONTROLLER.md](CONTROLLER.md#looking-like-the-game).
 
 ## 7. Errors
 

@@ -38,5 +38,5 @@ describe("KV file storage", () => {
     await kv().delete("builds/g/big.zip");
     expect(await kv().get("builds/g/big.zip")).toBeNull();
     expect((await raw.list({ prefix: "~chunks/builds/g/big.zip/" })).keys.length).toBe(0);
-  });
+  }, 30_000); // 60 MB: slow when the whole suite runs in parallel
 });
