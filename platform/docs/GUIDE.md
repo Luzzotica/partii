@@ -198,6 +198,20 @@ The API, in types:
 
 Under the hood these are plain API calls (`POST /v1/players/guest`, `PUT /v1/saves/{game}/{slot}` with `base_rev`, `GET /v1/players/me/entitlements?game=`), listed in [API.md](API.md); `partii-api` is a typed client for all of them if you need more.
 
+### Player content: levels, worlds, replays
+
+Players can publish what they make so that anyone can browse and download it. Only the author can change or unpublish it. Every call is in [API.md](API.md) under `ugc*`; reads take your key, and writes take the player token too.
+
+1. **Upload by hash.** `POST /v1/games/{game}/ugc/uploads` with `{kind: "file" | "thumbnail", size, sha256}` (hex). If that hash is already stored you get `exists: true`; skip to step 2. Otherwise PUT the bytes to `upload.url` with exactly `upload.headers` and no auth headers; the URL is good for an hour. The platform checks the hash, so other bytes are refused.
+2. **Publish.** `POST /v1/games/{game}/ugc` with `{kind: "level" | "world" | "replay", title, description, tags, visibility: "public" | "unlisted", sha256, client_version, thumbnail_sha256?, refs?}`. A World lists the exact Level file hashes it uses in `refs`. Each of those hashes must already be uploaded to this game.
+3. **New versions.** `POST /v1/ugc/{id}/versions` with `{sha256, client_version, notes?, refs?}`. Old versions stay downloadable by hash, so a World that pins one keeps working.
+4. **Browse.** `GET /v1/games/{game}/ugc?sort=new|top|played&kind=&tags=a,b&q=&author=&limit=&cursor=`. Pass `next_cursor` back as `cursor` to get the next page. Unlisted items never appear here; find them with `GET /v1/games/{game}/ugc/code/{share_code}` (every item has a six-character code). To fetch one item use `GET /v1/ugc/{id}`, which includes every version. With a player token, `my_vote` is included.
+5. **Download** from `download_url` or `thumbnail_url` (public; cache them forever, since they are addressed by hash). `GET /v1/games/{game}/ugc/hash/{sha256}` says which items and versions a hash belongs to.
+6. **Votes and plays.** `PUT /v1/ugc/{id}/vote {value: 1 | -1 | 0}` (one vote per player). `POST /v1/ugc/{id}/plays` is fire and forget; `plays` counts players, not launches.
+7. **Unpublish, reports, moderation.** The author calls `DELETE /v1/ugc/{id}`. The item leaves browse and lookups, but its files stay downloadable by hash while Worlds pin them. Players report with `POST /v1/ugc/{id}/report {reason}`. You review reports with `partii ugc reports <game>` and hide or restore an item with `partii ugc moderate <id> --action hide --reason "…"`. Hiding removes the item's files too.
+
+Rules: only signed-in players can publish; guests can browse, download, vote and play, and their votes follow them when they sign in. Files are capped at 5 MB, thumbnails are PNG up to 256 KB, and each player gets 300 items per game. Per player per hour: 30 publishes or versions, 60 uploads, 300 votes and 20 reports. Deleting an account unpublishes its items.
+
 ## 4. Sell it
 
 ```sh

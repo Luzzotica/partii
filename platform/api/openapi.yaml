@@ -569,7 +569,7 @@ paths:
         - { name: sha, in: path, required: true, schema: { type: string } }
       responses: { "200": { description: "the file" } }
 
-  # ── Player content (UGC): levels, worlds, replays. docs/GUIDE.md §4 ──
+  # ── Player content (UGC): levels, worlds, replays. docs/GUIDE.md §3 ──
   /v1/games/{game}/ugc/uploads:
     post:
       operationId: ugcUploadStart
