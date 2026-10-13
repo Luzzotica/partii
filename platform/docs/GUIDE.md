@@ -188,10 +188,13 @@ The API, in types:
 | `refresh()`, `start_checkout()` | `()` |
 | `take_checkout()` | `Option<Result<String, String>>` |
 | `error()` | `Option<String>` |
+| `player_token()`, `client()` | `Option<String>`, `Option<partii_api::Client>`: call any player operation (e.g. `ugcPublish`) as this player; calls block, so make them off the frame; ask again after `login` |
+| `is_guest()`, `providers()` | `Option<bool>` (None until known), `Vec<String>` |
+| `login(provider, fields)`, `take_login()` | `()`, `Option<Result<(), String>>`: link a provider; the guest becomes or merges into that account |
 
 **When `owns` is fresh.** Before `ready()`, `owns` returns last week's cached answer (or `None` on a fresh install). Once `ready()` is true it reflects the platform at sign-in. After a purchase made elsewhere (the browser, another device), call `refresh()`; `owns` updates when the answer arrives.
 
-- **Sign-in.** On first launch the install becomes a guest player (a random device id kept in `data_dir`), with no form. Later the player can link email (`playersEmailStart`, then `playersLogin` with `provider: "email"`), Apple, Google, Discord or Steam. The guest becomes, or merges into, that account, so saves and purchases follow them to every device.
+- **Sign-in.** On first launch the install becomes a guest player (a random device id kept in `data_dir`), with no form. Later `acct.login(provider, fields)` links Steam (`{"ticket": hex}`; add `"identity"` if you made the ticket with `GetAuthTicketForWebApi(identity)`), email (`{"email", "code"}`, after `playersEmailStart`), Apple or Google (`{"id_token"}`) or Discord (`{"code"}`). The guest becomes, or merges into, that account, so saves, purchases and votes follow the player to every device, and this device signs in to that account from then on. Show "Sign in to publish" while `is_guest()` is `Some(true)`.
 - **Saves.** Named JSON slots per game. If another device wrote first, your `merge` function gets both copies and the merged result is written. Every write keeps a backup (`savesHistory`, `savesRestore`).
 - **Offline.** The last entitlement answer is cached for a week, so a paid game stays unlocked without a network.
 - **Tests.** Set `AccountConfig::player_token` (e.g. from `partii test players create`) to act as a specific player.

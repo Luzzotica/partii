@@ -62,3 +62,16 @@ describe("production safety", () => {
     await expect(start({ PARTII_ENV: "production" })).rejects.toMatchObject({ code: "email_unavailable" });
   });
 });
+
+describe("steam tickets", () => {
+  it("pass the web API identity through when the game gives one", async () => {
+    const { verifySteamTicket } = await import("../src/api/providers");
+    const urls: string[] = [];
+    const fetcher = (async (u: string) => (urls.push(u), Response.json({ response: { params: { result: "OK", steamid: "765" } } }))) as any;
+    const e = { STEAM_WEBAPI_KEY: "k", STEAM_APP_ID: "1" } as any;
+    expect(await verifySteamTicket(e, "abcdef0123456789", fetcher, "partii")).toBe("765");
+    expect(await verifySteamTicket(e, "abcdef0123456789", fetcher)).toBe("765");
+    expect(urls[0]).toContain("&identity=partii");
+    expect(urls[1]).not.toContain("identity");
+  });
+});

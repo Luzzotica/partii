@@ -50,3 +50,54 @@ fn saves_merge_across_devices_of_one_player() {
     assert_eq!(seen, json!({"a":1,"b":2}));
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// A guest links a provider (`fake` in dev and staging) and becomes a
+/// signed-in player, keeping its id; `client()` then calls player operations
+/// as that player. With `PARTII_UGC_GAME` (a game on the platform), it also
+/// publishes and unpublishes a Level.
+#[test]
+fn a_guest_signs_in_and_calls_player_operations() {
+    let (Ok(edge), Ok(key)) = (std::env::var("PARTII_API"), std::env::var("PARTII_KEY")) else {
+        eprintln!("skip: set PARTII_API and PARTII_KEY");
+        return;
+    };
+    let game = std::env::var("PARTII_UGC_GAME").ok();
+    let dir = std::env::temp_dir().join(format!("partii-account-login-{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis()));
+    let a = Account::start(AccountConfig { edge, key: Some(key), game: game.clone().unwrap_or("account-test".into()), data_dir: dir.clone(), ..AccountConfig::default() });
+    wait("signed in", || a.ready());
+    assert_eq!(a.is_guest(), Some(true));
+    let guest_id = a.player_id().unwrap();
+    let guest_token = a.player_token().unwrap();
+    let me = a.client().unwrap().json("playersMe", &[], None).unwrap();
+    assert_eq!(me["player"]["id"], json!(guest_id));
+
+    a.login("fake", json!({ "subject": format!("account-login-{}", guest_id) }));
+    let mut out = None;
+    wait("login", || {
+        out = a.take_login();
+        out.is_some()
+    });
+    assert_eq!(out.unwrap(), Ok(()));
+    assert_eq!(a.is_guest(), Some(false));
+    assert_eq!(a.player_id().as_deref(), Some(guest_id.as_str()), "the guest became the account");
+    assert_ne!(a.player_token().unwrap(), guest_token);
+    assert!(a.providers().contains(&"fake".to_string()));
+
+    if let Some(game) = game {
+        let c = a.client().unwrap();
+        let data = format!(r#"{{"level":"account-test","at":{}}}"#, std::process::id());
+        let sha = sha256_hex(data.as_bytes());
+        let start = c.json("ugcUploadStart", &[("game", &game)], Some(json!({ "size": data.len(), "sha256": sha }))).unwrap();
+        assert_eq!(start["ok"], true, "{start}");
+        assert!(start["upload"]["url"].is_string() || start["exists"] == true);
+        // (The bytes are PUT by the game's own HTTP stack; this test only checks the identity reaches player operations.)
+        let mine = c.json("ugcMine", &[("game", &game)], None).unwrap();
+        assert_eq!(mine["ok"], true, "{mine}");
+    }
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+fn sha256_hex(b: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(b).iter().map(|x| format!("{x:02x}")).collect()
+}

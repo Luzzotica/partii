@@ -26,7 +26,7 @@ export async function verifyProvider(env: Env, provider: string, body: Record<st
     case "discord":
       return verifyDiscord(env, body, fetcher);
     case "steam":
-      return verifySteamTicket(env, String(body.ticket ?? ""), fetcher);
+      return verifySteamTicket(env, String(body.ticket ?? ""), fetcher, body.identity === undefined ? undefined : String(body.identity));
     default:
       throw bad(`unknown provider ${provider}`, "one of email, apple, google, discord, steam");
   }
@@ -97,10 +97,11 @@ async function verifyDiscord(env: Env, body: Record<string, unknown>, fetcher: t
   return String(((await me.json()) as { id: string }).id);
 }
 
-export async function verifySteamTicket(env: Env, ticket: string, fetcher: typeof fetch = fetch): Promise<string> {
+/** `identity`: the string a GetAuthTicketForWebApi ticket was made for (none for GetAuthSessionTicket). */
+export async function verifySteamTicket(env: Env, ticket: string, fetcher: typeof fetch = fetch, identity?: string): Promise<string> {
   if (!env.STEAM_WEBAPI_KEY || !env.STEAM_APP_ID) throw unconfigured("Steam", "STEAM_WEBAPI_KEY and STEAM_APP_ID");
   if (!/^[0-9a-fA-F]{16,}$/.test(ticket)) throw bad("ticket must be the hex auth session ticket");
-  const url = `https://partner.steam-api.com/ISteamUserAuth/AuthenticateUserTicket/v1/?key=${env.STEAM_WEBAPI_KEY}&appid=${env.STEAM_APP_ID}&ticket=${ticket}`;
+  const url = `https://partner.steam-api.com/ISteamUserAuth/AuthenticateUserTicket/v1/?key=${env.STEAM_WEBAPI_KEY}&appid=${env.STEAM_APP_ID}&ticket=${ticket}${identity ? `&identity=${encodeURIComponent(identity)}` : ""}`;
   const res = await fetcher(url);
   const j = (await res.json().catch(() => ({}))) as { response?: { params?: { result: string; steamid: string } } };
   const p = j.response?.params;

@@ -1,8 +1,11 @@
 //! The player's partii account inside a game.
 //!
 //! * **Sign-in**: a guest account per device (a random id kept in the game's
-//!   data folder), created on first launch with no form. Linking email,
-//!   Apple, Google, Discord or Steam later keeps the same player.
+//!   data folder), created on first launch with no form. `login` links
+//!   email, Apple, Google, Discord or Steam later: the guest becomes (or
+//!   merges into) that account, and this device signs in to it from then on.
+//! * **Other calls** (player content, …): `client()` is an API client
+//!   signed in as this player, for any operation in API.md.
 //! * **Entitlements**: which SKUs the player owns. The last answer is cached
 //!   for a week, so a paid game stays unlocked offline.
 //! * **Cloud saves**: named JSON slots. Reads come from a local mirror;
@@ -76,6 +79,10 @@ struct State {
     /// Signed in and the first fetch is done.
     ready: bool,
     player_id: Option<String>,
+    player_token: Option<String>,
+    /// Sign-in providers linked to the player ("device" alone: a guest).
+    providers: Option<Vec<String>>,
+    login: Option<Result<(), String>>,
     /// SKUs owned ("full", …); None until known (fresh install offline).
     owns: Option<Vec<String>>,
     /// slot → (rev, JSON text) as the platform has it.
@@ -90,11 +97,14 @@ enum Job {
     Write { slot: String, contents: String },
     Refresh,
     Checkout,
+    Login(Value),
 }
 
 pub struct Account {
     st: Arc<Mutex<State>>,
     jobs: Sender<Job>,
+    edge: String,
+    key: Option<String>,
 }
 
 /// A save slot name for a file path ("mygame/campaign-saves.json" → "campaign-saves").
@@ -153,6 +163,20 @@ fn now_ms() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
 }
 
+/// Keep what a sign-in answer says about the player.
+fn signed_in(st: &Mutex<State>, v: &Value) {
+    let mut s = lock(st);
+    if let Some(t) = v["player_token"].as_str() {
+        s.player_token = Some(t.to_string());
+    }
+    if let Some(id) = v["player"]["id"].as_str() {
+        s.player_id = Some(id.to_string());
+    }
+    if let Some(p) = v["player"]["providers"].as_array() {
+        s.providers = Some(p.iter().filter_map(|x| x.as_str().map(str::to_string)).collect());
+    }
+}
+
 fn lock(st: &Mutex<State>) -> std::sync::MutexGuard<'_, State> {
     st.lock().unwrap_or_else(|p| p.into_inner())
 }
@@ -167,6 +191,7 @@ impl Account {
                 lock(&st).owns = Some(c.owns);
             }
         }
+        let (edge, key) = (cfg.edge.clone(), cfg.key.clone());
         let (tx, rx) = channel::<Job>();
         let shared = st.clone();
         std::thread::Builder::new()
@@ -180,7 +205,7 @@ impl Account {
                     match c.json("playersGuest", &[], Some(json!({ "device_id": device, "display_name": cfg.display_name }))) {
                         Ok(v) if v["ok"] == true => {
                             c.player_token = v["player_token"].as_str().map(str::to_string);
-                            lock(&shared).player_id = v["player"]["id"].as_str().map(str::to_string);
+                            signed_in(&shared, &v);
                         }
                         Ok(v) => lock(&shared).error = Some(v["error"]["message"].as_str().unwrap_or("sign-in refused").to_string()),
                         Err(e) => lock(&shared).error = Some(e.message),
@@ -190,9 +215,10 @@ impl Account {
                         wait = (wait * 2).min(30);
                     }
                 }
-                if lock(&shared).player_id.is_none() {
+                lock(&shared).player_token = c.player_token.clone();
+                if lock(&shared).providers.is_none() {
                     if let Ok(v) = c.json("playersMe", &[], None) {
-                        lock(&shared).player_id = v["player"]["id"].as_str().map(str::to_string);
+                        signed_in(&shared, &v);
                     }
                 }
                 refresh(&c, &cfg.game, &shared, &cache_path);
@@ -227,11 +253,31 @@ impl Account {
                             };
                             lock(&shared).checkout = Some(out);
                         }
+                        Job::Login(body) => {
+                            // With the guest's token along, the platform links the
+                            // identity to it, or merges it into the account.
+                            let out = match c.json("playersLogin", &[], Some(body)) {
+                                Ok(v) if v["ok"] == true => {
+                                    c.player_token = v["player_token"].as_str().map(str::to_string);
+                                    signed_in(&shared, &v);
+                                    // A merge can change what the player owns and has saved.
+                                    refresh(&c, &cfg.game, &shared, &cache_path);
+                                    let slots: Vec<String> = lock(&shared).saves.keys().cloned().chain(cfg.slots.iter().cloned()).collect();
+                                    for slot in slots {
+                                        fetch(&c, &cfg.game, &shared, &slot);
+                                    }
+                                    Ok(())
+                                }
+                                Ok(v) => Err(v["error"]["message"].as_str().unwrap_or("sign-in refused").to_string()),
+                                Err(e) => Err(e.message),
+                            };
+                            lock(&shared).login = Some(out);
+                        }
                     }
                 }
             })
             .expect("partii-account thread");
-        Account { st, jobs: tx }
+        Account { st, jobs: tx, edge, key }
     }
 
     /// Signed in and the first fetch is done.
@@ -240,6 +286,41 @@ impl Account {
     }
     pub fn player_id(&self) -> Option<String> {
         lock(&self.st).player_id.clone()
+    }
+    /// The player token (None until signed in). It changes after `login`.
+    pub fn player_token(&self) -> Option<String> {
+        lock(&self.st).player_token.clone()
+    }
+    /// An API client signed in as this player, for any operation (player
+    /// content: `ugcPublish`, `ugcVote`, …). Calls block, so make them off
+    /// the frame. None until signed in; ask again after `login`.
+    pub fn client(&self) -> Option<partii_api::Client> {
+        let token = self.player_token()?;
+        Some(Client { base: self.edge.clone(), key: self.key.clone(), player_token: Some(token), ..Default::default() })
+    }
+    /// Only a device guest (no email, Steam, … linked)? None until known.
+    /// Publishing player content needs a signed-in player.
+    pub fn is_guest(&self) -> Option<bool> {
+        lock(&self.st).providers.as_ref().map(|p| p.iter().all(|x| x == "device"))
+    }
+    /// The providers linked to the player ("device", "steam", "email", …).
+    pub fn providers(&self) -> Vec<String> {
+        lock(&self.st).providers.clone().unwrap_or_default()
+    }
+    /// Sign in with a provider; the guest becomes (or merges into) that
+    /// account. `fields` are the provider's: Steam `{"ticket": hex}`, email
+    /// `{"email", "code"}` (send the code first with `playersEmailStart`
+    /// through `client()`), Apple/Google `{"id_token"}`, Discord `{"code"}`.
+    /// The outcome arrives via `take_login`; saves and entitlements are
+    /// fetched again.
+    pub fn login(&self, provider: &str, fields: Value) {
+        let mut body = if fields.is_object() { fields } else { json!({}) };
+        body["provider"] = json!(provider);
+        lock(&self.st).login = None;
+        let _ = self.jobs.send(Job::Login(body));
+    }
+    pub fn take_login(&self) -> Option<Result<(), String>> {
+        lock(&self.st).login.take()
     }
     /// Does the player own `sku` (e.g. "full")? None while unknown.
     pub fn owns(&self, sku: &str) -> Option<bool> {
