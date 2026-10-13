@@ -6,7 +6,7 @@
 
 import type { Env } from "../index";
 import { ApiError, bad, b64url, fromB64url, randomSlug } from "./core";
-import { verifySteamTicket } from "./providers";
+import { steamAppIds, verifySteamTicket } from "./providers";
 
 export interface Verified {
   store: string;
@@ -32,7 +32,7 @@ export async function verifyReceipt(env: Env, store: string, game: string, body:
       return play(env, String(body.purchase_token ?? ""), String(body.product_id ?? page.play_product_id ?? ""), fetcher);
     case "steam": {
       const steamId = await verifySteamTicket(env, String(body.ticket ?? ""), fetcher);
-      const appId = page.steam_app_id ?? env.STEAM_APP_ID;
+      const appId = page.steam_app_id ?? steamAppIds(env)[0];
       const res = await fetcher(`https://partner.steam-api.com/ISteamUser/CheckAppOwnership/v2/?key=${env.STEAM_WEBAPI_KEY}&steamid=${steamId}&appid=${appId}`);
       const j = (await res.json().catch(() => ({}))) as { appownership?: { ownsapp: boolean } };
       if (!j.appownership?.ownsapp) throw new ApiError(402, "not_owned", "this Steam account does not own the game");

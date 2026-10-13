@@ -445,7 +445,7 @@ Body fields: `email` (required)
 
 Sign in with a provider (email code, apple, google, discord, steam, fake in dev). With a guest token, the guest is merged in.
 
-Body fields: `provider` (required), `email`, `code`, `id_token`, `ticket`, `subject`
+Body fields: `provider` (required), `email`, `code`, `id_token`, `ticket`, `identity`, `app_id`, `subject`
 
 ### playersMe
 

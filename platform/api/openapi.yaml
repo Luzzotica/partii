@@ -450,7 +450,7 @@ paths:
       summary: Sign in with a provider (email code, apple, google, discord, steam, fake in dev). With a guest token, the guest is merged in.
       x-auth: key
       x-cli: player login
-      requestBody: { content: { application/json: { schema: { type: object, required: [provider], properties: { provider: { type: string }, email: { type: string }, code: { type: string }, id_token: { type: string }, ticket: { type: string }, subject: { type: string } } } } } }
+      requestBody: { content: { application/json: { schema: { type: object, required: [provider], properties: { provider: { type: string }, email: { type: string }, code: { type: string }, id_token: { type: string }, ticket: { type: string }, identity: { type: string, description: "Steam: the GetAuthTicketForWebApi identity" }, app_id: { type: string, description: "Steam: the app that issued the ticket" }, subject: { type: string } } } } } }
       responses: { "200": { description: "{player, player_token, merged}" } }
   /v1/players/me:
     get:

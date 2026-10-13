@@ -26,7 +26,7 @@ export async function verifyProvider(env: Env, provider: string, body: Record<st
     case "discord":
       return verifyDiscord(env, body, fetcher);
     case "steam":
-      return verifySteamTicket(env, String(body.ticket ?? ""), fetcher, body.identity === undefined ? undefined : String(body.identity));
+      return verifySteamTicket(env, String(body.ticket ?? ""), fetcher, body.identity === undefined ? undefined : String(body.identity), body.app_id === undefined ? undefined : String(body.app_id));
     default:
       throw bad(`unknown provider ${provider}`, "one of email, apple, google, discord, steam");
   }
@@ -97,15 +97,27 @@ async function verifyDiscord(env: Env, body: Record<string, unknown>, fetcher: t
   return String(((await me.json()) as { id: string }).id);
 }
 
-/** `identity`: the string a GetAuthTicketForWebApi ticket was made for (none for GetAuthSessionTicket). */
-export async function verifySteamTicket(env: Env, ticket: string, fetcher: typeof fetch = fetch, identity?: string): Promise<string> {
-  if (!env.STEAM_WEBAPI_KEY || !env.STEAM_APP_ID) throw unconfigured("Steam", "STEAM_WEBAPI_KEY and STEAM_APP_ID");
+/** The Steam app ids tickets are accepted for (STEAM_APP_ID: one id, or several comma-separated: full game, demo). */
+export function steamAppIds(env: Env): string[] {
+  return (env.STEAM_APP_ID ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+}
+
+/**
+ * Check a Steam ticket with Valve; the Steam id. `identity`: the string a
+ * GetAuthTicketForWebApi ticket was made for (none for GetAuthSessionTicket).
+ * `appId`: the app that issued it (one of STEAM_APP_ID; default the first).
+ */
+export async function verifySteamTicket(env: Env, ticket: string, fetcher: typeof fetch = fetch, identity?: string, appId?: string): Promise<string> {
+  const apps = steamAppIds(env);
+  if (!env.STEAM_WEBAPI_KEY || !apps.length) throw unconfigured("Steam", "STEAM_WEBAPI_KEY and STEAM_APP_ID");
   if (!/^[0-9a-fA-F]{16,}$/.test(ticket)) throw bad("ticket must be the hex auth session ticket");
-  const url = `https://partner.steam-api.com/ISteamUserAuth/AuthenticateUserTicket/v1/?key=${env.STEAM_WEBAPI_KEY}&appid=${env.STEAM_APP_ID}&ticket=${ticket}${identity ? `&identity=${encodeURIComponent(identity)}` : ""}`;
+  const app = appId ?? apps[0];
+  if (!apps.includes(app)) throw bad(`app_id ${app} is not a Steam app this platform accepts`, `one of ${apps.join(", ")}`);
+  const url = `https://partner.steam-api.com/ISteamUserAuth/AuthenticateUserTicket/v1/?key=${env.STEAM_WEBAPI_KEY}&appid=${app}&ticket=${ticket}${identity ? `&identity=${encodeURIComponent(identity)}` : ""}`;
   const res = await fetcher(url);
-  const j = (await res.json().catch(() => ({}))) as { response?: { params?: { result: string; steamid: string } } };
+  const j = (await res.json().catch(() => ({}))) as { response?: { params?: { result: string; steamid: string }; error?: { errordesc?: string } } };
   const p = j.response?.params;
-  if (!res.ok || p?.result !== "OK") throw new ApiError(401, "bad_ticket", "Steam did not accept the ticket");
+  if (!res.ok || p?.result !== "OK") throw new ApiError(401, "bad_ticket", `Steam did not accept the ticket${j.response?.error?.errordesc ? `: ${j.response.error.errordesc}` : ""}`, "make a fresh ticket; for GetAuthTicketForWebApi pass the same identity");
   return p.steamid;
 }
 

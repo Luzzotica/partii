@@ -74,4 +74,16 @@ describe("steam tickets", () => {
     expect(urls[0]).toContain("&identity=partii");
     expect(urls[1]).not.toContain("identity");
   });
+
+  it("accept several app ids (full game and demo); the game names which", async () => {
+    const { verifySteamTicket } = await import("../src/api/providers");
+    const urls: string[] = [];
+    const fetcher = (async (u: string) => (urls.push(u), Response.json({ response: { params: { result: "OK", steamid: "765" } } }))) as any;
+    const e = { STEAM_WEBAPI_KEY: "k", STEAM_APP_ID: "4971410, 4971420" } as any;
+    await verifySteamTicket(e, "abcdef0123456789", fetcher);
+    await verifySteamTicket(e, "abcdef0123456789", fetcher, "partii", "4971420");
+    expect(urls[0]).toContain("appid=4971410&");
+    expect(urls[1]).toContain("appid=4971420&");
+    await expect(verifySteamTicket(e, "abcdef0123456789", fetcher, undefined, "1")).rejects.toThrow(/not a Steam app/);
+  });
 });
