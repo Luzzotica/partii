@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    // false matches the Next site (target ES2017). true would emit class fields
+    // and wipe Phaser arcade bodies declared as `body!: Arcade.Body`.
+    "useDefineForClassFields": false,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "strict": true,
+    "types": ["vite/client"],
+    "paths": {
+      "@/*": ["./shims/*"]
+    }
+  },
+  "include": ["src", "shims", "vite.config.ts"]
+}
