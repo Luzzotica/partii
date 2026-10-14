@@ -10,8 +10,12 @@ const dir = path.dirname(fileURLToPath(import.meta.url));
 const gameDir = path.resolve(dir, "..");
 const sdkDir = path.resolve(dir, "../../../../platform/sdk/ts");
 
-/** Publishable staging key only. The developer token in that file stays out of the bundle. */
-function partiiPublic(): { api: string; key: string } {
+/**
+ * Publishable key only. The developer token in that file stays out of the bundle.
+ * PARTII_TARGET=prod reads the production API and key and writes dist-prod/.
+ * Unset, or PARTII_TARGET=staging, keeps the staging build in dist/.
+ */
+function partiiPublic(): { api: string; key: string; outDir: string } {
   const file = path.join(os.homedir(), ".config/partii/rocket-to-heaven-game.env");
   if (!fs.existsSync(file)) {
     throw new Error("Missing ~/.config/partii/rocket-to-heaven-game.env");
@@ -22,16 +26,23 @@ function partiiPublic(): { api: string; key: string } {
     if (!line) throw new Error(`Missing ${name} in rocket-to-heaven-game.env`);
     return line.slice(name.length + 1).trim().replace(/^["']|["']$/g, "");
   };
-  return { api: pick("PARTII_API"), key: pick("PARTII_KEY") };
+  const target = process.env.PARTII_TARGET ?? "staging";
+  if (target === "prod") {
+    return { api: pick("PARTII_PROD_API"), key: pick("PARTII_PROD_KEY"), outDir: "dist-prod" };
+  }
+  if (target !== "staging") {
+    throw new Error("PARTII_TARGET must be staging or prod");
+  }
+  return { api: pick("PARTII_API"), key: pick("PARTII_KEY"), outDir: "dist" };
 }
 
 // public/ holds symlinks into the site asset folders. Follow them when
-// copying into dist so a deploy does not ship broken links.
-function dereferenceDistSymlinks(): Plugin {
+// copying into the build folder so a deploy does not ship broken links.
+function dereferenceDistSymlinks(outDir: string): Plugin {
   return {
     name: "dereference-dist-symlinks",
     closeBundle() {
-      const dist = path.resolve(dir, "dist");
+      const dist = path.resolve(dir, outDir);
       const walk = (directory: string) => {
         for (const name of fs.readdirSync(directory)) {
           const full = path.join(directory, name);
@@ -57,7 +68,7 @@ export default defineConfig(() => {
     __PARTII_API__: JSON.stringify(partii.api),
     __PARTII_KEY__: JSON.stringify(partii.key),
   },
-  plugins: [react(), tailwindcss(), dereferenceDistSymlinks()],
+  plugins: [react(), tailwindcss(), dereferenceDistSymlinks(partii.outDir)],
   resolve: {
     alias: {
       // Game components import the Next site. Point those at standalone shims.
@@ -76,7 +87,7 @@ export default defineConfig(() => {
   },
   preview: { host: "0.0.0.0", port: 4174 },
   build: {
-    outDir: "dist",
+    outDir: partii.outDir,
     emptyOutDir: true,
   },
   };
