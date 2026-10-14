@@ -47,7 +47,7 @@ fn hex(b: &[u8]) -> String {
     b.iter().map(|x| format!("{x:02x}")).collect()
 }
 
-/// Every file under `dir`, as (site path, file path); skips dotfiles and dot-folders.
+/// Every file under `dir`, as (site path, file path); skips dotfiles and dot-folders (but not a top-level .well-known).
 fn walk(dir: &Path) -> Result<Vec<(String, PathBuf)>, CliError> {
     let mut out = Vec::new();
     let mut stack = vec![dir.to_path_buf()];
@@ -56,7 +56,8 @@ fn walk(dir: &Path) -> Result<Vec<(String, PathBuf)>, CliError> {
         for entry in rd {
             let entry = entry.map_err(|e| CliError::new("read", e.to_string(), ""))?;
             let name = entry.file_name().to_string_lossy().to_string();
-            if name.starts_with('.') {
+            // Dotfiles stay home, except .well-known (iOS universal links, Android app links).
+            if name.starts_with('.') && !(name == ".well-known" && d == dir) {
                 continue;
             }
             let p = entry.path();

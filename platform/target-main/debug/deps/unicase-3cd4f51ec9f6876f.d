@@ -1,0 +1,10 @@
+/Users/sterlinglong/NonCloud/PAZA/Projects/games/partii/platform/target-main/debug/deps/unicase-3cd4f51ec9f6876f.d: /Users/sterlinglong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unicase-2.10.0/src/lib.rs /Users/sterlinglong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unicase-2.10.0/src/ascii.rs /Users/sterlinglong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unicase-2.10.0/src/unicode/mod.rs /Users/sterlinglong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unicase-2.10.0/src/unicode/map.rs
+
+/Users/sterlinglong/NonCloud/PAZA/Projects/games/partii/platform/target-main/debug/deps/libunicase-3cd4f51ec9f6876f.rlib: /Users/sterlinglong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unicase-2.10.0/src/lib.rs /Users/sterlinglong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unicase-2.10.0/src/ascii.rs /Users/sterlinglong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unicase-2.10.0/src/unicode/mod.rs /Users/sterlinglong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unicase-2.10.0/src/unicode/map.rs
+
+/Users/sterlinglong/NonCloud/PAZA/Projects/games/partii/platform/target-main/debug/deps/libunicase-3cd4f51ec9f6876f.rmeta: /Users/sterlinglong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unicase-2.10.0/src/lib.rs /Users/sterlinglong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unicase-2.10.0/src/ascii.rs /Users/sterlinglong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unicase-2.10.0/src/unicode/mod.rs /Users/sterlinglong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unicase-2.10.0/src/unicode/map.rs
+
+/Users/sterlinglong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unicase-2.10.0/src/lib.rs:
+/Users/sterlinglong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unicase-2.10.0/src/ascii.rs:
+/Users/sterlinglong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unicase-2.10.0/src/unicode/mod.rs:
+/Users/sterlinglong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unicase-2.10.0/src/unicode/map.rs:

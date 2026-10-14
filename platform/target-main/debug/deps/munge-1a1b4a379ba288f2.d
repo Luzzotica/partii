@@ -1,0 +1,11 @@
+/Users/sterlinglong/NonCloud/PAZA/Projects/games/partii/platform/target-main/debug/deps/munge-1a1b4a379ba288f2.d: /Users/sterlinglong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/munge-0.4.7/src/lib.rs /Users/sterlinglong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/munge-0.4.7/src/__macro.rs /Users/sterlinglong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/munge-0.4.7/src/impls.rs /Users/sterlinglong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/munge-0.4.7/src/internal.rs /Users/sterlinglong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/munge-0.4.7/src/../example.md
+
+/Users/sterlinglong/NonCloud/PAZA/Projects/games/partii/platform/target-main/debug/deps/libmunge-1a1b4a379ba288f2.rlib: /Users/sterlinglong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/munge-0.4.7/src/lib.rs /Users/sterlinglong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/munge-0.4.7/src/__macro.rs /Users/sterlinglong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/munge-0.4.7/src/impls.rs /Users/sterlinglong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/munge-0.4.7/src/internal.rs /Users/sterlinglong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/munge-0.4.7/src/../example.md
+
+/Users/sterlinglong/NonCloud/PAZA/Projects/games/partii/platform/target-main/debug/deps/libmunge-1a1b4a379ba288f2.rmeta: /Users/sterlinglong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/munge-0.4.7/src/lib.rs /Users/sterlinglong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/munge-0.4.7/src/__macro.rs /Users/sterlinglong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/munge-0.4.7/src/impls.rs /Users/sterlinglong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/munge-0.4.7/src/internal.rs /Users/sterlinglong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/munge-0.4.7/src/../example.md
+
+/Users/sterlinglong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/munge-0.4.7/src/lib.rs:
+/Users/sterlinglong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/munge-0.4.7/src/__macro.rs:
+/Users/sterlinglong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/munge-0.4.7/src/impls.rs:
+/Users/sterlinglong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/munge-0.4.7/src/internal.rs:
+/Users/sterlinglong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/munge-0.4.7/src/../example.md:

@@ -110,6 +110,12 @@ describe("web hosting", () => {
     expect(route.res.headers.get("cross-origin-opener-policy")).toBe("same-origin");
     expect(route.res.headers.get("cross-origin-embedder-policy")).toBe("require-corp");
     expect((await api("GET", site(s.game, "levels/3"))).text).toBe("root");
+    // iOS universal links: the association file is JSON at its exact path, never the SPA page.
+    await deploy(s, { "index.html": "root", ".well-known/apple-app-site-association": '{"applinks":{}}' }, { spa: true });
+    const aasa = await api("GET", site(s.game, ".well-known/apple-app-site-association"));
+    expect(aasa.status).toBe(200);
+    expect(aasa.res.headers.get("content-type")).toBe("application/json");
+    expect(aasa.text).toBe('{"applinks":{}}');
   });
 
   it("refuses bad deploys, other developers, unknown and reserved hosts", async () => {

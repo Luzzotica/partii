@@ -242,7 +242,9 @@ const TYPES: Record<string, string> = {
   woff: "font/woff", woff2: "font/woff2", ttf: "font/ttf", otf: "font/otf",
   data: "application/octet-stream", pck: "application/octet-stream", bin: "application/octet-stream", glb: "model/gltf-binary", gltf: "model/gltf+json",
 };
-const typeOf = (path: string) => TYPES[path.split(".").pop()!.toLowerCase()] ?? "application/octet-stream";
+/** Files whose type isn't in their name. */
+const KNOWN_PATHS: Record<string, string> = { ".well-known/apple-app-site-association": "application/json" };
+const typeOf = (path: string) => KNOWN_PATHS[path] ?? TYPES[path.split(".").pop()!.toLowerCase()] ?? "application/octet-stream";
 
 /** Per isolate, briefly: the live deploy and its manifest per game. */
 const siteCache = new Map<string, { at: number; deploy: string | null; manifest: Manifest | null }>();
