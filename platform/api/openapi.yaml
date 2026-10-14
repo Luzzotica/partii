@@ -722,12 +722,43 @@ paths:
   /v1/admin/ugc/{id}/moderate:
     post:
       operationId: adminUgcModerate
-      summary: Hide an item (and its files) or bring it back, as a platform operator (takedowns).
+      summary: Hide an item (and its files) or bring it back, as a platform operator (takedowns). Admin or moderator token.
       x-auth: admin
       x-cli: admin ugc moderate
       parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
       requestBody: { content: { application/json: { schema: { type: object, required: [action], properties: { action: { type: string, enum: [hide, unhide] }, reason: { type: string } } } } } }
       responses: { "200": { description: "{item}" } }
+  /v1/admin/ugc/review:
+    get:
+      operationId: adminUgcReview
+      summary: The moderation queue, oldest first. Every new item, new version, edit and report is an entry; pending only unless all=1. Each has the item, file_url and thumbnail_url (they work while hidden) and open reports. Admin or moderator token.
+      x-auth: admin
+      x-cli: admin ugc review
+      parameters:
+        - { name: after, in: query, schema: { type: integer } }
+        - { name: limit, in: query, schema: { type: integer } }
+        - { name: all, in: query, schema: { type: string } }
+      responses: { "200": { description: "{entries, pending, last_seq}" } }
+  /v1/admin/ugc/review/{seq}:
+    post:
+      operationId: adminUgcReviewDecide
+      summary: "Decide an entry: ok (visible; undoes an automatic hide) or hide (reason required: the rule it breaks, which the author sees). Settles every open entry and report for that item. Admin or moderator token."
+      x-auth: admin
+      x-cli: admin ugc decide
+      parameters: [{ name: seq, in: path, required: true, schema: { type: integer } }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [verdict], properties: { verdict: { type: string, enum: [ok, hide] }, reason: { type: string } } } } } }
+      responses: { "200": { description: "{item}" } }
+  /v1/admin/ugc/blobs/{game}/{sha256}:
+    get:
+      operationId: adminUgcBlob
+      summary: A player content file or thumbnail, hidden or not (for review). Admin or moderator token.
+      x-auth: admin
+      x-cli: admin ugc blob
+      x-response: binary
+      parameters:
+        - { name: game, in: path, required: true, schema: { type: string } }
+        - { name: sha256, in: path, required: true, schema: { type: string } }
+      responses: { "200": { description: "the bytes" } }
   /v1/players/me/ugc:
     get:
       operationId: ugcMine

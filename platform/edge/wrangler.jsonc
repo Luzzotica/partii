@@ -22,7 +22,7 @@
     // Dev only; staging and production set SECRETS_KEY as a secret.
     "SECRETS_KEY": "ZGV2LW9ubHktc2VjcmV0cy1rZXktMzItYnl0ZXMhISE",
     "TURN_MODE": "none",
-    "ADMIN_TOKEN": "dev-admin-token",
+    "ADMIN_TOKEN": "dev-admin-token", "MODERATOR_TOKEN": "dev-moderator-token",
     "PLAYER_TOKEN_SECRET": "dev-only-player-secret",
     "ALLOW_FAKE_LOGIN": "1",
     "ALLOW_FAKE_STORE": "1",

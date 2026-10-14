@@ -180,3 +180,21 @@ button:disabled {
   background: var(--card);
   color: var(--ink);
 }
+
+footer {
+  max-width: 960px;
+  margin: 48px auto 24px;
+  padding: 0 16px;
+  font-size: 14px;
+  opacity: 0.7;
+}
+footer a {
+  color: inherit;
+}
+.policy {
+  max-width: 720px;
+  line-height: 1.6;
+}
+.policy li {
+  margin-bottom: 8px;
+}

@@ -33,6 +33,8 @@ export interface Env extends IceEnv, LimitEnv {
   FILES?: R2Bucket;
   FILES_KV?: KVNamespace;
   ADMIN_TOKEN?: string;
+  /** Player content moderation only (src/api/index.ts MODERATOR_OPS). */
+  MODERATOR_TOKEN?: string;
   PLAYER_TOKEN_SECRET: string;
   ALLOW_FAKE_LOGIN?: string;
   ALLOW_FAKE_STORE?: string;

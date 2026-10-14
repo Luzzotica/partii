@@ -137,8 +137,14 @@ export function operations(t: Transport) {
     ugcReport: (id: string, body: Record<string, unknown> = {}) => t.call("POST", `/v1/ugc/${encodeURIComponent(id)}/report`, "player", {}, body, "json"),
     /** Hide an item (and its files) or bring it back, as the game's developer. Resolves its reports. (developer) */
     ugcModerate: (id: string, body: Record<string, unknown> = {}) => t.call("POST", `/v1/ugc/${encodeURIComponent(id)}/moderate`, "developer", {}, body, "json"),
-    /** Hide an item (and its files) or bring it back, as a platform operator (takedowns). (admin) */
+    /** Hide an item (and its files) or bring it back, as a platform operator (takedowns). Admin or moderator token. (admin) */
     adminUgcModerate: (id: string, body: Record<string, unknown> = {}) => t.call("POST", `/v1/admin/ugc/${encodeURIComponent(id)}/moderate`, "admin", {}, body, "json"),
+    /** The moderation queue, oldest first. Every new item, new version, edit and report is an entry; pending only unless all=1. Each has the item, file_url and thumbnail_url (they work while hidden) and open reports. Admin or moderator token. (admin) */
+    adminUgcReview: (query: { after?: string | number; limit?: string | number; all?: string | number } = {}) => t.call("GET", `/v1/admin/ugc/review`, "admin", query, undefined, "json"),
+    /** Decide an entry: ok (visible; undoes an automatic hide) or hide (reason required: the rule it breaks, which the author sees). Settles every open entry and report for that item. Admin or moderator token. (admin) */
+    adminUgcReviewDecide: (seq: string, body: Record<string, unknown> = {}) => t.call("POST", `/v1/admin/ugc/review/${encodeURIComponent(seq)}`, "admin", {}, body, "json"),
+    /** A player content file or thumbnail, hidden or not (for review). Admin or moderator token. (admin) */
+    adminUgcBlob: (game: string, sha256: string) => t.call("GET", `/v1/admin/ugc/blobs/${encodeURIComponent(game)}/${encodeURIComponent(sha256)}`, "admin", {}, undefined, "binary"),
     /** The player's own items, hidden ones included (unpublished ones are not). (player) */
     ugcMine: (query: { game?: string | number } = {}) => t.call("GET", `/v1/players/me/ugc`, "player", query, undefined, "json"),
     /** The game's secrets and config. Secret values are never shown (only set, last 4, updated); config values are. (developer) */

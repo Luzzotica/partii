@@ -50,7 +50,7 @@ async function authorize(route: Route, env: Env, req: Request): Promise<Caller> 
     case "stripe":
       return {};
     case "admin":
-      await asAdmin(env, req);
+      await asAdmin(env, req, MODERATOR_OPS.has(route.op));
       return {};
     case "developer":
       return asDeveloper(env, req);
@@ -70,7 +70,10 @@ function errorResponse(c: Context, e: unknown) {
 }
 
 /** Player content routes, switched on per environment by the UGC var. */
-const isUgc = (op: string) => /^ugc[A-Z]/.test(op) || op === "adminUgcModerate";
+const isUgc = (op: string) => /^ugc[A-Z]/.test(op) || /^adminUgc[A-Z]/.test(op);
+
+/** Admin routes the moderator's token (MODERATOR_TOKEN) may also call: player content review only. */
+const MODERATOR_OPS = new Set(["adminUgcReview", "adminUgcReviewDecide", "adminUgcBlob", "adminUgcModerate"]);
 
 export function registerApi(app: Hono<{ Bindings: Env }>) {
   for (const route of ROUTES) {

@@ -96,9 +96,11 @@ function bearer(req: Request): string | null {
   return h.startsWith("Bearer ") ? h.slice(7).trim() : null;
 }
 
-export async function asAdmin(env: Env, req: Request) {
+/** The admin token; on the routes that allow it (moderator), the moderator's token too. */
+export async function asAdmin(env: Env, req: Request, moderator = false) {
   const t = bearer(req);
-  if (!t || !env.ADMIN_TOKEN || !eq(t, env.ADMIN_TOKEN)) throw new ApiError(401, "unauthorized", "admin token required", "operators only");
+  const ok = (secret?: string) => !!t && !!secret && eq(t, secret);
+  if (!ok(env.ADMIN_TOKEN) && !(moderator && ok(env.MODERATOR_TOKEN))) throw new ApiError(401, "unauthorized", moderator ? "admin or moderator token required" : "admin token required", "operators only");
 }
 
 export async function asDeveloper(env: Env, req: Request): Promise<Caller> {

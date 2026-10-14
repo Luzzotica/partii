@@ -87,6 +87,9 @@ Auth (`x-auth`):
 | `ugcReport` | `POST /v1/ugc/{id}/report` | player | `partii ugc report` |
 | `ugcModerate` | `POST /v1/ugc/{id}/moderate` | developer | `partii ugc moderate` |
 | `adminUgcModerate` | `POST /v1/admin/ugc/{id}/moderate` | admin | `partii admin ugc moderate` |
+| `adminUgcReview` | `GET /v1/admin/ugc/review` | admin | `partii admin ugc review` |
+| `adminUgcReviewDecide` | `POST /v1/admin/ugc/review/{seq}` | admin | `partii admin ugc decide` |
+| `adminUgcBlob` | `GET /v1/admin/ugc/blobs/{game}/{sha256}` | admin | `partii admin ugc blob` |
 | `ugcMine` | `GET /v1/players/me/ugc` | player | `partii ugc mine` |
 | `secretsList` | `GET /v1/games/{game}/secrets` | developer | `partii secrets list` |
 | `secretsSet` | `PUT /v1/games/{game}/secrets/{name}` | developer | `partii secrets set` |
@@ -753,12 +756,44 @@ Body fields: `action` (required), `reason`
 
 `POST /v1/admin/ugc/{id}/moderate` (auth: admin) · `partii admin ugc moderate`
 
-Hide an item (and its files) or bring it back, as a platform operator (takedowns).
+Hide an item (and its files) or bring it back, as a platform operator (takedowns). Admin or moderator token.
 
 Parameters:
 - `id` (path, required)
 
 Body fields: `action` (required), `reason`
+
+### adminUgcReview
+
+`GET /v1/admin/ugc/review` (auth: admin) · `partii admin ugc review`
+
+The moderation queue, oldest first. Every new item, new version, edit and report is an entry; pending only unless all=1. Each has the item, file_url and thumbnail_url (they work while hidden) and open reports. Admin or moderator token.
+
+Parameters:
+- `after` (query)
+- `limit` (query)
+- `all` (query)
+
+### adminUgcReviewDecide
+
+`POST /v1/admin/ugc/review/{seq}` (auth: admin) · `partii admin ugc decide`
+
+Decide an entry: ok (visible; undoes an automatic hide) or hide (reason required: the rule it breaks, which the author sees). Settles every open entry and report for that item. Admin or moderator token.
+
+Parameters:
+- `seq` (path, required)
+
+Body fields: `verdict` (required), `reason`
+
+### adminUgcBlob
+
+`GET /v1/admin/ugc/blobs/{game}/{sha256}` (auth: admin) · `partii admin ugc blob`
+
+A player content file or thumbnail, hidden or not (for review). Admin or moderator token.
+
+Parameters:
+- `game` (path, required)
+- `sha256` (path, required)
 
 ### ugcMine
 

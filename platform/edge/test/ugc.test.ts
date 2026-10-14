@@ -251,3 +251,83 @@ describe("player content switch", () => {
     expect((await app.request("/health", {}, off)).status).toBe(200);
   });
 });
+
+describe("player content: review queue (the moderator)", () => {
+  const MOD = "dev-moderator-token";
+  /** This item's pending entries. */
+  async function pendingFor(id: string) {
+    const all: any[] = [];
+    let after = 0;
+    for (;;) {
+      const r = await api("GET", `/v1/admin/ugc/review?after=${after}&limit=50`, { token: MOD });
+      expect(r.status).toBe(200);
+      all.push(...r.json.entries);
+      if (r.json.entries.length < 50) break;
+      after = r.json.entries.at(-1).seq;
+    }
+    return all.filter((e) => e.item.id === id);
+  }
+
+  it("queues new items, versions and edits; the moderator token reviews but can't do other admin work", async () => {
+    const s = await setup();
+    const t = await signedIn(s.key);
+    const thumb = await upload(s.key, t, s.game, PNG, "thumbnail");
+    const it1 = await publish(s, t, { thumbnail_sha256: thumb });
+    let q = await pendingFor(it1.id);
+    expect(q.map((e) => e.cause)).toEqual(["new"]);
+    expect(q[0].item.title).toBe("Canyon run");
+    // The moderator can fetch the file and thumbnail.
+    const file = await api("GET", q[0].file_url, { token: MOD });
+    expect(file.status).toBe(200);
+    expect((await api("GET", q[0].thumbnail_url, { token: MOD })).res.headers.get("content-type")).toBe("image/png");
+    expect((await api("GET", q[0].file_url)).status).toBe(401);
+    // A version and a text edit each queue; changing nothing reviewable doesn't.
+    const sha2 = await upload(s.key, t, s.game, JSON.stringify({ level: uniq() }));
+    await api("POST", `/v1/ugc/${it1.id}/versions`, { key: s.key, token: t, body: { sha256: sha2, client_version: "0.9.2" } });
+    await api("PATCH", `/v1/ugc/${it1.id}`, { key: s.key, token: t, body: { title: "Canyon run 2" } });
+    await api("PATCH", `/v1/ugc/${it1.id}`, { key: s.key, token: t, body: { visibility: "unlisted" } });
+    q = await pendingFor(it1.id);
+    expect(q.map((e) => e.cause)).toEqual(["new", "version", "edit"]);
+    // ok settles every open entry for the item.
+    const ok = await api("POST", `/v1/admin/ugc/review/${q[0].seq}`, { token: MOD, body: { verdict: "ok" } });
+    expect(ok.json.item.title).toBe("Canyon run 2");
+    expect(await pendingFor(it1.id)).toEqual([]);
+    // The moderator's token is for review only.
+    expect((await api("GET", "/v1/admin/usage", { token: MOD })).status).toBe(401);
+    expect((await api("POST", "/v1/admin/developers", { token: MOD, body: { email: `x${uniq()}@example.com` } })).status).toBe(401);
+  });
+
+  it("hide needs a reason the author sees; files go with it", async () => {
+    const s = await setup();
+    const t = await signedIn(s.key);
+    const it1 = await publish(s, t);
+    const [e] = await pendingFor(it1.id);
+    expect((await api("POST", `/v1/admin/ugc/review/${e.seq}`, { token: MOD, body: { verdict: "hide" } })).status).toBe(400);
+    const hid = await api("POST", `/v1/admin/ugc/review/${e.seq}`, { token: MOD, body: { verdict: "hide", reason: "sexual content (rule 1)" } });
+    expect(hid.json.item.hidden_reason).toBe("sexual content (rule 1)");
+    expect((await api("GET", `/v1/ugc/${it1.id}`, { key: s.key })).status).toBe(404);
+    expect((await api("GET", it1.download_url)).status).toBe(404);
+    const mine = await api("GET", `/v1/players/me/ugc`, { key: s.key, token: t });
+    expect(mine.json.items[0].hidden_reason).toBe("sexual content (rule 1)");
+  });
+
+  it("three players reporting an item hide it until the moderator decides; ok brings it back", async () => {
+    const s = await setup();
+    const author = await signedIn(s.key);
+    const it1 = await publish(s, author);
+    for (let i = 0; i < 3; i++) {
+      const r = await api("POST", `/v1/ugc/${it1.id}/report`, { key: s.key, token: await signedIn(s.key, `R${i}`), body: { reason: "nsfw" } });
+      expect(r.json.reported).toBe(true);
+      expect((await api("GET", `/v1/ugc/${it1.id}`, { key: s.key })).status).toBe(i < 2 ? 200 : 404);
+    }
+    const q = await pendingFor(it1.id);
+    expect(q.filter((e) => e.cause === "reports").length).toBe(3);
+    expect(q.at(-1).reports.length).toBe(3);
+    expect(q.at(-1).item.hidden_reason).toContain("waiting for review");
+    // Still reviewable while hidden.
+    expect((await api("GET", q.at(-1).file_url, { token: MOD })).status).toBe(200);
+    await api("POST", `/v1/admin/ugc/review/${q.at(-1).seq}`, { token: MOD, body: { verdict: "ok", reason: "a normal level" } });
+    expect((await api("GET", `/v1/ugc/${it1.id}`, { key: s.key })).status).toBe(200);
+    expect(await pendingFor(it1.id)).toEqual([]);
+  });
+});

@@ -4,6 +4,7 @@
 import { StrictMode, useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { createClient, PartiiError } from "../../../sdk/ts/src/client";
+import policyText from "../../../docs/CONTENT-POLICY.md?raw";
 import "./style.css";
 
 const API = import.meta.env.VITE_PARTII_API ?? "https://partii-edge.partii-games.workers.dev";
@@ -264,6 +265,29 @@ function SignIn({ onDone }: { onDone: (token: string, p: Player) => void }) {
   );
 }
 
+// ── The player content policy (docs/CONTENT-POLICY.md, rendered here) ──
+/** Where takedown requests and appeals go. */
+const CONTACT = import.meta.env.VITE_CONTENT_CONTACT ?? "{{CONTACT}}";
+
+/** Enough Markdown for the policy: headings, paragraphs, lists, **bold**. */
+function Markdown({ text }: { text: string }) {
+  const inline = (s: string) => s.split(/(\*\*[^*]+\*\*)/).map((p, i) => (p.startsWith("**") ? <strong key={i}>{p.slice(2, -2)}</strong> : p));
+  const out: JSX.Element[] = [];
+  for (const [i, block] of text.trim().split(/\n\s*\n/).entries()) {
+    const lines = block.split("\n");
+    if (block.startsWith("# ")) out.push(<h1 key={i}>{inline(block.slice(2))}</h1>);
+    else if (block.startsWith("## ")) out.push(<h2 key={i}>{inline(block.slice(3))}</h2>);
+    else if (/^\d+\. /.test(block)) out.push(<ol key={i}>{lines.map((l, j) => <li key={j}>{inline(l.replace(/^\d+\. /, ""))}</li>)}</ol>);
+    else if (block.startsWith("- ")) out.push(<ul key={i}>{lines.map((l, j) => <li key={j}>{inline(l.slice(2))}</li>)}</ul>);
+    else out.push(<p key={i}>{inline(block)}</p>);
+  }
+  return <article className="policy">{out}</article>;
+}
+
+function ContentPolicy() {
+  return <Markdown text={policyText.replaceAll("{{CONTACT}}", CONTACT)} />;
+}
+
 function App() {
   const [path, go] = usePath();
   const { player, owned, refresh, signedIn } = usePlayer();
@@ -277,6 +301,7 @@ function App() {
   if (m) page = <GamePage id={m[1]} owned={owned} refresh={refresh} />;
   else if (path.startsWith("/library")) page = <Library go={go} />;
   else if (path.startsWith("/signin")) page = <SignIn onDone={signedIn} />;
+  else if (path.startsWith("/content-policy")) page = <ContentPolicy />;
   else page = <Front go={go} />;
   return (
     <>
@@ -290,6 +315,11 @@ function App() {
         {player && !player.providers.includes("email") ? link("/signin", "Sign in") : <span className="muted" data-testid="who">{player?.display_name}</span>}
       </nav>
       <main>{page}</main>
+      <footer>
+        <a href="/content-policy" onClick={(e) => (e.preventDefault(), go("/content-policy"))}>
+          Player content policy
+        </a>
+      </footer>
     </>
   );
 }

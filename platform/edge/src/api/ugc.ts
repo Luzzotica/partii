@@ -30,6 +30,8 @@ export const UGC_LIMITS = {
   reportsPerHour: 20,
   /** Hashes a version may pin. */
   refs: 200,
+  /** Distinct players' open reports that hide an item until the moderator looks. */
+  autoHideReports: 3,
 };
 const TITLE_MAX = 80;
 const DESCRIPTION_MAX = 2000;
@@ -251,20 +253,36 @@ async function versionsOf(req: Request, env: Env, r: ItemRow) {
   return v.results.map((x) => ({ ...x, refs: JSON.parse(x.refs) as string[], download_url: blobUrl(req, r.game_id, x.sha256) }));
 }
 
-async function moderate(env: Env, req: Request, r: ItemRow, body: Record<string, any>) {
-  const action = String(body.action ?? "");
-  if (action !== "hide" && action !== "unhide") throw bad("action is hide or unhide");
-  const at = action === "hide" ? now() : null;
-  const reason = action === "hide" ? text(body.reason, "reason", 500) || "moderation" : null;
+/** Hide (reason) or unhide (null) an item and its files. A moderator's decision also settles its open reports and review entries. */
+async function setHidden(env: Env, r: ItemRow, reason: string | null, decided: { verdict: "ok" | "hide"; note: string } | null) {
+  const at = reason ? now() : null;
   const versions = await env.DB.prepare("SELECT sha256 FROM ugc_versions WHERE item_id = ?").bind(r.id).all<{ sha256: string }>();
   const hashes = [...new Set([...versions.results.map((v) => v.sha256), ...(r.thumbnail_sha256 ? [r.thumbnail_sha256] : [])])];
   await env.DB.batch([
     env.DB.prepare("UPDATE ugc_items SET hidden_at = ?, hidden_reason = ? WHERE id = ?").bind(at, reason, r.id),
     ...hashes.map((h) => env.DB.prepare("UPDATE ugc_blobs SET hidden_at = ? WHERE game_id = ? AND sha256 = ?").bind(at, r.game_id, h)),
-    env.DB.prepare("UPDATE ugc_reports SET resolved_at = ? WHERE item_id = ? AND resolved_at IS NULL").bind(now(), r.id),
+    ...(decided
+      ? [
+          env.DB.prepare("UPDATE ugc_reports SET resolved_at = ? WHERE item_id = ? AND resolved_at IS NULL").bind(now(), r.id),
+          env.DB.prepare("UPDATE ugc_review SET done_at = ?, verdict = ?, note = ? WHERE item_id = ? AND done_at IS NULL").bind(now(), decided.verdict, decided.note, r.id),
+        ]
+      : []),
   ]);
+}
+
+async function moderate(env: Env, req: Request, r: ItemRow, body: Record<string, any>) {
+  const action = String(body.action ?? "");
+  if (action !== "hide" && action !== "unhide") throw bad("action is hide or unhide");
+  const reason = action === "hide" ? text(body.reason, "reason", 500) || "moderation" : null;
+  await setHidden(env, r, reason, { verdict: reason ? "hide" : "ok", note: reason ?? "" });
   return { item: itemView(req, (await item(env, r.id))!, { hidden_reason: reason }) };
 }
+
+/** Queue an item for the moderator (a statement for the caller's batch). */
+const queueReview = (env: Env, itemId: string, game: string, version: number, cause: "new" | "version" | "edit" | "reports") =>
+  env.DB.prepare("INSERT INTO ugc_review (item_id, game_id, version, cause, created_at) VALUES (?, ?, ?, ?, ?)").bind(itemId, game, version, cause, now());
+
+const adminBlobUrl = (req: Request, game: string, sha: string) => `${origin(req)}/v1/admin/ugc/blobs/${encodeURIComponent(game)}/${sha}`;
 
 /** Signed ticket for a Worker upload (when R2 direct uploads are unavailable). */
 export async function uploadTicket(env: Env, claims: { g: string; h: string; s: number; exp: number }) {
@@ -404,6 +422,7 @@ export const ugcHandlers: Handlers = {
           ).bind(id, params.game, player, kind, fields.title, fields.description, JSON.stringify(fields.tags), fields.visibility, code, hash, size, fields.client_version, thumb, at, at),
           env.DB.prepare("INSERT INTO ugc_versions (item_id, version, author_id, sha256, size, client_version, notes, refs, created_at) VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?)").bind(id, player, hash, size, fields.client_version, fields.notes, JSON.stringify(refs), at),
           env.DB.prepare("INSERT INTO ugc_search (item_id, title, description, tags) VALUES (?, ?, ?, ?)").bind(...searchRow({ id, ...fields })),
+          queueReview(env, id, params.game, 1, "new"),
         ]);
         break;
       } catch (e) {
@@ -511,6 +530,7 @@ export const ugcHandlers: Handlers = {
       ),
       env.DB.prepare("DELETE FROM ugc_search WHERE item_id = ?").bind(r.id),
       env.DB.prepare("INSERT INTO ugc_search (item_id, title, description, tags) VALUES (?, ?, ?, ?)").bind(...searchRow({ id: r.id, ...next })),
+      ...(next.title !== r.title || next.description !== r.description || JSON.stringify(next.tags) !== r.tags || next.thumbnail_sha256 !== r.thumbnail_sha256 ? [queueReview(env, r.id, r.game_id, r.version, "edit")] : []),
     ]);
     return { item: itemView(req, (await item(env, r.id))!) };
   },
@@ -540,6 +560,7 @@ export const ugcHandlers: Handlers = {
     await env.DB.batch([
       env.DB.prepare("INSERT INTO ugc_versions (item_id, version, author_id, sha256, size, client_version, notes, refs, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(r.id, version, r.author_id, hash, size, client_version, notes, JSON.stringify(refs), at),
       env.DB.prepare("UPDATE ugc_items SET version = ?, sha256 = ?, size = ?, client_version = ?, updated_at = ? WHERE id = ? AND version = ?").bind(version, hash, size, client_version, at, r.id, r.version),
+      queueReview(env, r.id, r.game_id, version, "version"),
     ]);
     const after = (await item(env, r.id))!;
     return { item: { ...itemView(req, after), versions: await versionsOf(req, env, after) } };
@@ -575,7 +596,12 @@ export const ugcHandlers: Handlers = {
     const player = caller.player!.id;
     if ((await perHour(env, "SELECT COUNT(*) AS n FROM ugc_reports WHERE player_id = ? AND created_at > ?", player)) >= UGC_LIMITS.reportsPerHour) throw limited("reports");
     const res = await env.DB.prepare("INSERT OR IGNORE INTO ugc_reports (item_id, player_id, reason, created_at) VALUES (?, ?, ?, ?)").bind(r.id, player, reason, now()).run();
-    if ((res.meta.changes ?? 0) > 0) await env.DB.prepare("UPDATE ugc_items SET reports = reports + 1 WHERE id = ?").bind(r.id).run();
+    if ((res.meta.changes ?? 0) > 0) {
+      await env.DB.batch([env.DB.prepare("UPDATE ugc_items SET reports = reports + 1 WHERE id = ?").bind(r.id), queueReview(env, r.id, r.game_id, r.version, "reports")]);
+      // Enough players reporting it hides it until the moderator decides (their reports stay open).
+      const open = await env.DB.prepare("SELECT COUNT(*) AS n FROM ugc_reports WHERE item_id = ? AND resolved_at IS NULL").bind(r.id).first<{ n: number }>();
+      if (r.hidden_at === null && Number(open?.n ?? 0) >= UGC_LIMITS.autoHideReports) await setHidden(env, r, "reported by players; waiting for review", null);
+    }
     return { reported: true };
   },
 
@@ -605,6 +631,58 @@ export const ugcHandlers: Handlers = {
     const r = await item(env, params.id);
     if (!r) throw new ApiError(404, "not_found", "no such item");
     return moderate(env, req, r, body);
+  },
+
+  async adminUgcReview({ env, req, query }) {
+    const after = Number(query.after ?? 0) || 0;
+    const limit = Math.min(Math.max(Number(query.limit ?? 20) || 20, 1), PAGE_MAX);
+    const all = query.all === "1" || query.all === "true";
+    const rows = await env.DB.prepare(`SELECT * FROM ugc_review WHERE seq > ?${all ? "" : " AND done_at IS NULL"} ORDER BY seq LIMIT ?`)
+      .bind(after, limit)
+      .all<{ seq: number; item_id: string; game_id: string; version: number; cause: string; created_at: number; done_at: number | null; verdict: string | null; note: string | null }>();
+    const pending = await env.DB.prepare("SELECT COUNT(*) AS n, MAX(seq) AS last FROM ugc_review WHERE done_at IS NULL").first<{ n: number; last: number | null }>();
+    const entries = [];
+    for (const x of rows.results) {
+      const r = await item(env, x.item_id);
+      if (!r) continue;
+      const reports = await env.DB.prepare("SELECT reason, created_at FROM ugc_reports WHERE item_id = ? AND resolved_at IS NULL ORDER BY created_at DESC LIMIT 20").bind(r.id).all();
+      entries.push({
+        seq: x.seq,
+        cause: x.cause,
+        version: x.version,
+        queued_at: x.created_at,
+        done_at: x.done_at,
+        verdict: x.verdict,
+        note: x.note,
+        item: itemView(req, r, { hidden_reason: r.hidden_reason, deleted: r.deleted_at !== null }),
+        // These work while the item is hidden (moderator only).
+        file_url: adminBlobUrl(req, r.game_id, r.sha256),
+        thumbnail_url: r.thumbnail_sha256 ? adminBlobUrl(req, r.game_id, r.thumbnail_sha256) : null,
+        reports: reports.results,
+      });
+    }
+    return { entries, pending: Number(pending?.n ?? 0), last_seq: pending?.last ?? null };
+  },
+
+  async adminUgcReviewDecide({ env, req, params, body }) {
+    const row = await env.DB.prepare("SELECT item_id FROM ugc_review WHERE seq = ?").bind(Number(params.seq)).first<{ item_id: string }>();
+    if (!row) throw new ApiError(404, "not_found", "no such review entry");
+    const r = (await item(env, row.item_id))!;
+    const verdict = String(body.verdict ?? "");
+    if (verdict !== "ok" && verdict !== "hide") throw bad("verdict is ok or hide");
+    const reason = text(body.reason, "reason", 500);
+    if (verdict === "hide" && !reason) throw bad("say which rule it breaks (reason)", "e.g. \"sexual content (policy 1)\"");
+    // ok: visible (undoes an automatic hide); hide: hidden with the reason the author sees.
+    await setHidden(env, r, verdict === "hide" ? reason : null, { verdict, note: reason });
+    return { item: itemView(req, (await item(env, r.id))!, { hidden_reason: verdict === "hide" ? reason : null }) };
+  },
+
+  async adminUgcBlob({ env, params }) {
+    const hash = sha(params.sha256);
+    const row = await env.DB.prepare("SELECT kind FROM ugc_blobs WHERE game_id = ? AND sha256 = ?").bind(params.game, hash).first<{ kind: string }>();
+    const o = row ? await files(env).get(blobKey(params.game, hash)) : null;
+    if (!o) throw new ApiError(404, "not_found", "no such file");
+    return new Response(o.body, { headers: { "content-type": row!.kind === "thumbnail" ? "image/png" : "application/octet-stream", "content-length": String(o.size), "cache-control": "no-store" } });
   },
 
   async ugcMine({ env, req, caller, query }) {

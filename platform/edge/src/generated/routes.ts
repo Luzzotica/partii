@@ -479,6 +479,27 @@ export const ROUTES: Route[] = [
     "body": "json"
   },
   {
+    "op": "adminUgcReview",
+    "method": "GET",
+    "path": "/v1/admin/ugc/review",
+    "auth": "admin",
+    "body": "none"
+  },
+  {
+    "op": "adminUgcReviewDecide",
+    "method": "POST",
+    "path": "/v1/admin/ugc/review/:seq",
+    "auth": "admin",
+    "body": "json"
+  },
+  {
+    "op": "adminUgcBlob",
+    "method": "GET",
+    "path": "/v1/admin/ugc/blobs/:game/:sha256",
+    "auth": "admin",
+    "body": "none"
+  },
+  {
     "op": "ugcMine",
     "method": "GET",
     "path": "/v1/players/me/ugc",
