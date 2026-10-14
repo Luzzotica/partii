@@ -214,7 +214,7 @@ function MainMenu({
             <strong className="text-white/70">MOUSE</strong> to aim
           </p>
           <p className="mt-2 md:hidden">
-            On a phone, use the stick on the left.
+            On a phone, use the stick at the bottom.
           </p>
         </div>
 
