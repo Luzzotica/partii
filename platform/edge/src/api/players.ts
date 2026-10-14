@@ -143,7 +143,7 @@ export const playerHandlers: Handlers = {
     const provider = String(body.provider ?? "");
     // Steam checks the ticket with the game's own key when it has one.
     const subject = provider === "steam" ? await steamTicketSubject(env, ctx.caller.project!, body) : await verifyProvider(env, provider, body);
-    const name = String(body.display_name ?? (provider === "email" ? String(body.email).split("@")[0] : "Player"));
+    const name = String(body.display_name ?? body.alias ?? (provider === "email" ? String(body.email).split("@")[0] : "Player"));
     return signIn(env, provider, subject, await currentPlayer(ctx), name);
   },
 

@@ -1,10 +1,12 @@
 // Sign-in providers. Each turns a proof into a stable subject id:
 // email (a code we sent), apple / google (an ID token checked against the
-// provider's published keys), discord (an OAuth code), steam (a session
+// provider's published keys), gamecenter (a GameKit identity signature,
+// gamecenter.ts), discord (an OAuth code), steam (a session
 // ticket checked with Valve), fake (dev and staging only).
 
 import type { Env } from "../index";
 import { ApiError, bad, b64url, fromB64url, now, sha256hex } from "./core";
+import { verifyGameCenter } from "./gamecenter";
 
 const unconfigured = (p: string, what: string) =>
   new ApiError(400, "provider_not_configured", `${p} sign-in is not configured on this platform`, `set ${what} on the edge`);
@@ -19,7 +21,10 @@ export async function verifyProvider(env: Env, provider: string, body: Record<st
       return body.subject;
     case "apple":
       if (!env.APPLE_CLIENT_IDS) throw unconfigured("Apple", "APPLE_CLIENT_IDS");
-      return (await verifyIdToken(String(body.id_token ?? ""), "https://appleid.apple.com/auth/keys", ["https://appleid.apple.com"], env.APPLE_CLIENT_IDS.split(","), fetcher)).sub;
+      // identity_token is what Apple's SDKs call it.
+      return (await verifyIdToken(String(body.id_token ?? body.identity_token ?? ""), "https://appleid.apple.com/auth/keys", ["https://appleid.apple.com"], env.APPLE_CLIENT_IDS.split(","), fetcher)).sub;
+    case "gamecenter":
+      return verifyGameCenter(env, body, fetcher);
     case "google":
       if (!env.GOOGLE_CLIENT_IDS) throw unconfigured("Google", "GOOGLE_CLIENT_IDS");
       return (await verifyIdToken(String(body.id_token ?? ""), "https://www.googleapis.com/oauth2/v3/certs", ["accounts.google.com", "https://accounts.google.com"], env.GOOGLE_CLIENT_IDS.split(","), fetcher)).sub;
@@ -29,7 +34,7 @@ export async function verifyProvider(env: Env, provider: string, body: Record<st
       // Games sign in with their own Steam key (steam.ts); this is the platform-wide fallback.
       return verifySteamTicket(env, String(body.ticket ?? ""), fetcher, body.identity === undefined ? undefined : String(body.identity), body.app_id === undefined ? undefined : String(body.app_id));
     default:
-      throw bad(`unknown provider ${provider}`, "one of email, apple, google, discord, steam");
+      throw bad(`unknown provider ${provider}`, "one of email, apple, gamecenter, google, discord, steam");
   }
 }
 
@@ -63,8 +68,13 @@ async function jwks(url: string, fetcher: typeof fetch): Promise<(JsonWebKey & {
 export async function verifyIdToken(token: string, jwksUrl: string, issuers: string[], audiences: string[], fetcher: typeof fetch = fetch): Promise<{ sub: string; email?: string }> {
   const parts = token.split(".");
   if (parts.length !== 3) throw bad("id_token is not a JWT");
-  const header = JSON.parse(new TextDecoder().decode(fromB64url(parts[0])));
-  const claims = JSON.parse(new TextDecoder().decode(fromB64url(parts[1])));
+  let header, claims;
+  try {
+    header = JSON.parse(new TextDecoder().decode(fromB64url(parts[0])));
+    claims = JSON.parse(new TextDecoder().decode(fromB64url(parts[1])));
+  } catch {
+    throw new ApiError(401, "bad_token", "id_token is not a readable JWT", "send the identity token exactly as the SDK returned it");
+  }
   if (header.alg !== "RS256") throw bad("id_token must be RS256");
   const jwk = (await jwks(jwksUrl, fetcher)).find((k) => k.kid === header.kid);
   if (!jwk) throw new ApiError(401, "bad_token", "id_token signed by an unknown key");
