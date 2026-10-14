@@ -181,6 +181,16 @@ export function operations(t: Transport) {
     errorsGet: (game: string, fingerprint: string) => t.call("GET", `/v1/games/${encodeURIComponent(game)}/errors/${encodeURIComponent(fingerprint)}`, "developer", {}, undefined, "json"),
     /** Mark an error group open, fixed or ignored. A fixed group reopens when it's reported again. (developer) */
     errorsUpdate: (game: string, fingerprint: string, body: Record<string, unknown> = {}) => t.call("POST", `/v1/games/${encodeURIComponent(game)}/errors/${encodeURIComponent(fingerprint)}`, "developer", {}, body, "json"),
+    /** The game's boards, which way each sorts, and how many scores were submitted. (developer) */
+    leaderboardsList: (game: string) => t.call("GET", `/v1/games/${encodeURIComponent(game)}/leaderboards`, "developer", {}, undefined, "json"),
+    /** The top players on a board (period daily, weekly or all; limit up to 100, default 10): {rank, player_id, display_name, score, meta, achieved_at}. With a player token, me is that player's best on the board, with its rank (null if none). Days and weeks are UTC; weeks start Monday; resets_at says when the period ends. (key) */
+    leaderboardGet: (game: string, board: string, query: { period?: string | number; limit?: string | number } = {}) => t.call("GET", `/v1/games/${encodeURIComponent(game)}/leaderboards/${encodeURIComponent(board)}`, "key", query, undefined, "json"),
+    /** Submit a score, once per run. Each board keeps the player's best (a worse score only counts as a play) for today, this week and all time. meta is flat (short strings, numbers, bools; 1 KB) and is kept with the best. The board is made on the first submit, higher-is-better. Returns best per period with rank and improved. (player) */
+    leaderboardSubmit: (game: string, board: string, body: Record<string, unknown> = {}) => t.call("POST", `/v1/games/${encodeURIComponent(game)}/leaderboards/${encodeURIComponent(board)}`, "player", {}, body, "json"),
+    /** Set which way a board sorts: higher_is_better false for times (the lowest wins). Set it before players submit. (developer) */
+    leaderboardConfig: (game: string, board: string, body: Record<string, unknown> = {}) => t.call("PUT", `/v1/games/${encodeURIComponent(game)}/leaderboards/${encodeURIComponent(board)}/config`, "developer", {}, body, "json"),
+    /** Remove a player's scores from a board (every period), e.g. a cheater's. (developer) */
+    leaderboardRemovePlayer: (game: string, board: string, player: string) => t.call("DELETE", `/v1/games/${encodeURIComponent(game)}/leaderboards/${encodeURIComponent(board)}/players/${encodeURIComponent(player)}`, "developer", {}, undefined, "json"),
     /** The game's look on partii's pages (the phone controller), with file names replaced by URLs. Public; theme is null when none is set. (public) */
     themeGet: (game: string) => t.call("GET", `/v1/games/${encodeURIComponent(game)}/theme`, "public", {}, undefined, "json"),
     /** Set the game's theme (replaces it): name, colors {role: #hex}, fonts {heading, body} (an uploaded font file or a font-family list), radius, border, lip, caps, letter_spacing, background_image, logo. Upload files first. From the CLI: --body @theme.json. See docs/CONTROLLER.md. (developer) */

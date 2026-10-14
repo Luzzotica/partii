@@ -17,6 +17,7 @@ import { steamHandlers } from "./steam";
 import { themeHandlers } from "./theme";
 import { webHandlers } from "./web";
 import { analyticsHandlers } from "./analytics";
+import { leaderboardHandlers } from "./leaderboards";
 
 export interface Ctx {
   env: Env;
@@ -46,6 +47,7 @@ export const HANDLERS: Handlers = {
   ...themeHandlers,
   ...webHandlers,
   ...analyticsHandlers,
+  ...leaderboardHandlers,
 };
 
 async function authorize(route: Route, env: Env, req: Request): Promise<Caller> {

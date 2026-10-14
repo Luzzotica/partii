@@ -626,6 +626,41 @@ export const ROUTES: Route[] = [
     "body": "json"
   },
   {
+    "op": "leaderboardsList",
+    "method": "GET",
+    "path": "/v1/games/:game/leaderboards",
+    "auth": "developer",
+    "body": "none"
+  },
+  {
+    "op": "leaderboardGet",
+    "method": "GET",
+    "path": "/v1/games/:game/leaderboards/:board",
+    "auth": "key",
+    "body": "none"
+  },
+  {
+    "op": "leaderboardSubmit",
+    "method": "POST",
+    "path": "/v1/games/:game/leaderboards/:board",
+    "auth": "player",
+    "body": "json"
+  },
+  {
+    "op": "leaderboardConfig",
+    "method": "PUT",
+    "path": "/v1/games/:game/leaderboards/:board/config",
+    "auth": "developer",
+    "body": "json"
+  },
+  {
+    "op": "leaderboardRemovePlayer",
+    "method": "DELETE",
+    "path": "/v1/games/:game/leaderboards/:board/players/:player",
+    "auth": "developer",
+    "body": "none"
+  },
+  {
     "op": "themeGet",
     "method": "GET",
     "path": "/v1/games/:game/theme",

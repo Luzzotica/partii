@@ -946,6 +946,59 @@ paths:
         - { name: fingerprint, in: path, required: true, schema: { type: string } }
       requestBody: { content: { application/json: { schema: { type: object, required: [status], properties: { status: { type: string, enum: [open, fixed, ignored] } } } } } }
       responses: { "200": { description: "{fingerprint, status}" } }
+  # ── Leaderboards (src/api/leaderboards.ts). docs/GUIDE.md §3 ──
+  /v1/games/{game}/leaderboards:
+    get:
+      operationId: leaderboardsList
+      summary: The game's boards, which way each sorts, and how many scores were submitted.
+      x-auth: developer
+      x-cli: leaderboards list
+      parameters: [{ name: game, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: "{boards}" } }
+  /v1/games/{game}/leaderboards/{board}:
+    get:
+      operationId: leaderboardGet
+      summary: "The top players on a board (period daily, weekly or all; limit up to 100, default 10): {rank, player_id, display_name, score, meta, achieved_at}. With a player token, me is that player's best on the board, with its rank (null if none). Days and weeks are UTC; weeks start Monday; resets_at says when the period ends."
+      x-auth: key
+      x-cli: leaderboards get
+      parameters:
+        - { name: game, in: path, required: true, schema: { type: string } }
+        - { name: board, in: path, required: true, schema: { type: string } }
+        - { name: period, in: query, schema: { type: string, enum: [daily, weekly, all] } }
+        - { name: limit, in: query, schema: { type: integer } }
+      responses: { "200": { description: "{board, period, higher_is_better, resets_at, players, total_plays, entries, me}" } }
+    post:
+      operationId: leaderboardSubmit
+      summary: "Submit a score, once per run. Each board keeps the player's best (a worse score only counts as a play) for today, this week and all time. meta is flat (short strings, numbers, bools; 1 KB) and is kept with the best. The board is made on the first submit, higher-is-better. Returns best per period with rank and improved."
+      x-auth: player
+      x-cli: leaderboards submit
+      parameters:
+        - { name: game, in: path, required: true, schema: { type: string } }
+        - { name: board, in: path, required: true, schema: { type: string } }
+      requestBody: { content: { application/json: { schema: { type: object, required: [score], properties: { score: { type: number }, meta: { type: object } } } } } }
+      responses: { "200": { description: "{board, score, best: {daily, weekly, all}}" } }
+  /v1/games/{game}/leaderboards/{board}/config:
+    put:
+      operationId: leaderboardConfig
+      summary: "Set which way a board sorts: higher_is_better false for times (the lowest wins). Set it before players submit."
+      x-auth: developer
+      x-cli: leaderboards config
+      parameters:
+        - { name: game, in: path, required: true, schema: { type: string } }
+        - { name: board, in: path, required: true, schema: { type: string } }
+      requestBody: { content: { application/json: { schema: { type: object, required: [higher_is_better], properties: { higher_is_better: { type: boolean } } } } } }
+      responses: { "200": { description: "{board, higher_is_better}" } }
+  /v1/games/{game}/leaderboards/{board}/players/{player}:
+    delete:
+      operationId: leaderboardRemovePlayer
+      summary: Remove a player's scores from a board (every period), e.g. a cheater's.
+      x-auth: developer
+      x-cli: leaderboards remove
+      parameters:
+        - { name: game, in: path, required: true, schema: { type: string } }
+        - { name: board, in: path, required: true, schema: { type: string } }
+        - { name: player, in: path, required: true, schema: { type: string } }
+      responses: { "200": { description: "{removed}" } }
   /v1/games/{game}/theme:
     get:
       operationId: themeGet

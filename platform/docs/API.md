@@ -108,6 +108,11 @@ Auth (`x-auth`):
 | `errorsList` | `GET /v1/games/{game}/errors` | developer | `partii errors list` |
 | `errorsGet` | `GET /v1/games/{game}/errors/{fingerprint}` | developer | `partii errors get` |
 | `errorsUpdate` | `POST /v1/games/{game}/errors/{fingerprint}` | developer | `partii errors mark` |
+| `leaderboardsList` | `GET /v1/games/{game}/leaderboards` | developer | `partii leaderboards list` |
+| `leaderboardGet` | `GET /v1/games/{game}/leaderboards/{board}` | key | `partii leaderboards get` |
+| `leaderboardSubmit` | `POST /v1/games/{game}/leaderboards/{board}` | player | `partii leaderboards submit` |
+| `leaderboardConfig` | `PUT /v1/games/{game}/leaderboards/{board}/config` | developer | `partii leaderboards config` |
+| `leaderboardRemovePlayer` | `DELETE /v1/games/{game}/leaderboards/{board}/players/{player}` | developer | `partii leaderboards remove` |
 | `themeGet` | `GET /v1/games/{game}/theme` | public | `partii theme get` |
 | `themeSet` | `PUT /v1/games/{game}/theme` | developer | `partii theme set` |
 | `themeDelete` | `DELETE /v1/games/{game}/theme` | developer | `partii theme delete` |
@@ -1010,6 +1015,62 @@ Parameters:
 - `fingerprint` (path, required)
 
 Body fields: `status` (required)
+
+### leaderboardsList
+
+`GET /v1/games/{game}/leaderboards` (auth: developer) · `partii leaderboards list`
+
+The game's boards, which way each sorts, and how many scores were submitted.
+
+Parameters:
+- `game` (path, required)
+
+### leaderboardGet
+
+`GET /v1/games/{game}/leaderboards/{board}` (auth: key) · `partii leaderboards get`
+
+The top players on a board (period daily, weekly or all; limit up to 100, default 10): {rank, player_id, display_name, score, meta, achieved_at}. With a player token, me is that player's best on the board, with its rank (null if none). Days and weeks are UTC; weeks start Monday; resets_at says when the period ends.
+
+Parameters:
+- `game` (path, required)
+- `board` (path, required)
+- `period` (query)
+- `limit` (query)
+
+### leaderboardSubmit
+
+`POST /v1/games/{game}/leaderboards/{board}` (auth: player) · `partii leaderboards submit`
+
+Submit a score, once per run. Each board keeps the player's best (a worse score only counts as a play) for today, this week and all time. meta is flat (short strings, numbers, bools; 1 KB) and is kept with the best. The board is made on the first submit, higher-is-better. Returns best per period with rank and improved.
+
+Parameters:
+- `game` (path, required)
+- `board` (path, required)
+
+Body fields: `score` (required), `meta`
+
+### leaderboardConfig
+
+`PUT /v1/games/{game}/leaderboards/{board}/config` (auth: developer) · `partii leaderboards config`
+
+Set which way a board sorts: higher_is_better false for times (the lowest wins). Set it before players submit.
+
+Parameters:
+- `game` (path, required)
+- `board` (path, required)
+
+Body fields: `higher_is_better` (required)
+
+### leaderboardRemovePlayer
+
+`DELETE /v1/games/{game}/leaderboards/{board}/players/{player}` (auth: developer) · `partii leaderboards remove`
+
+Remove a player's scores from a board (every period), e.g. a cheater's.
+
+Parameters:
+- `game` (path, required)
+- `board` (path, required)
+- `player` (path, required)
 
 ### themeGet
 

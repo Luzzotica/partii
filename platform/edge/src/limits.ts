@@ -8,7 +8,7 @@
 
 import { DurableObject } from "cloudflare:workers";
 
-export type LimitKind = "connect" | "session" | "create" | "join" | "login" | "events" | "events_ip" | "errors" | "errors_ip";
+export type LimitKind = "connect" | "session" | "create" | "join" | "login" | "events" | "events_ip" | "errors" | "errors_ip" | "scores";
 
 /** Per IP (or the key `allowed` is given), per minute. */
 export const LIMITS: Record<LimitKind, number> = {
@@ -27,6 +27,8 @@ export const LIMITS: Record<LimitKind, number> = {
   events_ip: 1200,
   errors: 30,
   errors_ip: 600,
+  /** Leaderboard submits, per game and player (one per run). */
+  scores: 30,
 };
 export const LIMIT_WINDOW_MS = 60_000;
 /** A limiter slower than this allows: a limiter problem must not stop play. */

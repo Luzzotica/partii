@@ -11,6 +11,7 @@ import type { Ctx, Handlers } from "./index";
 import { verifyProvider } from "./providers";
 import { steamTicketSubject } from "./steam";
 import { deleteUgcOf, mergeUgc } from "./ugc";
+import { deleteScoresOf, mergeScores } from "./leaderboards";
 
 const OFFLINE_TTL = 7 * 86400_000;
 
@@ -47,6 +48,7 @@ async function merge(env: Env, guest: string, into: string) {
       .run();
   }
   await mergeUgc(env, guest, into);
+  await mergeScores(env, guest, into);
   await env.DB.batch([
     env.DB.prepare("INSERT OR IGNORE INTO entitlements (player_id, game_id, sku, source, ref, created_at, revoked_at) SELECT ?, game_id, sku, source, ref, created_at, revoked_at FROM entitlements WHERE player_id = ?").bind(into, guest),
     env.DB.prepare("DELETE FROM entitlements WHERE player_id = ?").bind(guest),
@@ -161,6 +163,7 @@ export const playerHandlers: Handlers = {
     const saves = await files(env).list(`saves/${id}/`);
     for (const o of saves) await files(env).delete(o.key);
     await deleteUgcOf(env, id);
+    await deleteScoresOf(env, id);
     await env.DB.batch([
       env.DB.prepare("DELETE FROM identities WHERE player_id = ?").bind(id),
       env.DB.prepare("DELETE FROM saves WHERE player_id = ?").bind(id),

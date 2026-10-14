@@ -210,6 +210,23 @@ The API, in types:
 
 Under the hood these are plain API calls (`POST /v1/players/guest`, `PUT /v1/saves/{game}/{slot}` with `base_rev`, `GET /v1/players/me/entitlements?game=`), listed in [API.md](API.md); `partii-api` is a typed client for all of them if you need more.
 
+### Leaderboards
+
+Submit once per run, with a player token (guests count). Each board keeps every player's best for today, this week and all time. Days and weeks are UTC, and weeks start on Monday.
+
+```ts
+await api.leaderboardSubmit("rocket-to-heaven", "altitude", { score: 4200, meta: { play_time_seconds: 81.5, cause: "lava" } });
+const top = await api.leaderboardGet("rocket-to-heaven", "altitude", { period: "daily", limit: 10 });
+// top.entries: [{rank, player_id, display_name, score, meta, achieved_at}]
+// top.me: your best and rank (with a player token), or null
+// top.resets_at, top.players, top.total_plays
+```
+
+- **New boards** are created on the first submit, and higher scores win. For times, run `partii leaderboards config <game> <board> --higher-is-better false` before anyone submits.
+- **Worse scores** count as a play but don't replace the player's best. `meta` (flat, 1 KB) is kept with the best score.
+- **Signing in:** a guest's scores join the account it signs in to.
+- **Cheaters:** `partii leaderboards remove <game> <board> <player>` removes a player's scores. Deleted players drop off.
+
 ### Player content: levels, worlds, replays
 
 Players can publish what they make so that anyone can browse and download it. Only the author can change or unpublish it. Every call is in [API.md](API.md) under `ugc*`; reads take your key, and writes take the player token too.
