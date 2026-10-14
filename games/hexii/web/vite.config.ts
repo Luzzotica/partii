@@ -2,11 +2,28 @@ import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const gameDir = path.resolve(dir, "..");
+const sdkDir = path.resolve(dir, "../../../../platform/sdk/ts");
+
+/** Publishable staging key only. The developer token in that file stays out of the bundle. */
+function partiiPublic(): { api: string; key: string } {
+  const file = path.join(os.homedir(), ".config/partii/hexii-game.env");
+  if (!fs.existsSync(file)) {
+    throw new Error("Missing ~/.config/partii/hexii-game.env");
+  }
+  const text = fs.readFileSync(file, "utf8");
+  const pick = (name: string) => {
+    const line = text.split("\n").find((entry) => entry.startsWith(`${name}=`));
+    if (!line) throw new Error(`Missing ${name} in hexii-game.env`);
+    return line.slice(name.length + 1).trim().replace(/^["']|["']$/g, "");
+  };
+  return { api: pick("PARTII_API"), key: pick("PARTII_KEY") };
+}
 
 // public/ holds symlinks into the site asset folders. Follow them when
 // copying into dist so a deploy does not ship broken links.
@@ -33,7 +50,13 @@ function dereferenceDistSymlinks(): Plugin {
   };
 }
 
-export default defineConfig({
+export default defineConfig(() => {
+  const partii = partiiPublic();
+  return {
+  define: {
+    __PARTII_API__: JSON.stringify(partii.api),
+    __PARTII_KEY__: JSON.stringify(partii.key),
+  },
   plugins: [react(), tailwindcss(), dereferenceDistSymlinks()],
   resolve: {
     alias: {
@@ -49,11 +72,12 @@ export default defineConfig({
   server: {
     host: "0.0.0.0",
     port: 5175,
-    fs: { allow: [gameDir] },
+    fs: { allow: [gameDir, sdkDir] },
   },
   preview: { host: "0.0.0.0", port: 4175 },
   build: {
     outDir: "dist",
     emptyOutDir: true,
   },
+  };
 });

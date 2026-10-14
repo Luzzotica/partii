@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { Game } from "../../components/Game";
-import { Leaderboard } from "../../components/Leaderboard";
 import { OptionsMenu } from "../../components/OptionsMenu";
 import { audioManager } from "../../game/audio/AudioManager";
 import { useGameStore } from "../../store/gameStore";
@@ -8,6 +7,10 @@ import type { HexColor, HexModule } from "../../store/gameStore";
 import { musicManager } from "../shims/lib/audio/MusicManager";
 import { useAuth } from "../shims/lib/supabase/auth-context";
 import { useHighScores, usePresence } from "../shims/lib/supabase/hooks";
+import { AccountBar } from "./AccountBar";
+import { installAnalytics, watchRun } from "./analytics";
+import { ensureGuest } from "./player";
+import { ScoreBoard } from "./ScoreBoard";
 
 interface HexPosition {
   left: number;
@@ -215,7 +218,8 @@ function MainMenu({
           </p>
         </div>
 
-        <Leaderboard refreshKey={refreshKey} />
+        <AccountBar />
+        <ScoreBoard refreshKey={refreshKey} />
       </div>
 
       <div className="absolute top-0 left-0 w-full h-full pointer-events-none overflow-hidden">
@@ -253,9 +257,16 @@ export function App() {
   };
 
   useEffect(() => {
+    installAnalytics();
+    ensureGuest().catch(() => {});
+  }, []);
+
+  useEffect(() => {
     document.body.classList.toggle("game-running", gameStarted);
+    watchRun(gameStarted);
     return () => {
       document.body.classList.remove("game-running");
+      if (gameStarted) watchRun(false);
     };
   }, [gameStarted]);
 
