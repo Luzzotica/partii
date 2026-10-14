@@ -291,6 +291,32 @@ describe("players", () => {
     expect(r.json.entitlement).toMatchObject({ game, source: "fake" });
     expect((await api("POST", "/v1/players/me/receipts", { key, player: me.token, body: { store: "appstore", game, transaction: "1" } })).json.error.code).toBe("store_not_configured");
   });
+
+  it("a store purchase belongs to one account: a guest's moves on restore, a signed-in account's stays", async () => {
+    const { key, game } = await setup();
+    const owns = async (token: string) => (await api("GET", `/v1/players/me/entitlements?game=${game}`, { key, player: token })).json.entitlements.some((e: any) => e.game === game);
+    const receipt = (token: string, transaction: string) => api("POST", "/v1/players/me/receipts", { key, player: token, body: { store: "fake", game, transaction } });
+    const t1 = `t1${Date.now()}`;
+    // A guest buys, reinstalls (a new guest) and restores: the purchase moves.
+    const g1 = await guest(key);
+    expect((await receipt(g1.token, t1)).json.entitlement).toMatchObject({ game });
+    const g2 = await guest(key);
+    expect((await receipt(g2.token, t1)).json.entitlement).toMatchObject({ game });
+    expect(await owns(g2.token)).toBe(true);
+    expect(await owns(g1.token)).toBe(false);
+    // Presenting it again is fine.
+    expect((await receipt(g2.token, t1)).status).toBe(200);
+    // A signed-in account's purchase can't be claimed by anyone else.
+    const t2 = `t2${Date.now()}`;
+    const alice = (await api("POST", "/v1/players/login", { key, body: { provider: "fake", subject: `buyer${Date.now()}` } })).json.player_token;
+    expect((await receipt(alice, t2)).status).toBe(200);
+    const thief = await guest(key);
+    const r = await receipt(thief.token, t2);
+    expect(r.status).toBe(409);
+    expect(r.json.error.code).toBe("claimed_by_another_account");
+    expect(await owns(thief.token)).toBe(false);
+    expect(await owns(alice)).toBe(true);
+  });
 });
 
 describe("saves", () => {

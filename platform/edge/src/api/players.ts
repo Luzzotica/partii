@@ -195,10 +195,24 @@ export const playerHandlers: Handlers = {
     const g = await env.DB.prepare("SELECT id FROM games WHERE id = ?").bind(game).first();
     if (!g) throw bad(`no game ${game}`);
     const v = await verifyReceipt(env, String(body.store ?? ""), game, body);
-    await env.DB.prepare("INSERT OR IGNORE INTO purchases (id, player_id, game_id, store, ref, amount_cents, currency, status, test, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'paid', ?, ?)")
-      .bind(randomSlug(14), caller.player!.id, game, v.store, v.ref, v.amount_cents ?? 0, v.currency ?? "usd", v.test ? 1 : 0, now())
-      .run();
-    return { entitlement: await grant(env, caller.player!.id, game, v.store, v.ref) };
+    const me = caller.player!.id;
+    // One partii account per store purchase. A guest's claim moves to whoever
+    // presents it next (a reinstall or a new device); a signed-in account keeps it.
+    const prior = await env.DB.prepare("SELECT player_id FROM purchases WHERE ref = ?").bind(v.ref).first<{ player_id: string | null }>();
+    if (prior?.player_id && prior.player_id !== me) {
+      const signedIn = await env.DB.prepare("SELECT 1 FROM identities WHERE player_id = ? AND provider <> 'device' LIMIT 1").bind(prior.player_id).first();
+      const alive = await env.DB.prepare("SELECT 1 FROM players WHERE id = ? AND deleted_at IS NULL").bind(prior.player_id).first();
+      if (signedIn && alive) throw new ApiError(409, "claimed_by_another_account", "this purchase already belongs to another partii account", "sign in to the account that bought it (the game is unlocked there on every platform)");
+      await env.DB.batch([
+        env.DB.prepare("UPDATE purchases SET player_id = ? WHERE ref = ?").bind(me, v.ref),
+        env.DB.prepare("UPDATE entitlements SET revoked_at = ? WHERE player_id = ? AND game_id = ? AND ref = ? AND revoked_at IS NULL").bind(now(), prior.player_id, game, v.ref),
+      ]);
+    } else if (!prior) {
+      await env.DB.prepare("INSERT OR IGNORE INTO purchases (id, player_id, game_id, store, ref, amount_cents, currency, status, test, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'paid', ?, ?)")
+        .bind(randomSlug(14), me, game, v.store, v.ref, v.amount_cents ?? 0, v.currency ?? "usd", v.test ? 1 : 0, now())
+        .run();
+    }
+    return { entitlement: await grant(env, me, game, v.store, v.ref), test: v.test };
   },
 
   async testPlayersCreate({ env, caller, body }) {

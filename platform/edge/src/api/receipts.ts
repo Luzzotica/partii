@@ -26,7 +26,8 @@ export async function verifyReceipt(env: Env, store: string, game: string, body:
   switch (store) {
     case "fake":
       if (env.ALLOW_FAKE_STORE !== "1") throw bad("the fake store only exists in dev and staging");
-      return { store: "fake", ref: `fake:${randomSlug(12)}`, test: true };
+      // A given transaction id is the same purchase each time (to test restores).
+      return { store: "fake", ref: `fake:${/^[A-Za-z0-9_-]{1,40}$/.test(String(body.transaction ?? "")) ? body.transaction : randomSlug(12)}`, test: true };
     case "appstore":
       return appStore(env, String(body.transaction ?? ""), page.appstore_product_id, fetcher);
     case "play":
