@@ -5,6 +5,7 @@ import { musicManager } from "../shims/lib/audio/MusicManager";
 import { isMobileDevice } from "../shims/lib/utils/mobile-detector";
 import { AccountBar } from "./AccountBar";
 import { AltitudeBoard } from "./AltitudeBoard";
+import { watchRun } from "./analytics";
 import { ensureGuest } from "./player";
 
 export function App() {
@@ -24,8 +25,10 @@ export function App() {
       musicManager.play("/music/rocket-to-heaven/menu.mp3");
     }
     document.body.classList.toggle("game-running", gameStarted);
+    watchRun(gameStarted);
     return () => {
       document.body.classList.remove("game-running");
+      if (gameStarted) watchRun(false);
     };
   }, [gameStarted]);
 

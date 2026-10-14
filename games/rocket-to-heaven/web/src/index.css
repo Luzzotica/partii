@@ -58,3 +58,26 @@ body.game-running {
 body.game-running .h-screen {
   height: 100dvh;
 }
+
+/* The shared HUD centers the journey bar on a 1000px play field. On a phone
+   that lands on top of the altitude and grace readouts, so drop it below them. */
+@media (max-width: 768px) {
+  body.game-running .fixed.top-0.left-0.right-0.z-10 {
+    padding-top: env(safe-area-inset-top);
+  }
+
+  body.game-running .fixed.top-4.right-4 {
+    top: calc(1rem + env(safe-area-inset-top));
+  }
+
+  body.game-running .fixed.top-0.left-0.right-0.z-10 > .absolute.top-4 {
+    top: calc(6.75rem + env(safe-area-inset-top));
+    left: 50% !important;
+    width: min(12rem, 70vw);
+  }
+
+  body.game-running .fixed.top-0.left-0.right-0.z-10 .text-3xl {
+    font-size: 1.5rem;
+    line-height: 2rem;
+  }
+}

@@ -173,6 +173,20 @@ export function Game({ onReturnToMenu }: GameProps) {
       {/* Mobile controls */}
       {isMobile && (
         <>
+          {!showPauseMenu && !isDead && !hasWon && (
+            <button
+              type="button"
+              aria-label="Pause"
+              onClick={() => {
+                audioManager.playSFX("ui-click");
+                togglePauseMenu();
+              }}
+              className="fixed left-1/2 z-30 -translate-x-1/2 rounded-full border border-white/20 bg-black/40 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-white/80"
+              style={{ top: "calc(11rem + env(safe-area-inset-top))" }}
+            >
+              Pause
+            </button>
+          )}
           <Joystick />
           <JumpButton />
         </>
