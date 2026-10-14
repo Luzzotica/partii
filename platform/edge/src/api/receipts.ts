@@ -67,7 +67,9 @@ async function appStore(env: Env, transactionId: string, productId: string | und
   const jwt = await es256Jwt(env.APPSTORE_PRIVATE_KEY, { alg: "ES256", kid: env.APPSTORE_KEY_ID, typ: "JWT" }, { iss: env.APPSTORE_ISSUER_ID, iat, exp: iat + 600, aud: "appstoreconnect-v1", bid: env.APPSTORE_BUNDLE_ID });
   for (const [host, test] of [["api.storekit.itunes.apple.com", false], ["api.storekit-sandbox.itunes.apple.com", true]] as const) {
     const res = await fetcher(`https://${host}/inApps/v1/transactions/${transactionId}`, { headers: { authorization: `Bearer ${jwt}` } });
-    if (res.status === 404) continue;
+    // Not there: try the sandbox (TestFlight, App Review). Production also
+    // answers 401 for an app with no live release yet, so that falls through too.
+    if (res.status === 404 || (res.status === 401 && !test)) continue;
     if (!res.ok) throw new ApiError(502, "store_down", `App Store answered ${res.status}`);
     const { signedTransactionInfo } = (await res.json()) as { signedTransactionInfo: string };
     // Apple's own API over TLS: the payload is trustworthy as delivered.
