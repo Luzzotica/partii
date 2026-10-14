@@ -1,9 +1,7 @@
 import { useCallback } from "react";
-
-/**
- * Score stub. The shared death, victory, and menu screens keep their
- * leaderboard UI. Rows stay empty until partii's leaderboards API is up.
- */
+import { useGameStore } from "../../../../store/gameStore";
+import { BOARD, GAME, api, fetchBoard, partiiErrorMessage } from "../../../src/partii";
+import { ensureGuest } from "../../../src/player";
 
 export interface LeaderboardEntry {
   rank: number;
@@ -22,24 +20,92 @@ export interface PersonalBest {
   achieved_at: string;
 }
 
-export function useHighScores(_gameId: string) {
-  const getLeaderboard = useCallback(
-    async (_limit = 10): Promise<LeaderboardEntry[]> => [],
-    [],
-  );
+function runMeta(playTimeSeconds?: number): Record<string, string | number | boolean> {
+  const state = useGameStore.getState();
+  const meta: Record<string, string | number | boolean> = {
+    play_time_seconds: Math.max(0, Math.round(playTimeSeconds ?? state.playTimeSeconds)),
+    reached_heaven: state.hasReachedHeaven,
+  };
+  if (state.hasWon && !state.isDead) meta.cause = "victory";
+  else if (state.deathCause) meta.cause = state.deathCause;
+  if (state.killerBlockLabel) meta.killer_block = state.killerBlockLabel;
+  return meta;
+}
 
-  const getPersonalBest = useCallback(async (): Promise<PersonalBest | null> => null, []);
-  const getUserRank = useCallback(async () => null, []);
+function toEntry(entry: { rank: number; display_name: string; score: number }): LeaderboardEntry {
+  return {
+    rank: entry.rank,
+    display_name: entry.display_name,
+    best_score: entry.score,
+    best_wave: 0,
+    best_level: 0,
+    total_plays: 0,
+  };
+}
+
+function toPersonalBest(me: {
+  score: number;
+  meta: Record<string, unknown>;
+  achieved_at: number;
+} | null): PersonalBest | null {
+  if (!me) return null;
+  const seconds = me.meta.play_time_seconds;
+  return {
+    score: me.score,
+    wave: 0,
+    level: 0,
+    play_time_seconds: typeof seconds === "number" ? seconds : 0,
+    achieved_at: new Date(me.achieved_at).toISOString(),
+  };
+}
+
+/** All-time altitude board. The menu has its own today / week / all-time tabs. */
+export function useHighScores(_gameId: string) {
+  const getLeaderboard = useCallback(async (limit = 10): Promise<LeaderboardEntry[]> => {
+    try {
+      const page = await fetchBoard("all", limit);
+      return page.entries.map(toEntry);
+    } catch {
+      return [];
+    }
+  }, []);
+
+  const readMe = useCallback(async () => {
+    try {
+      await ensureGuest();
+      const page = await fetchBoard("all", 1);
+      return page.me;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const getPersonalBest = useCallback(async () => toPersonalBest(await readMe()), [readMe]);
+
+  const getUserRank = useCallback(async () => (await readMe())?.rank ?? null, [readMe]);
+
   const getPersonalStats = useCallback(async () => null, []);
 
   const submitScore = useCallback(
     async (
-      _score: number,
+      score: number,
       _wave?: number,
       _level?: number,
-      _playTimeSeconds?: number,
+      playTimeSeconds?: number,
       _sessionId?: string,
-    ) => ({ success: false as const, error: "Leaderboard is not connected yet" }),
+    ) => {
+      const feet = Math.round(score);
+      if (!Number.isFinite(feet) || feet <= 0) {
+        return { success: false as const, error: "No altitude to save" };
+      }
+      try {
+        await ensureGuest();
+        await api.leaderboardSubmit(GAME, BOARD, { score: feet, meta: runMeta(playTimeSeconds) });
+        return { success: true as const, error: null };
+      } catch (err) {
+        return { success: false as const, error: partiiErrorMessage(err) };
+      }
+    },
     [],
   );
 

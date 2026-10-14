@@ -1,11 +1,31 @@
+import { useState } from "react";
+import { partiiErrorMessage } from "../../../src/partii";
+import { ensureGuest } from "../../../src/player";
+
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
-/** Accounts arrive with partii guest sign-in. This only closes the prompt. */
+/** Shown when a run ends before the guest sign-in has succeeded. */
 export function AuthModal({ isOpen, onClose }: AuthModalProps) {
+  const [message, setMessage] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
   if (!isOpen) return null;
+
+  const retry = async () => {
+    setBusy(true);
+    setMessage(null);
+    try {
+      await ensureGuest();
+      onClose();
+    } catch (err) {
+      setMessage(partiiErrorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center px-4">
@@ -16,17 +36,19 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
         onClick={onClose}
       />
       <div className="relative z-10 w-full max-w-sm rounded-2xl border border-blue-200/30 bg-slate-900 p-6 text-center shadow-2xl">
-        <h2 className="mb-2 text-xl font-bold text-white">Scores are coming</h2>
+        <h2 className="mb-2 text-xl font-bold text-white">Score not saved</h2>
         <p className="mb-6 text-sm text-white/70">
-          This climb is not saved yet. A partii account will keep your altitude
-          once the leaderboard is connected.
+          This browser couldn't sign in as a guest, so the altitude stayed on
+          this device.
         </p>
+        {message && <p className="mb-4 text-sm text-red-300">{message}</p>}
         <button
           type="button"
-          onClick={onClose}
-          className="w-full rounded-xl bg-blue-500 py-3 font-semibold text-white hover:bg-blue-400"
+          disabled={busy}
+          onClick={() => void retry()}
+          className="w-full rounded-xl bg-blue-500 py-3 font-semibold text-white hover:bg-blue-400 disabled:opacity-60"
         >
-          Keep climbing
+          {busy ? "Signing in..." : "Try again"}
         </button>
       </div>
     </div>

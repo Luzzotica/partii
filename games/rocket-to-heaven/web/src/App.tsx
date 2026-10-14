@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { Game } from "../../components/Game";
-import { Leaderboard } from "../../components/Leaderboard";
 import { audioManager } from "../../game/audio/AudioManager";
 import { musicManager } from "../shims/lib/audio/MusicManager";
 import { isMobileDevice } from "../shims/lib/utils/mobile-detector";
+import { AccountBar } from "./AccountBar";
+import { AltitudeBoard } from "./AltitudeBoard";
+import { ensureGuest } from "./player";
 
 export function App() {
   const [gameStarted, setGameStarted] = useState(false);
@@ -14,6 +16,7 @@ export function App() {
   useEffect(() => {
     setIsMobile(isMobileDevice());
     setIsMounted(true);
+    ensureGuest().catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -156,7 +159,8 @@ export function App() {
           Begin Ascension
         </button>
 
-        <Leaderboard refreshKey={refreshKey} />
+        <AccountBar />
+        <AltitudeBoard refreshKey={refreshKey} />
 
         <div className="mt-8 text-center">
           <a

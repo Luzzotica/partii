@@ -1,10 +1,13 @@
+import { usePartiiPlayer } from "../../../src/player";
+
 /**
- * No partii account yet. Step 2 signs each browser in as a guest.
- * Until then the shared screens treat the player as signed out.
+ * The shared death and victory screens treat a partii guest as a signed-in
+ * player, so a finished run is saved without a separate account step.
  */
 export function useAuth() {
+  const player = usePartiiPlayer();
   return {
-    user: null as { id: string } | null,
+    user: player ? { id: player.id } : null,
     signOut: async () => {},
     loading: false,
   };
