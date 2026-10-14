@@ -8,7 +8,7 @@ import { DurableObject } from "cloudflare:workers";
 import type { Env } from "./index";
 import { type IceGrant, mintIce } from "./ice";
 import { verifyKey } from "./keys";
-import { allowed, Bucket, type LimitKind, RELAY_BURST, RELAY_RATE } from "./limits";
+import { allowed, Bucket, RELAY_BURST, RELAY_RATE } from "./limits";
 import { usage } from "./usage";
 import {
   BROADCAST,
@@ -240,7 +240,7 @@ export class Session extends DurableObject<Env> {
   }
 
   /** Refuse with `rate_limited` when this client's IP is over its limit. */
-  private async limit(ws: WebSocket, kind: LimitKind) {
+  private async limit(ws: WebSocket, kind: "create" | "join") {
     const ip = (ws.deserializeAttachment() as Attachment).ip;
     if (await allowed(this.env, kind, ip)) return;
     const s = this.load();

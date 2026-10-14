@@ -6,6 +6,7 @@ partii gives a game four things:
 - **Player accounts**: a guest account on first launch, upgradeable to email, Apple, Google, Discord or Steam later.
 - **Saves and purchases** that follow the player to every device.
 - **A store page** to sell the game, plus **phone controllers** (players scan a QR code and their phone becomes a gamepad).
+- **Analytics**: players, sessions, retention, gameplay events and grouped crash reports, on a dashboard at partii.games/dev.
 
 You drive all of it from the `partii` command line. Every command prints one JSON document. This guide takes a game from nothing to all of the above.
 
@@ -309,7 +310,7 @@ partii web list hexii                             # deploys, which is live, prev
 partii web take-down hexii
 ```
 
-- The folder needs `index.html` at its top. Dotfiles are skipped. Up to 10,000 files, 100 MB each, 1 GB per deploy.
+- The folder needs `index.html` at its top. Dotfiles are skipped, except a top-level `.well-known` (iOS universal links, Android app links). Up to 10,000 files, 100 MB each, 1 GB per deploy.
 - Only changed files upload (files are stored by their hash), straight to storage.
 - `--spa`: a path with no file serves the nearest `index.html` above it, so `/controller/c/ABCD` gets `/controller/index.html`.
 - `--isolated`: cross-origin isolation headers, which threaded wasm needs (Godot 4, Unity with threads, Emscripten pthreads). Everything on the site must then be same-origin or CORS-enabled.
@@ -318,7 +319,50 @@ partii web take-down hexii
 - Each game's site is its own origin. Call the partii API from it with your publishable key like any web app (`https://api.partii.games`).
 - Staging: `https://<game>-staging.partii.games` (with `PARTII_API=https://api-staging.partii.games`).
 
-## 8. Errors
+## 8. Analytics: players, events, errors
+
+The account crate sends events and error reports; partii.games/dev shows them (sign in with a developer token, `partii tokens create`).
+
+```rust
+partii_account::install_panic_hook(&save_dir);   // first thing in main
+let acct = Account::start(AccountConfig {
+    version: env!("CARGO_PKG_VERSION").into(),
+    build: "steam".into(),                        // or "demo", "appstore", …; platform is filled in
+    analytics: settings.share_stats,              // the player's "Share anonymous stats" switch (on by default)
+    ..cfg
+});
+acct.set_owned(acct.owns("full") == Some(true)); // the dashboard's demo/full filter
+acct.track("level_complete", json!({ "mission": 12, "secs": 81.5, "players": 2 }));
+acct.report_error("error", "save failed", None, json!({ "screen": "pause" }));
+acct.end_session(Duration::from_secs(2));         // on quit: session_end {secs}, then send
+```
+
+| Call | |
+|---|---|
+| `track(name, props)` | Queue an event. Names are `[a-z][a-z0-9_.]*`. Props are flat: strings up to 200 characters, numbers and bools, 1 KB in all. Sent every 30 s. |
+| `report_error(kind, message, backtrace, context)` | `kind` is `panic`, `error` or `warning`. Sent at once. Reports of the same bug group together, even when the numbers in the message differ. |
+| `install_panic_hook(dir)` | Writes panics to `dir`. A panic is reported straight away if the game survives it, otherwise at the next launch. |
+| `set_analytics(on)`, `set_owned(full)` | The player's switch (off drops what's queued). Demo or full game. |
+| `end_session(wait)` | Sends `session_end` and the queue, waiting at most `wait`. Returns `true` when everything went. Whatever is left (for example while offline) is kept on disk and sent next launch. |
+| `session_id()` | This launch's id; every event and report carries it. |
+
+The dashboard and the CLI show the same numbers. The CLI takes the same filters: `--days`, `--platform`, `--version` and `--owned true|false`.
+
+```sh
+partii analytics summary tankii                      # players today, last 7 and last 30 days; new vs returning; sessions and median length; D1/D7/D30 retention; by platform, version and country
+partii analytics events tankii                       # every event name, with counts and players
+partii analytics events tankii --name level_complete --by mission   # the funnel: players per mission
+partii errors list tankii                            # open error groups: count, players, versions, last seen
+partii errors get tankii <fingerprint>               # the latest reports, with backtraces and context
+partii errors mark tankii <fingerprint> --status fixed   # reopens by itself if it comes back
+```
+
+- **Sessions** are one launch each. Their length comes from `session_end` (from the first to the last event if the game was killed).
+- **Retention:** of the players first seen in the range, the share who played again exactly 1, 7 or 30 days later.
+- **Privacy:** no IP addresses are stored, only the country. Raw events are kept 90 days. A device is the game's random install id. If the player deleted their account, their events stay but no longer link to them. What's collected is listed at partii.games/privacy; link to it from your game's settings next to the switch.
+- **Limits:** 100 events and 20 errors per call, and 60 calls a minute per device. The crate stays well under these.
+
+## 9. Errors
 
 Every failure is `{"ok": false, "error": {"code", "message", "hint"}}`, and the hint says what to do. CLI exit codes:
 
@@ -332,6 +376,6 @@ Every failure is `{"ok": false, "error": {"code", "message", "hint"}}`, and the 
 
 1. Project and key (section 1).
 2. Engine in the game: host and join with a code (section 2). Check with `partii bot guest`.
-3. `partii-account` at launch: guest sign-in, saves, `owns("full")` (section 3).
+3. `partii-account` at launch: guest sign-in, saves, `owns("full")` (section 3); `install_panic_hook`, a few `track` events and `end_session` on quit (section 8).
 4. Store page, price and demo gate; the game checks entitlements (section 4).
 5. Optional: phone controllers (section 6) and live content (section 5).

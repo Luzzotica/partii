@@ -133,3 +133,31 @@ fn sha256_hex(b: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     Sha256::digest(b).iter().map(|x| format!("{x:02x}")).collect()
 }
+
+/// Events and error reports reach the dashboard: with `PARTII_ANALYTICS_GAME`
+/// (a game of PARTII_KEY's project) and `PARTII_TOKEN` (its developer) to
+/// read them back. A panic on another thread is reported by the hook.
+#[test]
+fn events_and_errors_reach_the_dashboard() {
+    let (Ok(edge), Ok(key), Ok(game), Ok(dev)) = (std::env::var("PARTII_API"), std::env::var("PARTII_KEY"), std::env::var("PARTII_ANALYTICS_GAME"), std::env::var("PARTII_TOKEN")) else {
+        eprintln!("skip: set PARTII_API, PARTII_KEY, PARTII_ANALYTICS_GAME and PARTII_TOKEN");
+        return;
+    };
+    let dir = std::env::temp_dir().join(format!("partii-account-analytics-{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis()));
+    partii_account::install_panic_hook(&dir);
+    let a = Account::start(AccountConfig { edge: edge.clone(), key: Some(key), game: game.clone(), data_dir: dir.clone(), version: "9.9.9-test".into(), build: "test".into(), ..AccountConfig::default() });
+    a.set_owned(false);
+    let mark = format!("m{}", std::process::id());
+    a.track("live_test", json!({ "mark": mark, "n": 1 }));
+    let _ = std::thread::spawn(|| panic!("live test panic on a worker thread (index 3)")).join();
+    a.report_error("warning", "live test warning", None, json!({ "screen": "test" }));
+    assert!(a.end_session(Duration::from_secs(20)), "everything sent");
+    let d = partii_api::Client { base: edge, developer_token: Some(dev), ..Default::default() };
+    let by = d.json("analyticsEvents", &[("game", &game), ("name", "live_test"), ("by", "mark"), ("days", "1")], None).unwrap();
+    assert!(by["values"].as_array().unwrap().iter().any(|v| v["value"] == json!(mark)), "{by}");
+    let groups = d.json("errorsList", &[("game", &game), ("status", "all"), ("version", "9.9.9-test")], None).unwrap();
+    let msgs: Vec<&str> = groups["groups"].as_array().unwrap().iter().filter_map(|g| g["message"].as_str()).collect();
+    assert!(msgs.contains(&"live test warning"), "{msgs:?}");
+    assert!(msgs.iter().any(|m| m.starts_with("live test panic")), "{msgs:?}");
+    let _ = std::fs::remove_dir_all(dir);
+}

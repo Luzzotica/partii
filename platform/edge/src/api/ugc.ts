@@ -129,7 +129,7 @@ async function ownItem(env: Env, caller: Caller, id: string): Promise<ItemRow> {
 }
 
 /** A player token, if one came along on a key-auth request. */
-async function optionalPlayer(env: Env, req: Request): Promise<string | null> {
+export async function optionalPlayer(env: Env, req: Request): Promise<string | null> {
   const h = req.headers.get("authorization") ?? "";
   if (!h.startsWith("Bearer pt_")) return null;
   const c = await verifyClaims<{ pid: string; exp?: number }>(env.PLAYER_TOKEN_SECRET, "pt", h.slice(7));

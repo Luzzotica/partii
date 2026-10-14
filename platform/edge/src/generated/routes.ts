@@ -577,6 +577,55 @@ export const ROUTES: Route[] = [
     "body": "binary"
   },
   {
+    "op": "analyticsIngest",
+    "method": "POST",
+    "path": "/v1/games/:game/events",
+    "auth": "key",
+    "body": "json"
+  },
+  {
+    "op": "analyticsEvents",
+    "method": "GET",
+    "path": "/v1/games/:game/events",
+    "auth": "developer",
+    "body": "none"
+  },
+  {
+    "op": "analyticsSummary",
+    "method": "GET",
+    "path": "/v1/games/:game/analytics",
+    "auth": "developer",
+    "body": "none"
+  },
+  {
+    "op": "errorsIngest",
+    "method": "POST",
+    "path": "/v1/games/:game/errors",
+    "auth": "key",
+    "body": "json"
+  },
+  {
+    "op": "errorsList",
+    "method": "GET",
+    "path": "/v1/games/:game/errors",
+    "auth": "developer",
+    "body": "none"
+  },
+  {
+    "op": "errorsGet",
+    "method": "GET",
+    "path": "/v1/games/:game/errors/:fingerprint",
+    "auth": "developer",
+    "body": "none"
+  },
+  {
+    "op": "errorsUpdate",
+    "method": "POST",
+    "path": "/v1/games/:game/errors/:fingerprint",
+    "auth": "developer",
+    "body": "json"
+  },
+  {
     "op": "themeGet",
     "method": "GET",
     "path": "/v1/games/:game/theme",

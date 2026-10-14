@@ -5,6 +5,8 @@ import { StrictMode, useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { createClient, PartiiError } from "../../../sdk/ts/src/client";
 import policyText from "../../../docs/CONTENT-POLICY.md?raw";
+import privacyText from "../../../docs/PRIVACY.md?raw";
+import { DevDashboard } from "./dev";
 import "./style.css";
 
 const API = import.meta.env.VITE_PARTII_API ?? "https://api.partii.games";
@@ -288,6 +290,10 @@ function ContentPolicy() {
   return <Markdown text={policyText.replaceAll("{{CONTACT}}", CONTACT)} />;
 }
 
+function Privacy() {
+  return <Markdown text={privacyText.replaceAll("{{CONTACT}}", CONTACT)} />;
+}
+
 function App() {
   const [path, go] = usePath();
   const { player, owned, refresh, signedIn } = usePlayer();
@@ -302,6 +308,8 @@ function App() {
   else if (path.startsWith("/library")) page = <Library go={go} />;
   else if (path.startsWith("/signin")) page = <SignIn onDone={signedIn} />;
   else if (path.startsWith("/content-policy")) page = <ContentPolicy />;
+  else if (path.startsWith("/privacy")) page = <Privacy />;
+  else if (path.startsWith("/dev")) page = <DevDashboard api={API} />;
   else page = <Front go={go} />;
   return (
     <>
@@ -318,6 +326,12 @@ function App() {
       <footer>
         <a href="/content-policy" onClick={(e) => (e.preventDefault(), go("/content-policy"))}>
           Player content policy
+        </a>
+        <a href="/privacy" onClick={(e) => (e.preventDefault(), go("/privacy"))}>
+          Privacy
+        </a>
+        <a href="/dev" onClick={(e) => (e.preventDefault(), go("/dev"))}>
+          Developers
         </a>
       </footer>
     </>

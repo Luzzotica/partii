@@ -166,6 +166,9 @@ export const playerHandlers: Handlers = {
       env.DB.prepare("DELETE FROM saves WHERE player_id = ?").bind(id),
       env.DB.prepare("DELETE FROM entitlements WHERE player_id = ?").bind(id),
       env.DB.prepare("UPDATE purchases SET player_id = NULL WHERE player_id = ?").bind(id),
+      // Statistics stay, anonymous: the device's install id is all that's left.
+      env.DB.prepare("UPDATE events SET player_id = NULL WHERE player_id = ?").bind(id),
+      env.DB.prepare("UPDATE error_samples SET player_id = NULL WHERE player_id = ?").bind(id),
       env.DB.prepare("UPDATE players SET deleted_at = ?, display_name = '' WHERE id = ?").bind(now(), id),
     ]);
     return { deleted: true };

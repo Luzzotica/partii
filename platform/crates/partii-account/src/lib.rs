@@ -12,6 +12,8 @@
 //!   writes queue. When another device wrote first, the game's merge
 //!   function combines both copies and the write is retried.
 //! * **Checkout**: a store URL to open in the browser; `refresh` afterwards.
+//! * **Analytics**: `track` events and `report_error`s, batched to the
+//!   developer's dashboard (`analytics.rs`); `end_session` on quit.
 //!
 //! All network work runs on one background thread; the frame never waits.
 //!
@@ -27,7 +29,13 @@
 //! // each frame / when needed:
 //! if acct.owns("full") == Some(true) { /* unlock */ }
 //! acct.write_save("progress", r#"{"level":3}"#);
+//! acct.track("level_complete", serde_json::json!({ "mission": 3, "secs": 81.5 }));
+//! // on quit:
+//! acct.end_session(std::time::Duration::from_secs(2));
 //! ```
+
+mod analytics;
+pub use analytics::{install_panic_hook, this_platform, MAX_QUEUED};
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -57,6 +65,13 @@ pub struct AccountConfig {
     /// Save slots fetched at sign-in (others are fetched on first read).
     pub slots: Vec<String>,
     pub merge: Option<Merge>,
+    /// The game's version, platform ("macos", "ios", …; `this_platform()`)
+    /// and build ("steam", "demo", "appstore", …): every event carries them.
+    pub version: String,
+    pub platform: String,
+    pub build: String,
+    /// Send events and error reports (the player's "share anonymous stats").
+    pub analytics: bool,
 }
 
 impl Default for AccountConfig {
@@ -70,6 +85,10 @@ impl Default for AccountConfig {
             display_name: "Player".into(),
             slots: Vec::new(),
             merge: None,
+            version: String::new(),
+            platform: this_platform().into(),
+            build: String::new(),
+            analytics: true,
         }
     }
 }
@@ -115,6 +134,8 @@ pub struct Account {
     edge: String,
     key: Option<String>,
     game: String,
+    analytics: analytics::Analytics,
+    session: String,
 }
 
 /// A save slot name for a file path ("mygame/campaign-saves.json" → "campaign-saves").
@@ -202,6 +223,19 @@ impl Account {
             }
         }
         let (edge, key, game) = (cfg.edge.clone(), cfg.key.clone(), cfg.game.clone());
+        let (analytics, session) = analytics::Analytics::start(
+            analytics::Setup {
+                client: Client { base: cfg.edge.clone(), key: cfg.key.clone(), ..Default::default() },
+                game: cfg.game.clone(),
+                data_dir: cfg.data_dir.clone(),
+                device: device_id(&cfg.data_dir),
+                platform: cfg.platform.clone(),
+                version: cfg.version.clone(),
+                build: cfg.build.clone(),
+                enabled: cfg.analytics,
+            },
+            st.clone(),
+        );
         let (tx, rx) = channel::<Job>();
         let shared = st.clone();
         std::thread::Builder::new()
@@ -311,7 +345,7 @@ impl Account {
                 }
             })
             .expect("partii-account thread");
-        Account { st, jobs: tx, edge, key, game }
+        Account { st, jobs: tx, edge, key, game, analytics, session }
     }
 
     /// Signed in and the first fetch is done.
@@ -435,6 +469,36 @@ impl Account {
     pub fn pending_writes(&self) -> usize {
         lock(&self.st).pending
     }
+
+    /// Record an event: a name like "level_complete" ([a-z][a-z0-9_.]*)
+    /// and flat props (strings up to 200 chars, numbers, bools). Queued and
+    /// sent in batches; nothing happens with analytics off.
+    pub fn track(&self, name: &str, props: Value) {
+        self.analytics.track(&self.session, name, props);
+    }
+    /// Report a bug: kind "panic", "error" or "warning", a message, an
+    /// optional backtrace, and flat context (screen, mode, mission, …).
+    /// Reports of the same bug group together on the dashboard. Sent at once.
+    pub fn report_error(&self, kind: &str, message: &str, backtrace: Option<&str>, context: Value) {
+        self.analytics.report_error(&self.session, kind, message, backtrace, context);
+    }
+    /// The player's "share anonymous stats" switch. Off drops what's queued.
+    pub fn set_analytics(&self, on: bool) {
+        self.analytics.set_enabled(on);
+    }
+    /// Full game (true) or demo (false), for the dashboard's filter.
+    pub fn set_owned(&self, owned: bool) {
+        self.analytics.set_owned(owned);
+    }
+    /// This launch's session id (events and error reports carry it).
+    pub fn session_id(&self) -> &str {
+        &self.session
+    }
+    /// On quit: records session_end {secs} and sends what's queued, waiting
+    /// up to `wait`. True when everything went; the rest is sent next launch.
+    pub fn end_session(&self, wait: std::time::Duration) -> bool {
+        self.analytics.end_session(&self.session, wait)
+    }
 }
 
 /// After signing in to an account: a merge can change what the player owns and has saved.
@@ -557,6 +621,28 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("partii-account-race-{}", now_ms()));
         let ids: Vec<String> = (0..8).map(|_| { let d = dir.clone(); std::thread::spawn(move || device_id(&d)) }).collect::<Vec<_>>().into_iter().map(|h| h.join().unwrap()).collect();
         assert!(ids.iter().all(|i| i == &ids[0]), "{ids:?}");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn analytics_wait_on_disk_while_offline() {
+        let dir = std::env::temp_dir().join(format!("partii-account-offline-{}", now_ms()));
+        // Nothing listens on port 9: every send fails like a dead network.
+        let cfg = AccountConfig { edge: "http://127.0.0.1:9".into(), key: Some("pk_x".into()), game: "offline".into(), data_dir: dir.clone(), version: "1.0.0".into(), ..AccountConfig::default() };
+        let a = Account::start(cfg.clone());
+        a.track("level_complete", json!({ "mission": 1 }));
+        a.report_error("error", "boom", None, json!({ "screen": "menu" }));
+        assert!(!a.end_session(std::time::Duration::from_secs(5)));
+        let kept: Value = serde_json::from_str(&std::fs::read_to_string(dir.join("partii-analytics-offline.json")).unwrap()).unwrap();
+        let names: Vec<&str> = kept["events"].as_array().unwrap().iter().map(|e| e["name"].as_str().unwrap()).collect();
+        assert_eq!(names, ["session_start", "level_complete", "session_end"]);
+        assert_eq!(kept["errors"][0]["message"], "boom");
+        assert_eq!(kept["events"][1]["session"], json!(a.session_id()));
+        // The player turns stats off: the next launch drops what waited.
+        let b = Account::start(AccountConfig { analytics: false, ..cfg });
+        b.track("x", json!({}));
+        assert!(b.end_session(std::time::Duration::from_millis(500)));
+        assert!(!dir.join("partii-analytics-offline.json").exists());
         let _ = std::fs::remove_dir_all(dir);
     }
 

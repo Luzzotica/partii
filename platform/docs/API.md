@@ -101,6 +101,13 @@ Auth (`x-auth`):
 | `webActivate` | `POST /v1/games/{game}/web/deploys/{deploy}/activate` | developer | `partii web activate` |
 | `webTakeDown` | `DELETE /v1/games/{game}/web` | developer | `partii web take-down` |
 | `webBlobPut` | `PUT /v1/games/{game}/web/blobs/{sha256}` | public | – |
+| `analyticsIngest` | `POST /v1/games/{game}/events` | key | `partii analytics send` |
+| `analyticsEvents` | `GET /v1/games/{game}/events` | developer | `partii analytics events` |
+| `analyticsSummary` | `GET /v1/games/{game}/analytics` | developer | `partii analytics summary` |
+| `errorsIngest` | `POST /v1/games/{game}/errors` | key | `partii errors send` |
+| `errorsList` | `GET /v1/games/{game}/errors` | developer | `partii errors list` |
+| `errorsGet` | `GET /v1/games/{game}/errors/{fingerprint}` | developer | `partii errors get` |
+| `errorsUpdate` | `POST /v1/games/{game}/errors/{fingerprint}` | developer | `partii errors mark` |
 | `themeGet` | `GET /v1/games/{game}/theme` | public | `partii theme get` |
 | `themeSet` | `PUT /v1/games/{game}/theme` | developer | `partii theme set` |
 | `themeDelete` | `DELETE /v1/games/{game}/theme` | developer | `partii theme delete` |
@@ -917,6 +924,92 @@ Parameters:
 - `ticket` (query, required)
 
 Body: the file's bytes.
+
+### analyticsIngest
+
+`POST /v1/games/{game}/events` (auth: key) · `partii analytics send`
+
+Record a batch of events (up to 100) from one device. device is the install id; platform, version, build and owned describe what it runs. Each event is {name, at (unix ms), session, props (flat: short strings, numbers, bools; 1 KB)}; events that don't fit are dropped and counted. session_end {secs} closes a session. A player token is optional. The account crate (track) sends these for you.
+
+Parameters:
+- `game` (path, required)
+
+Body fields: `device` (required), `platform`, `version`, `build`, `owned`, `events` (required)
+
+### analyticsEvents
+
+`GET /v1/games/{game}/events` (auth: developer) · `partii analytics events`
+
+Event counts. No name: every event name with counts and devices. A name: counts per day. A name and by: counts per value of that prop (a funnel, e.g. level_complete by mission) or of platform, version, build or owned. Filters: days (default 30), platform, version, owned.
+
+Parameters:
+- `game` (path, required)
+- `name` (query)
+- `by` (query)
+- `days` (query)
+- `platform` (query)
+- `version` (query)
+- `owned` (query)
+
+### analyticsSummary
+
+`GET /v1/games/{game}/analytics` (auth: developer) · `partii analytics summary`
+
+Players for the last `days` (default 30): DAU per day with new and returning, WAU, MAU, sessions and median session length, D1/D7/D30 retention, and players by platform, version and country. Filters: platform, version, owned (true: full game, false: demo).
+
+Parameters:
+- `game` (path, required)
+- `days` (query)
+- `platform` (query)
+- `version` (query)
+- `owned` (query)
+
+### errorsIngest
+
+`POST /v1/games/{game}/errors` (auth: key) · `partii errors send`
+
+Report errors (up to 20) from one device: {device, platform, version, build, errors: [{kind: panic|error|warning, message, backtrace, context (flat, 2 KB), session, at}]}. Reports group by a fingerprint of the kind, the message (numbers and quoted text blanked) and the top 3 game frames; send fingerprint to group them yourself. A fixed group that's reported again reopens.
+
+Parameters:
+- `game` (path, required)
+
+Body fields: `device` (required), `platform`, `version`, `build`, `owned`, `errors` (required)
+
+### errorsList
+
+`GET /v1/games/{game}/errors` (auth: developer) · `partii errors list`
+
+Error groups, newest first (sort=count: most reported): first and last seen, count, devices, versions and platforms affected, status. status is open (default), fixed, ignored or all; filter by version, platform, kind.
+
+Parameters:
+- `game` (path, required)
+- `status` (query)
+- `version` (query)
+- `platform` (query)
+- `kind` (query)
+- `sort` (query)
+
+### errorsGet
+
+`GET /v1/games/{game}/errors/{fingerprint}` (auth: developer) · `partii errors get`
+
+One error group and its latest reports (backtrace, context, version, platform, session).
+
+Parameters:
+- `game` (path, required)
+- `fingerprint` (path, required)
+
+### errorsUpdate
+
+`POST /v1/games/{game}/errors/{fingerprint}` (auth: developer) · `partii errors mark`
+
+Mark an error group open, fixed or ignored. A fixed group reopens when it's reported again.
+
+Parameters:
+- `game` (path, required)
+- `fingerprint` (path, required)
+
+Body fields: `status` (required)
 
 ### themeGet
 

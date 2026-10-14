@@ -8,9 +8,9 @@
 
 import { DurableObject } from "cloudflare:workers";
 
-export type LimitKind = "connect" | "session" | "create" | "join" | "login";
+export type LimitKind = "connect" | "session" | "create" | "join" | "login" | "events" | "events_ip" | "errors" | "errors_ip";
 
-/** Per IP, per minute. */
+/** Per IP (or the key `allowed` is given), per minute. */
 export const LIMITS: Record<LimitKind, number> = {
   /** WebSocket upgrades (checked in the Worker, before any session). */
   connect: 120,
@@ -22,6 +22,11 @@ export const LIMITS: Record<LimitKind, number> = {
   join: 60,
   /** Browser sign-ins started (Sign in through Steam). */
   login: 30,
+  /** Analytics calls (api/analytics.ts), counted per game and device, and per IP (a cafe or school shares one). */
+  events: 60,
+  events_ip: 1200,
+  errors: 30,
+  errors_ip: 600,
 };
 export const LIMIT_WINDOW_MS = 60_000;
 /** A limiter slower than this allows: a limiter problem must not stop play. */

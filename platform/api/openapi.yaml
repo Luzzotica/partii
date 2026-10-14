@@ -867,6 +867,85 @@ paths:
         - { name: sha256, in: path, required: true, schema: { type: string } }
         - { name: ticket, in: query, required: true, schema: { type: string } }
       responses: { "200": { description: "{stored}" } }
+  # ── Analytics: events, sessions, retention, error reports (src/api/analytics.ts). docs/GUIDE.md §8 ──
+  /v1/games/{game}/events:
+    post:
+      operationId: analyticsIngest
+      summary: "Record a batch of events (up to 100) from one device. device is the install id; platform, version, build and owned describe what it runs. Each event is {name, at (unix ms), session, props (flat: short strings, numbers, bools; 1 KB)}; events that don't fit are dropped and counted. session_end {secs} closes a session. A player token is optional. The account crate (track) sends these for you."
+      x-auth: key
+      x-cli: analytics send
+      parameters: [{ name: game, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [device, events], properties: { device: { type: string }, platform: { type: string }, version: { type: string }, build: { type: string }, owned: { type: boolean }, events: { type: array, items: { type: object, required: [name], properties: { name: { type: string }, at: { type: integer }, session: { type: string }, props: { type: object } } } } } } } } }
+      responses: { "200": { description: "{accepted, dropped}" } }
+    get:
+      operationId: analyticsEvents
+      summary: "Event counts. No name: every event name with counts and devices. A name: counts per day. A name and by: counts per value of that prop (a funnel, e.g. level_complete by mission) or of platform, version, build or owned. Filters: days (default 30), platform, version, owned."
+      x-auth: developer
+      x-cli: analytics events
+      parameters:
+        - { name: game, in: path, required: true, schema: { type: string } }
+        - { name: name, in: query, schema: { type: string } }
+        - { name: by, in: query, schema: { type: string } }
+        - { name: days, in: query, schema: { type: integer } }
+        - { name: platform, in: query, schema: { type: string } }
+        - { name: version, in: query, schema: { type: string } }
+        - { name: owned, in: query, schema: { type: string } }
+      responses: { "200": { description: "{names} or {name, total, days} or {name, by, total, values}" } }
+  /v1/games/{game}/analytics:
+    get:
+      operationId: analyticsSummary
+      summary: "Players for the last `days` (default 30): DAU per day with new and returning, WAU, MAU, sessions and median session length, D1/D7/D30 retention, and players by platform, version and country. Filters: platform, version, owned (true: full game, false: demo)."
+      x-auth: developer
+      x-cli: analytics summary
+      parameters:
+        - { name: game, in: path, required: true, schema: { type: string } }
+        - { name: days, in: query, schema: { type: integer } }
+        - { name: platform, in: query, schema: { type: string } }
+        - { name: version, in: query, schema: { type: string } }
+        - { name: owned, in: query, schema: { type: string } }
+      responses: { "200": { description: "{players, dau, wau, mau, sessions, median_session_secs, retention, days, platforms, versions, countries}" } }
+  /v1/games/{game}/errors:
+    post:
+      operationId: errorsIngest
+      summary: "Report errors (up to 20) from one device: {device, platform, version, build, errors: [{kind: panic|error|warning, message, backtrace, context (flat, 2 KB), session, at}]}. Reports group by a fingerprint of the kind, the message (numbers and quoted text blanked) and the top 3 game frames; send fingerprint to group them yourself. A fixed group that's reported again reopens."
+      x-auth: key
+      x-cli: errors send
+      parameters: [{ name: game, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [device, errors], properties: { device: { type: string }, platform: { type: string }, version: { type: string }, build: { type: string }, owned: { type: boolean }, errors: { type: array, items: { type: object, required: [kind, message], properties: { kind: { type: string, enum: [panic, error, warning] }, message: { type: string }, backtrace: { type: string }, context: { type: object }, session: { type: string }, at: { type: integer }, fingerprint: { type: string } } } } } } } } }
+      responses: { "200": { description: "{groups}" } }
+    get:
+      operationId: errorsList
+      summary: "Error groups, newest first (sort=count: most reported): first and last seen, count, devices, versions and platforms affected, status. status is open (default), fixed, ignored or all; filter by version, platform, kind."
+      x-auth: developer
+      x-cli: errors list
+      parameters:
+        - { name: game, in: path, required: true, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string } }
+        - { name: version, in: query, schema: { type: string } }
+        - { name: platform, in: query, schema: { type: string } }
+        - { name: kind, in: query, schema: { type: string } }
+        - { name: sort, in: query, schema: { type: string } }
+      responses: { "200": { description: "{groups}" } }
+  /v1/games/{game}/errors/{fingerprint}:
+    get:
+      operationId: errorsGet
+      summary: One error group and its latest reports (backtrace, context, version, platform, session).
+      x-auth: developer
+      x-cli: errors get
+      parameters:
+        - { name: game, in: path, required: true, schema: { type: string } }
+        - { name: fingerprint, in: path, required: true, schema: { type: string } }
+      responses: { "200": { description: "{group, samples}" } }
+    post:
+      operationId: errorsUpdate
+      summary: Mark an error group open, fixed or ignored. A fixed group reopens when it's reported again.
+      x-auth: developer
+      x-cli: errors mark
+      parameters:
+        - { name: game, in: path, required: true, schema: { type: string } }
+        - { name: fingerprint, in: path, required: true, schema: { type: string } }
+      requestBody: { content: { application/json: { schema: { type: object, required: [status], properties: { status: { type: string, enum: [open, fixed, ignored] } } } } } }
+      responses: { "200": { description: "{fingerprint, status}" } }
   /v1/games/{game}/theme:
     get:
       operationId: themeGet
