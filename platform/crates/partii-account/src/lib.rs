@@ -90,6 +90,8 @@ struct State {
     /// slot → (rev, JSON text) as the platform has it.
     saves: HashMap<String, (i64, String)>,
     checkout: Option<Result<String, String>>,
+    /// The outcome of `submit_receipt`: Err((code, message)).
+    receipt: Option<Result<(), (String, String)>>,
     error: Option<String>,
     /// Writes queued and not yet answered by the platform.
     pending: usize,
@@ -100,6 +102,7 @@ enum Job {
     Refresh,
     Checkout,
     Login(Value),
+    Receipt(Value),
     /// Carries a sender for the poller, held only while it polls.
     SteamBrowser(Sender<Job>),
     /// Signed in elsewhere (the browser poller): use this token from now on.
@@ -275,6 +278,17 @@ impl Account {
                             };
                             lock(&shared).login = Some(out);
                         }
+                        Job::Receipt(body) => {
+                            let out = match c.json("playersReceipt", &[], Some(body)) {
+                                Ok(v) if v["ok"] == true => {
+                                    refresh(&c, &cfg.game, &shared, &cache_path);
+                                    Ok(())
+                                }
+                                Ok(v) => Err((v["error"]["code"].as_str().unwrap_or("refused").to_string(), v["error"]["message"].as_str().unwrap_or("the purchase wasn't accepted").to_string())),
+                                Err(e) => Err(("network".to_string(), e.message)),
+                            };
+                            lock(&shared).receipt = Some(out);
+                        }
                         Job::SteamBrowser(jobs) => {
                             // The guest's token goes along, so the guest merges into the Steam account.
                             match c.json("steamOpenidStart", &[], Some(json!({ "game": cfg.game }))) {
@@ -344,6 +358,25 @@ impl Account {
     }
     pub fn take_login(&self) -> Option<Result<(), String>> {
         lock(&self.st).login.take()
+    }
+    /// Hand the platform a purchase made in a platform store, to verify and
+    /// unlock the game on every platform: App Store `("appstore",
+    /// {"transaction": "<StoreKit 2 Transaction.id>"})`, Google Play
+    /// `("play", {"purchase_token", "product_id"})`. Use it for new
+    /// purchases and for restores (each of `Transaction.currentEntitlements`).
+    /// The outcome arrives via `take_receipt`; on success `owns` is fetched
+    /// again. Errors are (code, message); `claimed_by_another_account` means
+    /// the purchase belongs to another signed-in partii account (ask the
+    /// player to sign in to it). Finish the StoreKit transaction only after Ok.
+    pub fn submit_receipt(&self, store: &str, fields: Value) {
+        let mut body = if fields.is_object() { fields } else { json!({}) };
+        body["store"] = json!(store);
+        body["game"] = json!(self.game);
+        lock(&self.st).receipt = None;
+        let _ = self.jobs.send(Job::Receipt(body));
+    }
+    pub fn take_receipt(&self) -> Option<Result<(), (String, String)>> {
+        lock(&self.st).receipt.take()
     }
     /// "Sign in through Steam" in the browser: needs no Steam key, so it
     /// works for every game (and is the fallback when `login("steam", …)`

@@ -192,6 +192,7 @@ The API, in types:
 | `is_guest()`, `providers()` | `Option<bool>` (None until known), `Vec<String>` |
 | `login(provider, fields)`, `take_login()` | `()`, `Option<Result<(), String>>`: link a provider; the guest becomes or merges into that account |
 | `steam_browser_login()`, `take_browser_url()` | `()`, `Option<String>`: "Sign in through Steam" in the browser (no Steam key needed); open the URL, the outcome arrives via `take_login` |
+| `submit_receipt(store, fields)`, `take_receipt()` | `()`, `Option<Result<(), (code, message)>>`: a platform-store purchase (App Store `{"transaction": Transaction.id}`, Play `{"purchase_token", "product_id"}`), verified and unlocked on every platform; also for restores. A purchase belongs to one partii account: a guest's moves to whoever restores it, a signed-in account's gives `claimed_by_another_account` |
 
 **When `owns` is fresh.** Before `ready()`, `owns` returns last week's cached answer (or `None` on a fresh install). Once `ready()` is true it reflects the platform at sign-in. After a purchase made elsewhere (the browser, another device), call `refresh()`; `owns` updates when the answer arrives.
 
@@ -247,6 +248,7 @@ Keep `signed` (it is valid for a week) so the game stays unlocked offline. While
 To unlock from inside the game:
 
 - `acct.start_checkout()`, then `acct.take_checkout()` gives the URL to open in the browser (`Err("completed")` means the local fake store finished at once). Call `acct.refresh()` when the player is back; `acct.owns("full")` turns true.
+- In the App Store or Google Play (Apple requires it for unlocking inside an iPhone app): buy with StoreKit 2 / Play Billing, then `acct.submit_receipt("appstore", json!({"transaction": id}))` and wait for `acct.take_receipt()`; finish the store transaction only after `Ok`. For restores, submit each of StoreKit's current entitlements the same way. TestFlight and App Review buy in Apple's sandbox; those purchases unlock too (marked as test purchases).
 - Purchases made in the App Store, Google Play or Steam: send them to `playersReceipt`. partii verifies them with the store.
 
 Test without paying:
