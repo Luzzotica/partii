@@ -72,7 +72,7 @@ export const storeHandlers: Handlers = {
       await recordPurchase(env, { player: caller.player!.id, game: g.id, store: "fake", ref, amount, currency: g.currency, test: true });
       return { url: null, session: ref, completed: true };
     }
-    const base = env.STORE_URL ?? "https://partii.dev";
+    const base = env.STORE_URL ?? "https://partii.games";
     const s = await stripe(env, "checkout/sessions", {
       mode: "payment",
       "line_items[0][quantity]": "1",

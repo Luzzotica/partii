@@ -7,7 +7,7 @@ import { createClient, PartiiError } from "../../../sdk/ts/src/client";
 import policyText from "../../../docs/CONTENT-POLICY.md?raw";
 import "./style.css";
 
-const API = import.meta.env.VITE_PARTII_API ?? "https://partii-edge.partii-games.workers.dev";
+const API = import.meta.env.VITE_PARTII_API ?? "https://api.partii.games";
 const KEY = import.meta.env.VITE_PARTII_KEY ?? "";
 const api = createClient({ base: API, key: KEY });
 

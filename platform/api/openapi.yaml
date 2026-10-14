@@ -19,6 +19,9 @@ info:
     `x-cli` is the `partii` command that calls the operation.
 servers:
   - url: http://127.0.0.1:8787
+  - url: https://api.partii.games
+  - url: https://api-staging.partii.games
+  # The workers.dev hosts stay up for builds that already shipped with them.
   - url: https://partii-edge.partii-games.workers.dev
   - url: https://partii-edge-staging.partii-games.workers.dev
 
