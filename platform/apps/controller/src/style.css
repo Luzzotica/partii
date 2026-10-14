@@ -10,7 +10,8 @@
   --muted: var(--t-muted, #9ca3af);
   --tint: #3b82f6;
   --primary: var(--t-primary, var(--tint));
-  --primary-lip: var(--t-primary-lip, transparent);
+  /* Unset: a darker shade of FIRE's own colour (the seat colour unless the theme sets primary). */
+  --primary-lip: var(--t-primary-lip, color-mix(in srgb, var(--primary) 65%, black));
   --primary-ink: var(--t-primary-ink, var(--ink));
   --secondary: var(--t-secondary, var(--surface));
   --secondary-lip: var(--t-secondary-lip, transparent);
