@@ -12,6 +12,7 @@ import type { HexModule, HexColor } from "../../store/gameStore";
 import { useGameStore } from "../../store/gameStore";
 import { Projectile, type ProjectileConfig } from "./Projectile";
 import { synergyCalculator } from "../utils/SynergyCalculator";
+import { SYNERGY_VALUES } from "../config/SynergyConfig";
 import { audioManager } from "../audio/AudioManager";
 import { isMobileDevice } from "@/lib/utils/mobile-detector";
 import type { Enemy } from "./Enemy";
@@ -322,8 +323,7 @@ export class Player {
         // Double tap detected - dash!
         this.dashCooldown = 0;
         this.lastDashDirection = null;
-        const dashForce = require("../config/SynergyConfig").SYNERGY_VALUES
-          .TURBO.dashForce;
+        const dashForce = SYNERGY_VALUES.TURBO.dashForce;
         return {
           dashX: currentDir.x * dashForce,
           dashY: currentDir.y * dashForce,

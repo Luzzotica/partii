@@ -7,6 +7,7 @@
 
 import type { HexColor, HexModule } from '../../store/gameStore';
 import { HexGrid, type HexCoord } from './HexGrid';
+import { HEX_SIZE } from '../config';
 import { BASE_HEX_STATS, SYNERGY_VALUES } from '../config/SynergyConfig';
 
 // ============================================================================
@@ -193,8 +194,8 @@ export class SynergyCalculator {
    */
   private getHexGrid(): HexGrid {
     if (!this.hexGrid) {
-      // Import HEX_SIZE dynamically to avoid circular dependency
-      const { HEX_SIZE } = require('../config');
+      // HexGrid is built on first use. HEX_SIZE lives in config.ts, which
+      // imports the scene that imports this file, so it is not read at load.
       this.hexGrid = new HexGrid(HEX_SIZE);
     }
     return this.hexGrid;
