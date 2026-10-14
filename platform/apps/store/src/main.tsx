@@ -267,7 +267,7 @@ function SignIn({ onDone }: { onDone: (token: string, p: Player) => void }) {
 
 // ── The player content policy (docs/CONTENT-POLICY.md, rendered here) ──
 /** Where takedown requests and appeals go. */
-const CONTACT = import.meta.env.VITE_CONTENT_CONTACT ?? "{{CONTACT}}";
+const CONTACT = import.meta.env.VITE_CONTENT_CONTACT ?? "support@sterlinglong.me";
 
 /** Enough Markdown for the policy: headings, paragraphs, lists, **bold**. */
 function Markdown({ text }: { text: string }) {
