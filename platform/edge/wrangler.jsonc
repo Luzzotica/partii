@@ -22,7 +22,7 @@
     // Dev only; staging and production set SECRETS_KEY as a secret.
     "SECRETS_KEY": "ZGV2LW9ubHktc2VjcmV0cy1rZXktMzItYnl0ZXMhISE",
     "TURN_MODE": "none",
-    "ADMIN_TOKEN": "dev-admin-token", "MODERATOR_TOKEN": "dev-moderator-token",
+    "ADMIN_TOKEN": "dev-admin-token", "MODERATOR_TOKEN": "dev-moderator-token", "WEB_DOMAIN": ".localhost",
     "PLAYER_TOKEN_SECRET": "dev-only-player-secret",
     "ALLOW_FAKE_LOGIN": "1",
     "ALLOW_FAKE_STORE": "1",
@@ -36,8 +36,8 @@
       "name": "partii-edge-staging",
       // The workers.dev host stays on: shipped games use it.
       "workers_dev": true,
-      "routes": [{ "pattern": "api-staging.partii.games", "custom_domain": true }],
-      "vars": { "PARTII_ENV": "staging", "RATE_LIMITS": "on", "TURN_MODE": "cloudflare", "ALLOW_FAKE_LOGIN": "1", "ALLOW_FAKE_STORE": "1", "EMAIL_MODE": "dev", "STORE_URL": "https://partii-store.vercel.app", "R2_BUCKET": "partii-staging-files", "UGC": "on" },
+      "routes": [{ "pattern": "api-staging.partii.games", "custom_domain": true }, { "pattern": "*-staging.partii.games/*", "zone_name": "partii.games" }],
+      "vars": { "PARTII_ENV": "staging", "RATE_LIMITS": "on", "TURN_MODE": "cloudflare", "ALLOW_FAKE_LOGIN": "1", "ALLOW_FAKE_STORE": "1", "EMAIL_MODE": "dev", "STORE_URL": "https://partii-store.vercel.app", "R2_BUCKET": "partii-staging-files", "UGC": "on", "WEB_DOMAIN": "-staging.partii.games" },
       "durable_objects": {
         "bindings": [
           { "name": "SESSION", "class_name": "Session" },
@@ -57,8 +57,8 @@
       "name": "partii-edge",
       // The workers.dev host stays on: shipped games use it.
       "workers_dev": true,
-      "routes": [{ "pattern": "api.partii.games", "custom_domain": true }],
-      "vars": { "PARTII_ENV": "production", "RATE_LIMITS": "on", "TURN_MODE": "cloudflare", "EMAIL_MODE": "resend", "STORE_URL": "https://partii.games", "R2_BUCKET": "partii-prod-files", "UGC": "on" },
+      "routes": [{ "pattern": "api.partii.games", "custom_domain": true }, { "pattern": "*.partii.games/*", "zone_name": "partii.games" }],
+      "vars": { "PARTII_ENV": "production", "RATE_LIMITS": "on", "TURN_MODE": "cloudflare", "EMAIL_MODE": "resend", "STORE_URL": "https://partii.games", "R2_BUCKET": "partii-prod-files", "UGC": "on", "WEB_DOMAIN": ".partii.games" },
       "durable_objects": {
         "bindings": [
           { "name": "SESSION", "class_name": "Session" },

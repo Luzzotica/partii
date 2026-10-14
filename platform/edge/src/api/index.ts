@@ -15,6 +15,7 @@ import { ugcHandlers } from "./ugc";
 import { secretHandlers } from "./secrets";
 import { steamHandlers } from "./steam";
 import { themeHandlers } from "./theme";
+import { webHandlers } from "./web";
 
 export interface Ctx {
   env: Env;
@@ -42,6 +43,7 @@ export const HANDLERS: Handlers = {
   ...secretHandlers,
   ...steamHandlers,
   ...themeHandlers,
+  ...webHandlers,
 };
 
 async function authorize(route: Route, env: Env, req: Request): Promise<Caller> {

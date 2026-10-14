@@ -800,6 +800,73 @@ paths:
         - { name: game, in: path, required: true, schema: { type: string } }
         - { name: name, in: path, required: true, schema: { type: string } }
       responses: { "200": { description: "{deleted}" } }
+  /v1/games/{game}/web/deploys:
+    get:
+      operationId: webDeploysList
+      summary: The game's site (https://<game>.partii.games) and its deploys, newest first, with which is live and each one's preview_url.
+      x-auth: developer
+      x-cli: web list
+      parameters: [{ name: game, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: "{url, live, deploys}" } }
+    post:
+      operationId: webDeployStart
+      summary: "Start a deploy: files is {path: {sha256, size}} for the whole folder (index.html at the top). Returns the hashes the platform doesn't have yet (missing). Options: spa (unknown paths serve the nearest index.html), isolated (cross-origin isolation for threaded wasm), note. `partii web deploy <game> <dir>` does every step."
+      x-auth: developer
+      x-cli: web deploy-start
+      parameters: [{ name: game, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [files], properties: { files: { type: object }, spa: { type: boolean }, isolated: { type: boolean }, note: { type: string } } } } } }
+      responses: { "200": { description: "{deploy, missing}" } }
+  /v1/games/{game}/web/deploys/{deploy}/uploads:
+    post:
+      operationId: webDeployUploads
+      summary: Where to PUT missing files (up to 100 hashes per call); each upload URL checks the bytes against the hash.
+      x-auth: developer
+      x-cli: web deploy-uploads
+      parameters:
+        - { name: game, in: path, required: true, schema: { type: string } }
+        - { name: deploy, in: path, required: true, schema: { type: string } }
+      requestBody: { content: { application/json: { schema: { type: object, required: [sha256], properties: { sha256: { type: array, items: { type: string } } } } } } }
+      responses: { "200": { description: "{uploads}" } }
+  /v1/games/{game}/web/deploys/{deploy}/finish:
+    post:
+      operationId: webDeployFinish
+      summary: Check the uploads (a batch per call; call again while done is false) and, unless activate is false, make the deploy live.
+      x-auth: developer
+      x-cli: web deploy-finish
+      parameters:
+        - { name: game, in: path, required: true, schema: { type: string } }
+        - { name: deploy, in: path, required: true, schema: { type: string } }
+      requestBody: { content: { application/json: { schema: { type: object, properties: { activate: { type: boolean } } } } } }
+      responses: { "200": { description: "{done, deploy, url} or {done: false, remaining, not_uploaded}" } }
+  /v1/games/{game}/web/deploys/{deploy}/activate:
+    post:
+      operationId: webActivate
+      summary: Make a finished deploy the live site (a rollback, or going live after a preview).
+      x-auth: developer
+      x-cli: web activate
+      parameters:
+        - { name: game, in: path, required: true, schema: { type: string } }
+        - { name: deploy, in: path, required: true, schema: { type: string } }
+      responses: { "200": { description: "{live, url}" } }
+  /v1/games/{game}/web:
+    delete:
+      operationId: webTakeDown
+      summary: Take the game's site offline (deploys are kept; activate one to bring it back).
+      x-auth: developer
+      x-cli: web take-down
+      parameters: [{ name: game, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: "{taken_down}" } }
+  /v1/games/{game}/web/blobs/{sha256}:
+    put:
+      operationId: webBlobPut
+      summary: Upload one file to a URL from webDeployUploads when the platform has no direct uploads (the URL carries a signed ticket).
+      x-auth: public
+      x-body: binary
+      parameters:
+        - { name: game, in: path, required: true, schema: { type: string } }
+        - { name: sha256, in: path, required: true, schema: { type: string } }
+        - { name: ticket, in: query, required: true, schema: { type: string } }
+      responses: { "200": { description: "{stored}" } }
   /v1/games/{game}/theme:
     get:
       operationId: themeGet

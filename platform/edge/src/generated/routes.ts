@@ -528,6 +528,55 @@ export const ROUTES: Route[] = [
     "body": "none"
   },
   {
+    "op": "webDeploysList",
+    "method": "GET",
+    "path": "/v1/games/:game/web/deploys",
+    "auth": "developer",
+    "body": "none"
+  },
+  {
+    "op": "webDeployStart",
+    "method": "POST",
+    "path": "/v1/games/:game/web/deploys",
+    "auth": "developer",
+    "body": "json"
+  },
+  {
+    "op": "webDeployUploads",
+    "method": "POST",
+    "path": "/v1/games/:game/web/deploys/:deploy/uploads",
+    "auth": "developer",
+    "body": "json"
+  },
+  {
+    "op": "webDeployFinish",
+    "method": "POST",
+    "path": "/v1/games/:game/web/deploys/:deploy/finish",
+    "auth": "developer",
+    "body": "json"
+  },
+  {
+    "op": "webActivate",
+    "method": "POST",
+    "path": "/v1/games/:game/web/deploys/:deploy/activate",
+    "auth": "developer",
+    "body": "none"
+  },
+  {
+    "op": "webTakeDown",
+    "method": "DELETE",
+    "path": "/v1/games/:game/web",
+    "auth": "developer",
+    "body": "none"
+  },
+  {
+    "op": "webBlobPut",
+    "method": "PUT",
+    "path": "/v1/games/:game/web/blobs/:sha256",
+    "auth": "public",
+    "body": "binary"
+  },
+  {
     "op": "themeGet",
     "method": "GET",
     "path": "/v1/games/:game/theme",

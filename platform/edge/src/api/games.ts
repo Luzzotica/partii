@@ -28,7 +28,7 @@ function buildFields(game: string, body: Record<string, unknown>): BuildFields {
 
 const buildKey = (game: string, b: BuildFields, id: string) => `builds/${game}/${b.platform}/${b.version}/${id}/${b.filename}`;
 
-function hexToB64(hex: string): string {
+export function hexToB64(hex: string): string {
   let s = "";
   for (let i = 0; i < hex.length; i += 2) s += String.fromCharCode(parseInt(hex.slice(i, i + 2), 16));
   return btoa(s);

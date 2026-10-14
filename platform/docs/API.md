@@ -94,6 +94,13 @@ Auth (`x-auth`):
 | `secretsList` | `GET /v1/games/{game}/secrets` | developer | `partii secrets list` |
 | `secretsSet` | `PUT /v1/games/{game}/secrets/{name}` | developer | `partii secrets set` |
 | `secretsDelete` | `DELETE /v1/games/{game}/secrets/{name}` | developer | `partii secrets delete` |
+| `webDeploysList` | `GET /v1/games/{game}/web/deploys` | developer | `partii web list` |
+| `webDeployStart` | `POST /v1/games/{game}/web/deploys` | developer | `partii web deploy-start` |
+| `webDeployUploads` | `POST /v1/games/{game}/web/deploys/{deploy}/uploads` | developer | `partii web deploy-uploads` |
+| `webDeployFinish` | `POST /v1/games/{game}/web/deploys/{deploy}/finish` | developer | `partii web deploy-finish` |
+| `webActivate` | `POST /v1/games/{game}/web/deploys/{deploy}/activate` | developer | `partii web activate` |
+| `webTakeDown` | `DELETE /v1/games/{game}/web` | developer | `partii web take-down` |
+| `webBlobPut` | `PUT /v1/games/{game}/web/blobs/{sha256}` | public | – |
 | `themeGet` | `GET /v1/games/{game}/theme` | public | `partii theme get` |
 | `themeSet` | `PUT /v1/games/{game}/theme` | developer | `partii theme set` |
 | `themeDelete` | `DELETE /v1/games/{game}/theme` | developer | `partii theme delete` |
@@ -834,6 +841,82 @@ Delete a secret or config value.
 Parameters:
 - `game` (path, required)
 - `name` (path, required)
+
+### webDeploysList
+
+`GET /v1/games/{game}/web/deploys` (auth: developer) · `partii web list`
+
+The game's site (https://<game>.partii.games) and its deploys, newest first, with which is live and each one's preview_url.
+
+Parameters:
+- `game` (path, required)
+
+### webDeployStart
+
+`POST /v1/games/{game}/web/deploys` (auth: developer) · `partii web deploy-start`
+
+Start a deploy: files is {path: {sha256, size}} for the whole folder (index.html at the top). Returns the hashes the platform doesn't have yet (missing). Options: spa (unknown paths serve the nearest index.html), isolated (cross-origin isolation for threaded wasm), note. `partii web deploy <game> <dir>` does every step.
+
+Parameters:
+- `game` (path, required)
+
+Body fields: `files` (required), `spa`, `isolated`, `note`
+
+### webDeployUploads
+
+`POST /v1/games/{game}/web/deploys/{deploy}/uploads` (auth: developer) · `partii web deploy-uploads`
+
+Where to PUT missing files (up to 100 hashes per call); each upload URL checks the bytes against the hash.
+
+Parameters:
+- `game` (path, required)
+- `deploy` (path, required)
+
+Body fields: `sha256` (required)
+
+### webDeployFinish
+
+`POST /v1/games/{game}/web/deploys/{deploy}/finish` (auth: developer) · `partii web deploy-finish`
+
+Check the uploads (a batch per call; call again while done is false) and, unless activate is false, make the deploy live.
+
+Parameters:
+- `game` (path, required)
+- `deploy` (path, required)
+
+Body fields: `activate`
+
+### webActivate
+
+`POST /v1/games/{game}/web/deploys/{deploy}/activate` (auth: developer) · `partii web activate`
+
+Make a finished deploy the live site (a rollback, or going live after a preview).
+
+Parameters:
+- `game` (path, required)
+- `deploy` (path, required)
+
+### webTakeDown
+
+`DELETE /v1/games/{game}/web` (auth: developer) · `partii web take-down`
+
+Take the game's site offline (deploys are kept; activate one to bring it back).
+
+Parameters:
+- `game` (path, required)
+
+### webBlobPut
+
+`PUT /v1/games/{game}/web/blobs/{sha256}` (auth: public)
+
+Upload one file to a URL from webDeployUploads when the platform has no direct uploads (the URL carries a signed ticket).
+
+Parameters:
+- `game` (path, required)
+- `sha256` (path, required)
+- `ticket` (query, required)
+
+Body: the file's bytes.
 
 ### themeGet
 

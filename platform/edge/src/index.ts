@@ -11,6 +11,7 @@ export { Limiter } from "./limits";
 import type { Session } from "./session";
 import type { Room } from "./room";
 import type { Usage } from "./usage";
+import { webTarget, serveWeb } from "./api/web";
 
 export interface Env extends IceEnv, LimitEnv {
   SESSION: DurableObjectNamespace<Session>;
@@ -42,6 +43,8 @@ export interface Env extends IceEnv, LimitEnv {
   EMAIL_FROM?: string;
   RESEND_API_KEY?: string;
   STORE_URL?: string;
+  /** Games' sites are served at <game><WEB_DOMAIN> (".partii.games"; web.ts). Unset: no sites. */
+  WEB_DOMAIN?: string;
   STRIPE_SECRET_KEY?: string;
   STRIPE_WEBHOOK_SECRET?: string;
   /** R2's S3 API, for signed direct uploads (builds). Unset: uploads go through the Worker. */
@@ -64,6 +67,13 @@ export interface Env extends IceEnv, LimitEnv {
 }
 
 const app = new Hono<{ Bindings: Env }>();
+
+// A game's site (<game>.partii.games) before anything else: those hosts serve only the site.
+app.use("*", async (c, next) => {
+  const target = webTarget(c.env, new URL(c.req.url).host);
+  if (target) return serveWeb(c.env, c.req.raw, target);
+  await next();
+});
 
 // Web apps (store, controller) call the API from other origins; auth is by
 // key and token headers, never cookies, so open CORS is safe.

@@ -279,7 +279,7 @@ When the game hosts a room, show a QR code for:
 <controller page>/c/<ROOM CODE>?k=<publishable key>&e=<platform URL>&g=<game id>
 ```
 
-The controller page is `platform/apps/controller`, hosted on Vercel at `https://partii-controller.vercel.app`. The phone joins as a member of kind `phone` and streams input frames (10 bytes, about 30 times a second; [CONTROLLER.md](CONTROLLER.md)):
+Each game builds its own controller page: controllers need the game's own states, layouts and art. Start from `platform/apps/controller` (sticks, buttons, joining, sign-in; React + the engine's wasm) and host yours with `partii web deploy <game> ./dist --spa` (§7), so the QR code points at `https://<game>.partii.games/c/<CODE>?…`. The phone joins as a member of kind `phone` and streams input frames (10 bytes, about 30 times a second; [CONTROLLER.md](CONTROLLER.md)):
 
 ```rust
 // In Event::Message from a phone member:
@@ -296,7 +296,29 @@ Tell the phone its seat so it can colour itself: `engine.send(mid, true, br#"{"t
 
 Make the page look like your game with a theme (colours, fonts, button lips, logo): `partii theme set <game> --body @theme.json` after uploading its files with `partii theme file`. The format is in [CONTROLLER.md](CONTROLLER.md#looking-like-the-game).
 
-## 7. Errors
+## 7. Host a site: browser games and controllers
+
+Any static folder (a browser build of the game, a phone controller, a page) goes online at `https://<game>.partii.games`:
+
+```sh
+partii web deploy hexii ./dist                    # live at https://hexii.partii.games
+partii web deploy tankii ./controller/dist --spa  # client-side routes (/c/CODE) serve index.html
+partii web deploy hexii ./dist --no-activate      # upload, preview at the preview_url, then:
+partii web activate hexii <deploy id>             # go live (also how you roll back)
+partii web list hexii                             # deploys, which is live, preview links
+partii web take-down hexii
+```
+
+- The folder needs `index.html` at its top. Dotfiles are skipped. Up to 10,000 files, 100 MB each, 1 GB per deploy.
+- Only changed files upload (files are stored by their hash), straight to storage.
+- `--spa`: a path with no file serves the nearest `index.html` above it, so `/controller/c/ABCD` gets `/controller/index.html`.
+- `--isolated`: cross-origin isolation headers, which threaded wasm needs (Godot 4, Unity with threads, Emscripten pthreads). Everything on the site must then be same-origin or CORS-enabled.
+- `404.html` at the top is served for missing pages. Unity's `.br`/`.gz` build files are served with the right encoding.
+- HTML is revalidated on every load; other files are cached for a minute, so a new deploy shows up within a minute.
+- Each game's site is its own origin. Call the partii API from it with your publishable key like any web app (`https://api.partii.games`).
+- Staging: `https://<game>-staging.partii.games` (with `PARTII_API=https://api-staging.partii.games`).
+
+## 8. Errors
 
 Every failure is `{"ok": false, "error": {"code", "message", "hint"}}`, and the hint says what to do. CLI exit codes:
 

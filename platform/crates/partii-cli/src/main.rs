@@ -9,6 +9,7 @@ mod dev;
 mod help;
 mod out;
 mod upload;
+mod web;
 mod torture;
 
 use clap::{Parser, Subcommand};
@@ -50,6 +51,9 @@ pub enum Cmd {
     /// Network torture harness: run real clients through bad networks.
     #[command(subcommand)]
     Torture(torture::TortureCmd),
+    /// Host a game's site at <game>.partii.games (deploy; also web list, activate, take-down).
+    #[command(subcommand)]
+    Web(web::WebCmd),
 }
 
 fn main() {
@@ -80,6 +84,7 @@ fn main() {
         Cmd::Dev(c) => dev::run(&cli, c),
         Cmd::Bot(c) => bot::run(&cli, c),
         Cmd::Torture(c) => torture::run(&cli, c),
+        Cmd::Web(c) => web::run(&cli, c),
     };
     std::process::exit(out::print(result, pretty));
 }

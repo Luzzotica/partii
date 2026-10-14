@@ -153,6 +153,20 @@ export function operations(t: Transport) {
     secretsSet: (game: string, name: string, body: Record<string, unknown> = {}) => t.call("PUT", `/v1/games/${encodeURIComponent(game)}/secrets/${encodeURIComponent(name)}`, "developer", {}, body, "json"),
     /** Delete a secret or config value. (developer) */
     secretsDelete: (game: string, name: string) => t.call("DELETE", `/v1/games/${encodeURIComponent(game)}/secrets/${encodeURIComponent(name)}`, "developer", {}, undefined, "json"),
+    /** The game's site (https://<game>.partii.games) and its deploys, newest first, with which is live and each one's preview_url. (developer) */
+    webDeploysList: (game: string) => t.call("GET", `/v1/games/${encodeURIComponent(game)}/web/deploys`, "developer", {}, undefined, "json"),
+    /** Start a deploy: files is {path: {sha256, size}} for the whole folder (index.html at the top). Returns the hashes the platform doesn't have yet (missing). Options: spa (unknown paths serve the nearest index.html), isolated (cross-origin isolation for threaded wasm), note. `partii web deploy <game> <dir>` does every step. (developer) */
+    webDeployStart: (game: string, body: Record<string, unknown> = {}) => t.call("POST", `/v1/games/${encodeURIComponent(game)}/web/deploys`, "developer", {}, body, "json"),
+    /** Where to PUT missing files (up to 100 hashes per call); each upload URL checks the bytes against the hash. (developer) */
+    webDeployUploads: (game: string, deploy: string, body: Record<string, unknown> = {}) => t.call("POST", `/v1/games/${encodeURIComponent(game)}/web/deploys/${encodeURIComponent(deploy)}/uploads`, "developer", {}, body, "json"),
+    /** Check the uploads (a batch per call; call again while done is false) and, unless activate is false, make the deploy live. (developer) */
+    webDeployFinish: (game: string, deploy: string, body: Record<string, unknown> = {}) => t.call("POST", `/v1/games/${encodeURIComponent(game)}/web/deploys/${encodeURIComponent(deploy)}/finish`, "developer", {}, body, "json"),
+    /** Make a finished deploy the live site (a rollback, or going live after a preview). (developer) */
+    webActivate: (game: string, deploy: string) => t.call("POST", `/v1/games/${encodeURIComponent(game)}/web/deploys/${encodeURIComponent(deploy)}/activate`, "developer", {}, undefined, "json"),
+    /** Take the game's site offline (deploys are kept; activate one to bring it back). (developer) */
+    webTakeDown: (game: string) => t.call("DELETE", `/v1/games/${encodeURIComponent(game)}/web`, "developer", {}, undefined, "json"),
+    /** Upload one file to a URL from webDeployUploads when the platform has no direct uploads (the URL carries a signed ticket). (public) */
+    webBlobPut: (game: string, sha256: string, query: { ticket?: string | number } = {}, body: BodyInit) => t.call("PUT", `/v1/games/${encodeURIComponent(game)}/web/blobs/${encodeURIComponent(sha256)}`, "public", query, body, "json"),
     /** The game's look on partii's pages (the phone controller), with file names replaced by URLs. Public; theme is null when none is set. (public) */
     themeGet: (game: string) => t.call("GET", `/v1/games/${encodeURIComponent(game)}/theme`, "public", {}, undefined, "json"),
     /** Set the game's theme (replaces it): name, colors {role: #hex}, fonts {heading, body} (an uploaded font file or a font-family list), radius, border, lip, caps, letter_spacing, background_image, logo. Upload files first. From the CLI: --body @theme.json. See docs/CONTROLLER.md. (developer) */
