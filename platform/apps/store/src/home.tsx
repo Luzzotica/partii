@@ -168,8 +168,8 @@ export function Home({ go, games, signedIn }: { go: Go; games: HomeGame[] | null
 
       <section className="dev-band">
         <div>
-          <h2>Make party games? Put yours on partii.</h2>
-          <p>Online play that connects through any network, phone controllers, accounts, saves, sales, leaderboards and analytics. Host your game at yourgame.partii.games. Free for free games.</p>
+          <h2>Imagine a party game. Your AI builds it on partii.</h2>
+          <p>partii gives your AI coding agent every tool a party game needs: online rooms, phone controllers, accounts, saves, leaderboards, analytics and hosting. Describe the game; your AI builds it and puts it live at yourgame.partii.games.</p>
         </div>
         <A to="/developers" go={go} className="button">
           For developers
@@ -181,25 +181,58 @@ export function Home({ go, games, signedIn }: { go: Go; games: HomeGame[] | null
 
 const DEV_FEATURES: [string, string][] = [
   ["Online play that just connects", "Rooms with short codes. Players connect directly when they can and through a relay when they can't, so it works on any network, behind any router."],
-  ["Phones as controllers", "Players scan a QR code and their phone becomes a gamepad. Build your own controller page and host it with your game."],
+  ["Phones as controllers", "Players scan a QR code and their phone becomes a gamepad. Your AI builds the controller page and hosts it with the game."],
   ["Accounts and cloud saves", "Every player gets a guest account on first launch. Later they can sign in with email, Steam, Discord or Game Center, and their saves follow them to every device."],
-  ["Sell everywhere at once", "Buy once, play everywhere: one purchase unlocks your game on the web store, Steam, the App Store and Google Play. Demos and sales are built in."],
-  ["Leaderboards", "Daily, weekly and all-time boards with ranks, in a couple of lines of code."],
-  ["Analytics and crash reports", "Players, sessions, retention, funnels, and crashes grouped by bug, on your own dashboard."],
-  ["Web hosting", "Deploy a folder and it's live at yourgame.partii.games, with previews and one-command rollback. It handles Unity, Godot and threaded wasm builds."],
-  ["Player-made levels", "Let players share levels and replays. partii handles uploads, browsing, votes and moderation."],
+  ["Sell everywhere at once", "One purchase unlocks the game on the web store, Steam, the App Store and Google Play. Demos and sales are built in."],
+  ["Leaderboards", "Daily, weekly and all-time boards with ranks."],
+  ["Analytics and crash reports", "Players, sessions, retention, funnels, and crashes grouped by bug, readable from the dashboard or the command line."],
+  ["Hosting", "One command puts the game live at yourgame.partii.games, with previews and rollback. It handles Unity, Godot and threaded wasm builds."],
+  ["Player-made levels", "Players share levels and replays. partii handles uploads, browsing, votes and moderation."],
 ];
+
+/** Why an AI agent gets along with partii: all true of the CLI and API today. */
+const AGENT_FEATURES: [string, string][] = [
+  ["One tool, plain JSON", "Every partii command prints one JSON document, so your AI reads results instead of scraping text."],
+  ["Errors that say what to do", "Every failure comes with a hint for the next step, so your AI fixes the problem instead of guessing."],
+  ["Try before it changes anything", "Add --dry-run to any change to see what it would do. Staging is a full copy of partii to test on."],
+  ["Test players on tap", "Bots join a room like real players, so your AI can test multiplayer without a second person."],
+  ["The whole API, described", "An OpenAPI spec, a typed client for Rust and TypeScript, and a guide written to be read by an agent."],
+  ["It sees what players see", "Crash reports grouped by bug, plus analytics, all readable from the command line, so your AI can find a bug and ship the fix."],
+];
+
+const PROMPT = `Build a party game on partii. Start by reading https://partii.games/llms.txt and follow the guide it links. My game: `;
+
+function PromptBox() {
+  const copy = () => navigator.clipboard?.writeText(PROMPT).catch(() => {});
+  return (
+    <div className="prompt-box">
+      <div className="prompt-head">
+        <span>Paste this into your AI coding agent and describe your game</span>
+        <button type="button" className="secondary" onClick={copy}>
+          Copy
+        </button>
+      </div>
+      <code>
+        {PROMPT}
+        <span className="prompt-fill">a 4-player game where everyone's phone is a paddle and…</span>
+      </code>
+    </div>
+  );
+}
 
 export function Developers({ go }: { go: Go }) {
   return (
     <div className="home devs">
       <section className="hero solo">
         <div>
-          <h1>Make the party game. We handle the hard parts.</h1>
-          <p className="lede">partii is the platform under your game: networking, phone controllers, accounts, saves, sales, leaderboards, analytics and hosting. One command-line tool, one API, built for small teams.</p>
+          <h1>Imagine the party game. Your AI builds it.</h1>
+          <p className="lede">
+            partii gives your AI coding agent every tool a party game needs: online rooms, phone controllers, accounts, saves, sales, leaderboards, analytics and hosting. You describe the game. Your AI builds it, tests it, and puts it live on partii.
+          </p>
+          <PromptBox />
           <div className="cta">
-            <a className="button" href={LINKS.guide}>
-              Read the guide
+            <a className="button" href="/llms.txt">
+              What your AI reads
             </a>
             <a className="button secondary" href={LINKS.discord}>
               Join the Discord
@@ -208,10 +241,25 @@ export function Developers({ go }: { go: Go }) {
         </div>
       </section>
 
+      <section className="steps">
+        <h2>How it works</h2>
+        <ol>
+          <li>
+            <b>Imagine it.</b> Tell your AI the game you want: the rules, the vibe, how many players, what the phones do.
+          </li>
+          <li>
+            <b>Your AI builds it.</b> It reads partii's guide and uses partii's tools for multiplayer, controllers, accounts, saves and scores. There's no server for you to run.
+          </li>
+          <li>
+            <b>It goes live.</b> One command puts it at yourgame.partii.games. Play it with friends, and your AI reads the crash reports and fixes what breaks.
+          </li>
+        </ol>
+      </section>
+
       <section className="features">
-        <h2>What you get</h2>
+        <h2>Built for AI agents</h2>
         <div className="feature-grid">
-          {DEV_FEATURES.map(([t, d]) => (
+          {AGENT_FEATURES.map(([t, d]) => (
             <div key={t}>
               <b>{t}</b>
               <p>{d}</p>
@@ -220,19 +268,16 @@ export function Developers({ go }: { go: Go }) {
         </div>
       </section>
 
-      <section className="steps">
-        <h2>How publishing works</h2>
-        <ol>
-          <li>
-            <b>Create a developer account.</b> It's free.
-          </li>
-          <li>
-            <b>Upload your game.</b> A browser build, downloads for Mac, Windows and Linux, or both.
-          </li>
-          <li>
-            <b>Publish.</b> partii is for all ages, so we review every game against our content policy before it goes public.
-          </li>
-        </ol>
+      <section className="features">
+        <h2>Everything your game runs on</h2>
+        <div className="feature-grid">
+          {DEV_FEATURES.map(([t, d]) => (
+            <div key={t}>
+              <b>{t}</b>
+              <p>{d}</p>
+            </div>
+          ))}
+        </div>
       </section>
 
       <section className="features pricing">
@@ -246,13 +291,17 @@ export function Developers({ go }: { go: Go }) {
             <b>Paid games: coming soon</b>
             <p>When selling opens, you choose partii's share, with 10% as the default.</p>
           </div>
+          <div>
+            <b>Reviewed for all ages</b>
+            <p>partii is for everyone, so every game is reviewed against our content policy before it goes public.</p>
+          </div>
         </div>
       </section>
 
       <section className="dev-band">
         <div>
           <h2>Developer sign-up opens soon</h2>
-          <p>Want in early? Say hi on Discord and tell us about your game.</p>
+          <p>Want in early? Say hi on Discord and tell us what you're imagining.</p>
         </div>
         <a className="button" href={LINKS.discord}>
           Get early access

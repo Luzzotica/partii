@@ -1,0 +1,40 @@
+# partii
+
+> partii is a platform for party games. It gives a game online rooms with short join codes (WebRTC, with a relay that works on any network), phones as controllers, player accounts and cloud saves, purchases that work on every store, leaderboards, analytics, crash reports, and hosting at https://<game>.partii.games. Everything is driven by one command-line tool, `partii`, whose every command prints a single JSON document.
+
+You are probably an AI coding agent asked to build a party game on partii. Read the developer guide first, then work in this order:
+
+1. **Get the CLI.** Clone https://github.com/Luzzotica/partii and run `cargo build -p partii-cli` in `platform/`. That gives you `target/debug/partii`; put it on PATH. `partii help --json` lists every command.
+2. **Build and test locally first.** `partii dev up` runs the whole platform on your machine, with a demo project and key and fake stores and logins, so no account is needed. Test multiplayer with `partii bot host` and `partii bot guest --code <CODE>`.
+3. **Use the platform's pieces instead of writing your own:**
+   - online rooms: `partii-engine` for Rust games, the protocol for anything else;
+   - phone controllers: a web page your game hosts, joined by QR code;
+   - accounts and cloud saves: `partii-account`, or the TypeScript client;
+   - leaderboards;
+   - analytics and error reports.
+4. **Go live.** You need a partii developer account (`PARTII_TOKEN`). Sign-up isn't open yet: ask at https://discord.gg/kPufR79dSV. Then `partii web deploy <game> <dir>` puts a browser game or controller at https://<game>.partii.games. Games are reviewed for all ages before they're listed on https://partii.games.
+5. **Keep it healthy.** `partii errors list <game>` shows crash reports grouped by bug, and `partii analytics summary <game>` shows players, sessions and retention.
+
+Rules of the road:
+- Add `--dry-run` to any change to see what it would do first.
+- Every failure has `error.hint`: read it, it says what to do next.
+- Staging is https://api-staging.partii.games (set `PARTII_API`).
+- Content must suit all ages: see the content policy.
+
+## Docs
+
+- [Developer guide](https://raw.githubusercontent.com/Luzzotica/partii/main/platform/docs/GUIDE.md): start here. Setup, multiplayer, accounts and saves, selling, controllers, hosting, analytics, leaderboards.
+- [API reference](https://raw.githubusercontent.com/Luzzotica/partii/main/platform/docs/API.md): every operation, with its auth and CLI command (generated from the spec).
+- [OpenAPI spec](https://raw.githubusercontent.com/Luzzotica/partii/main/platform/api/openapi.yaml): the single source of truth for the HTTP API.
+- [Room protocol](https://raw.githubusercontent.com/Luzzotica/partii/main/platform/docs/PROTOCOL.md): the live-room WebSocket and WebRTC protocol, for engines other than Rust.
+- [Phone controllers](https://raw.githubusercontent.com/Luzzotica/partii/main/platform/docs/CONTROLLER.md): how phones join a game and send input.
+
+## Policies
+
+- [Content policy](https://raw.githubusercontent.com/Luzzotica/partii/main/platform/docs/CONTENT-POLICY.md)
+- [Privacy](https://partii.games/privacy)
+
+## Optional
+
+- [TypeScript client](https://github.com/Luzzotica/partii/tree/main/platform/sdk/ts): a typed client for every operation, for web games and controllers.
+- [Developer dashboard](https://partii.games/dev): players, events, funnels and errors per game.
