@@ -209,9 +209,9 @@ export function operations(t: Transport) {
     steamOpenidPoll: (body: Record<string, unknown> = {}) => t.call("POST", `/v1/players/steam/openid/poll`, "key", {}, body, "json"),
     /** Where Steam sends the browser back (a page that says to return to the game). (public) */
     steamOpenidReturn: (query: { state?: string | number } = {}) => t.call("GET", `/v1/players/steam/openid/return`, "public", query, undefined, "binary"),
-    /** Every published game. (public) */
+    /** Every published game. play_url is where to play it in the browser: the site (https://<game>.partii.games) of a game whose platforms include web. (public) */
     storeGames: () => t.call("GET", `/v1/store/games`, "public", {}, undefined, "json"),
-    /** A published game's store page. (public) */
+    /** A published game's store page, with its stable builds; play_url as in storeGames. (public) */
     storeGame: (game: string) => t.call("GET", `/v1/store/games/${encodeURIComponent(game)}`, "public", {}, undefined, "json"),
     /** Start a Stripe Checkout for the game; returns the URL to send the buyer to. (player) */
     storeCheckout: (game: string, body: Record<string, unknown> = {}) => t.call("POST", `/v1/store/games/${encodeURIComponent(game)}/checkout`, "player", {}, body, "json"),

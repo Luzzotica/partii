@@ -7,6 +7,7 @@ import { createClient, PartiiError } from "../../../sdk/ts/src/client";
 import policyText from "../../../docs/CONTENT-POLICY.md?raw";
 import privacyText from "../../../docs/PRIVACY.md?raw";
 import { DevDashboard } from "./dev";
+import { Developers, GameCard, Home, LINKS } from "./home";
 import "./style.css";
 
 const API = import.meta.env.VITE_PARTII_API ?? "https://api.partii.games";
@@ -102,6 +103,8 @@ interface Game {
   demo: { free_levels?: number } | null;
   platforms: string[];
   store: { cover?: string; screenshots?: string[]; trailer?: string; appstore_url?: string; play_url?: string };
+  /** The game's site, to play in the browser. */
+  play_url?: string | null;
 }
 
 function Price({ g }: { g: Game }) {
@@ -119,24 +122,26 @@ function Cover({ g }: { g: Game }) {
   return g.store?.cover ? <img className="cover" src={g.store.cover} alt="" /> : <div className="cover placeholder">{g.title.slice(0, 1)}</div>;
 }
 
-function Front({ go }: { go: (to: string) => void }) {
+function useGames() {
   const [games, setGames] = useState<Game[] | null>(null);
   useEffect(() => {
     api.storeGames().then((r) => setGames(r.games), () => setGames([]));
   }, []);
+  return games;
+}
+
+function AllGames({ go, games }: { go: (to: string) => void; games: Game[] | null }) {
   if (!games) return <p className="muted">Loading…</p>;
   if (!games.length) return <p className="muted">No games yet.</p>;
   return (
-    <div className="grid">
-      {games.map((g) => (
-        <a key={g.id} className="card" href={`/games/${g.id}`} onClick={(e) => (e.preventDefault(), go(`/games/${g.id}`))} data-testid={`game-${g.id}`}>
-          <Cover g={g} />
-          <h3>{g.title}</h3>
-          <p className="muted">{g.tagline}</p>
-          <Price g={g} />
-        </a>
-      ))}
-    </div>
+    <>
+      <h1>Games</h1>
+      <div className="grid">
+        {games.map((g) => (
+          <GameCard key={g.id} g={g} go={go} />
+        ))}
+      </div>
+    </>
   );
 }
 
@@ -188,8 +193,15 @@ function GamePage({ id, owned, refresh }: { id: string; owned: Set<string>; refr
         <p>{g.description}</p>
         <p className="muted">On {g.platforms.map((p) => PLATFORM_NAMES[p] ?? p).join(", ") || "—"}</p>
         {g.demo?.free_levels ? <p className="demo">The first {g.demo.free_levels} levels are free to play.</p> : null}
+        {g.play_url && (
+          <p>
+            <a className="button" href={g.play_url} data-testid="play">
+              Play in your browser
+            </a>
+          </p>
+        )}
         <div className="buy">
-          {own ? (
+          {g.play_url && g.price_cents === 0 ? null : own ? (
             <span className="owned" data-testid="owned">In your library</span>
           ) : (
             <button onClick={buy} disabled={busy} data-testid="buy">
@@ -232,7 +244,7 @@ function Library({ go }: { go: (to: string) => void }) {
   );
 }
 
-function SignIn({ onDone }: { onDone: (token: string, p: Player) => void }) {
+function SignIn({ onDone, signup }: { onDone: (token: string, p: Player) => void; signup?: boolean }) {
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [sent, setSent] = useState(false);
@@ -257,11 +269,15 @@ function SignIn({ onDone }: { onDone: (token: string, p: Player) => void }) {
   };
   return (
     <form className="signin" onSubmit={(e) => (e.preventDefault(), sent ? finish() : start())}>
-      <h1>Sign in</h1>
-      <p className="muted">One account for every device: what you buy here plays on your phone and computer.</p>
+      <h1>{signup ? "Create your free account" : "Sign in"}</h1>
+      <p className="muted">
+        {signup
+          ? "Just your email: we send a 6-digit code, with no password to remember. Your games, saves and purchases follow you to every device."
+          : "One account for every device: what you buy here plays on your phone and computer."}
+      </p>
       <input type="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} disabled={sent} data-testid="email" />
       {sent && <input inputMode="numeric" placeholder="123456" value={code} onChange={(e) => setCode(e.target.value)} data-testid="code" />}
-      <button data-testid="signin">{sent ? "Sign in" : "Send code"}</button>
+      <button data-testid="signin">{sent ? (signup ? "Create account" : "Sign in") : "Send code"}</button>
       {note && <p className="note" data-testid="signin-note">{note}</p>}
     </form>
   );
@@ -297,42 +313,64 @@ function Privacy() {
 function App() {
   const [path, go] = usePath();
   const { player, owned, refresh, signedIn } = usePlayer();
+  const games = useGames();
   const link = (to: string, label: string) => (
     <a href={to} className={path === to ? "on" : ""} onClick={(e) => (e.preventDefault(), go(to))}>
       {label}
     </a>
   );
+  const member = !!player && player.providers.includes("email");
   let page;
   const m = /^\/games\/([a-z0-9-]+)/.exec(path);
   if (m) page = <GamePage id={m[1]} owned={owned} refresh={refresh} />;
+  else if (path.startsWith("/games")) page = <AllGames go={go} games={games} />;
   else if (path.startsWith("/library")) page = <Library go={go} />;
+  else if (path.startsWith("/signup")) page = <SignIn onDone={signedIn} signup />;
   else if (path.startsWith("/signin")) page = <SignIn onDone={signedIn} />;
   else if (path.startsWith("/content-policy")) page = <ContentPolicy />;
   else if (path.startsWith("/privacy")) page = <Privacy />;
+  else if (path.startsWith("/developers")) page = <Developers go={go} />;
   else if (path.startsWith("/dev")) page = <DevDashboard api={API} />;
-  else page = <Front go={go} />;
+  else page = <Home go={go} games={games} signedIn={member} />;
   return (
     <>
       <nav>
         <a href="/" className="brand" onClick={(e) => (e.preventDefault(), go("/"))}>
           partii
         </a>
-        {link("/", "Store")}
+        {link("/games", "Games")}
         {link("/library", "Library")}
+        {link("/developers", "Developers")}
         <span className="spacer" />
-        {player && !player.providers.includes("email") ? link("/signin", "Sign in") : <span className="muted" data-testid="who">{player?.display_name}</span>}
+        {member ? (
+          <span className="muted" data-testid="who">
+            {player?.display_name}
+          </span>
+        ) : (
+          <>
+            {link("/signin", "Sign in")}
+            <a href="/signup" className="button small" onClick={(e) => (e.preventDefault(), go("/signup"))}>
+              Sign up
+            </a>
+          </>
+        )}
       </nav>
       <main>{page}</main>
       <footer>
+        <a href={LINKS.discord}>Discord</a>
+        <a href={LINKS.youtube}>YouTube</a>
+        <a href="/developers" onClick={(e) => (e.preventDefault(), go("/developers"))}>
+          Developers
+        </a>
         <a href="/content-policy" onClick={(e) => (e.preventDefault(), go("/content-policy"))}>
-          Player content policy
+          Content policy
         </a>
         <a href="/privacy" onClick={(e) => (e.preventDefault(), go("/privacy"))}>
           Privacy
         </a>
-        <a href="/dev" onClick={(e) => (e.preventDefault(), go("/dev"))}>
-          Developers
-        </a>
+        <a href={`mailto:${CONTACT}`}>Contact</a>
+        <span className="spacer" />
+        <a href={LINKS.hub}>Made by Sterling Long</a>
       </footer>
     </>
   );

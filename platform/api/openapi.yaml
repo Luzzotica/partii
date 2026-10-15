@@ -1083,14 +1083,14 @@ paths:
   /v1/store/games:
     get:
       operationId: storeGames
-      summary: Every published game.
+      summary: "Every published game. play_url is where to play it in the browser: the site (https://<game>.partii.games) of a game whose platforms include web."
       x-auth: public
       x-cli: store list
       responses: { "200": { description: "{games}" } }
   /v1/store/games/{game}:
     get:
       operationId: storeGame
-      summary: A published game's store page.
+      summary: A published game's store page, with its stable builds; play_url as in storeGames.
       x-auth: public
       x-cli: store get
       parameters: [{ name: game, in: path, required: true, schema: { type: string } }]

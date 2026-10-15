@@ -1160,13 +1160,13 @@ Parameters:
 
 `GET /v1/store/games` (auth: public) · `partii store list`
 
-Every published game.
+Every published game. play_url is where to play it in the browser: the site (https://<game>.partii.games) of a game whose platforms include web.
 
 ### storeGame
 
 `GET /v1/store/games/{game}` (auth: public) · `partii store get`
 
-A published game's store page.
+A published game's store page, with its stable builds; play_url as in storeGames.
 
 Parameters:
 - `game` (path, required)

@@ -8,6 +8,7 @@ import type { Env } from "../index";
 import { ApiError, bad, currentPrice, gameView, now, randomSlug, type GameRow } from "./core";
 import { grant } from "./games";
 import type { Handlers } from "./index";
+import { siteUrl } from "./web";
 
 async function stripe(env: Env, path: string, form: Record<string, string>, fetcher: typeof fetch = fetch) {
   const res = await fetcher(`https://api.stripe.com/v1/${path}`, {
@@ -18,6 +19,11 @@ async function stripe(env: Env, path: string, form: Record<string, string>, fetc
   const j = (await res.json()) as Record<string, any>;
   if (!res.ok) throw new ApiError(502, "stripe_error", j.error?.message ?? `Stripe answered ${res.status}`, "check the Stripe key on the edge");
   return j;
+}
+
+/** Where to play in the browser: a web game's live site (not, say, a desktop game's phone-controller site). */
+function playUrl(env: Env, g: GameRow, hasSite: boolean): string | null {
+  return hasSite && (JSON.parse(g.platforms) as string[]).includes("web") ? siteUrl(env, g.id) : null;
 }
 
 async function published(env: Env, game: string): Promise<GameRow> {
@@ -47,8 +53,8 @@ async function verifyStripeSignature(secret: string, header: string, payload: st
 
 export const storeHandlers: Handlers = {
   async storeGames({ env }) {
-    const r = await env.DB.prepare("SELECT * FROM games WHERE status = 'published' ORDER BY updated_at DESC").all<GameRow>();
-    return { games: r.results.map((g) => ({ ...gameView(g), price_now_cents: currentPrice(g) })) };
+    const r = await env.DB.prepare("SELECT g.*, w.deploy_id AS site FROM games g LEFT JOIN web_sites w ON w.game_id = g.id WHERE g.status = 'published' ORDER BY g.updated_at DESC").all<GameRow & { site: string | null }>();
+    return { games: r.results.map((g) => ({ ...gameView(g), price_now_cents: currentPrice(g), play_url: playUrl(env, g, !!g.site) })) };
   },
 
   async storeGame({ env, params }) {
@@ -58,7 +64,8 @@ export const storeHandlers: Handlers = {
     )
       .bind(g.id)
       .all();
-    return { game: { ...gameView(g), price_now_cents: currentPrice(g) }, builds: b.results };
+    const site = await env.DB.prepare("SELECT 1 FROM web_sites WHERE game_id = ?").bind(g.id).first();
+    return { game: { ...gameView(g), price_now_cents: currentPrice(g), play_url: playUrl(env, g, !!site) }, builds: b.results };
   },
 
   async storeCheckout({ env, caller, params, body }) {
