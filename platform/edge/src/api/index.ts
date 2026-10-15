@@ -18,6 +18,7 @@ import { themeHandlers } from "./theme";
 import { webHandlers } from "./web";
 import { analyticsHandlers, reportPlatformError } from "./analytics";
 import { leaderboardHandlers } from "./leaderboards";
+import { adminHandlers } from "./admin";
 
 export interface Ctx {
   env: Env;
@@ -48,6 +49,7 @@ export const HANDLERS: Handlers = {
   ...webHandlers,
   ...analyticsHandlers,
   ...leaderboardHandlers,
+  ...adminHandlers,
 };
 
 async function authorize(route: Route, env: Env, req: Request): Promise<Caller> {

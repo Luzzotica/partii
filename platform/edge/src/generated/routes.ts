@@ -17,11 +17,60 @@ export const ROUTES: Route[] = [
     "body": "json"
   },
   {
+    "op": "adminDevelopersList",
+    "method": "GET",
+    "path": "/v1/admin/developers",
+    "auth": "admin",
+    "body": "none"
+  },
+  {
+    "op": "adminDevelopersTrust",
+    "method": "POST",
+    "path": "/v1/admin/developers/:developer/trust",
+    "auth": "admin",
+    "body": "json"
+  },
+  {
+    "op": "adminOverview",
+    "method": "GET",
+    "path": "/v1/admin/overview",
+    "auth": "admin",
+    "body": "none"
+  },
+  {
+    "op": "adminGamesReview",
+    "method": "GET",
+    "path": "/v1/admin/games/review",
+    "auth": "admin",
+    "body": "none"
+  },
+  {
+    "op": "adminGamesDecide",
+    "method": "POST",
+    "path": "/v1/admin/games/:game/review",
+    "auth": "admin",
+    "body": "json"
+  },
+  {
     "op": "adminUsage",
     "method": "GET",
     "path": "/v1/admin/usage",
     "auth": "admin",
     "body": "none"
+  },
+  {
+    "op": "developersLoginStart",
+    "method": "POST",
+    "path": "/v1/developers/login/start",
+    "auth": "public",
+    "body": "json"
+  },
+  {
+    "op": "developersLogin",
+    "method": "POST",
+    "path": "/v1/developers/login",
+    "auth": "public",
+    "body": "json"
   },
   {
     "op": "me",

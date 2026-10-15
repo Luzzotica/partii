@@ -71,12 +71,12 @@ export async function currentPlayer(ctx: Ctx): Promise<string | null> {
   return p ? c.pid : null;
 }
 
-async function sendEmail(env: Env, to: string, code: string): Promise<boolean> {
+export async function sendEmail(env: Env, to: string, code: string, what = "sign-in"): Promise<boolean> {
   if (env.EMAIL_MODE !== "resend" || !env.RESEND_API_KEY) return false;
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { authorization: `Bearer ${env.RESEND_API_KEY}`, "content-type": "application/json" },
-    body: JSON.stringify({ from: env.EMAIL_FROM ?? "partii <login@partii.dev>", to, subject: `Your partii code: ${code}`, text: `Your sign-in code is ${code}. It works for 10 minutes.` }),
+    body: JSON.stringify({ from: env.EMAIL_FROM ?? "partii <login@partii.dev>", to, subject: `Your partii code: ${code}`, text: `Your partii ${what} code is ${code}. It works for 10 minutes.` }),
   });
   return res.ok;
 }

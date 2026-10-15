@@ -2,10 +2,19 @@
 
 import { signKey } from "../keys";
 import { EDGE_USAGE, usage } from "../usage";
-import { bad, forgetKey, now, ownProject, randomId, randomSlug, sha256hex } from "./core";
+import { allowed } from "../limits";
+import { ApiError, bad, forgetKey, now, ownProject, randomId, randomSlug, sha256hex } from "./core";
+import { sendEmail } from "./players";
 import type { Handlers } from "./index";
 
 const PROJECT_ID = /^[a-z0-9]{1,32}$/;
+const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
+/** What a developer who signed up themselves may do before an operator trusts them. */
+export const NEW_DEVELOPER_LIMITS = { projects: 5, games: 20, paid: false };
+
+/** Email codes for developers share the players' table under a "dev:" key. */
+const codeKey = (email: string) => `dev:${email}`;
 
 async function newDevToken(env: Parameters<Handlers[string]>[0]["env"], developerId: string, name: string) {
   const token = `pd_${randomId(24)}`;
@@ -17,6 +26,53 @@ async function newDevToken(env: Parameters<Handlers[string]>[0]["env"], develope
 }
 
 export const developerHandlers: Handlers = {
+  // ── Sign-up and sign-in: an email code, then a developer token ──
+
+  async developersLoginStart({ env, req, body }) {
+    const email = String(body.email ?? "").trim().toLowerCase();
+    if (!EMAIL.test(email)) throw bad("a valid email is required");
+    const ip = req.headers.get("cf-connecting-ip") ?? "";
+    if (!(await allowed(env, "login", `devlogin:${ip}`)) || !(await allowed(env, "login", `devlogin:${email}`))) {
+      throw new ApiError(429, "rate_limited", "too many codes asked for", "wait a minute, then ask again");
+    }
+    const code = String(100000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 900000));
+    await env.DB.prepare("INSERT INTO email_codes (email, code_hash, expires_at, tries) VALUES (?, ?, ?, 0) ON CONFLICT DO UPDATE SET code_hash = excluded.code_hash, expires_at = excluded.expires_at, tries = 0")
+      .bind(codeKey(email), await sha256hex(`${codeKey(email)}:${code}`), now() + 10 * 60_000)
+      .run();
+    const known = await env.DB.prepare("SELECT 1 FROM developers WHERE email = ?").bind(email).first();
+    if (await sendEmail(env, email, code, "developer")) return { sent: true, new_developer: !known, hint: "ask the person for the 6-digit code in their email, then: partii login --email <email> --code <code>" };
+    if (env.PARTII_ENV === "production") throw new ApiError(503, "email_unavailable", "codes can't be emailed right now", "try again shortly");
+    return { sent: false, code, new_developer: !known, note: "no mail provider here; the code is returned instead" };
+  },
+
+  async developersLogin({ env, body }) {
+    const email = String(body.email ?? "").trim().toLowerCase();
+    const code = String(body.code ?? "").trim();
+    const k = codeKey(email);
+    const row = await env.DB.prepare("SELECT code_hash, expires_at, tries FROM email_codes WHERE email = ?").bind(k).first<{ code_hash: string; expires_at: number; tries: number }>();
+    if (!row || row.expires_at < now()) throw new ApiError(401, "code_expired", "no current code for this email", "ask for one: partii login --email <email>");
+    if (row.tries >= 5) throw new ApiError(429, "rate_limited", "too many wrong codes", "ask for a new code");
+    if ((await sha256hex(`${k}:${code}`)) !== row.code_hash) {
+      await env.DB.prepare("UPDATE email_codes SET tries = tries + 1 WHERE email = ?").bind(k).run();
+      throw new ApiError(401, "bad_code", "that code is not right", "check the latest email");
+    }
+    await env.DB.prepare("DELETE FROM email_codes WHERE email = ?").bind(k).run();
+    let dev = await env.DB.prepare("SELECT id, email, name, trusted, created_at FROM developers WHERE email = ?").bind(email).first<{ id: string; email: string; name: string; trusted: number; created_at: number }>();
+    const created = !dev;
+    if (!dev) {
+      dev = { id: randomSlug(12), email, name: String(body.name ?? "").slice(0, 80), trusted: 0, created_at: now() };
+      await env.DB.prepare("INSERT INTO developers (id, email, name, created_at, trusted, signup) VALUES (?, ?, ?, ?, 0, 'email')").bind(dev.id, dev.email, dev.name, dev.created_at).run();
+    }
+    const token = await newDevToken(env, dev.id, String(body.token_name ?? "cli").slice(0, 60));
+    return {
+      developer: { id: dev.id, email: dev.email, name: dev.name, trusted: !!dev.trusted },
+      token: token.token,
+      token_id: token.id,
+      created,
+      next: created ? "make a project: partii projects put <id> --name <name>; then partii games put <game> --project <id>" : "you're signed in",
+    };
+  },
+
   async adminCreateDeveloper({ env, body }) {
     const email = String(body.email ?? "").trim().toLowerCase();
     if (!/^[^@\s]+@[^@\s]+$/.test(email)) throw bad("a valid email is required");
@@ -25,6 +81,7 @@ export const developerHandlers: Handlers = {
       dev = { id: randomSlug(12), email, name: String(body.name ?? ""), created_at: now() };
       await env.DB.prepare("INSERT INTO developers (id, email, name, created_at) VALUES (?, ?, ?, ?)").bind(dev.id, dev.email, dev.name, dev.created_at).run();
     }
+    if (body.trusted !== false) await env.DB.prepare("UPDATE developers SET trusted = 1 WHERE id = ?").bind(dev.id).run();
     const token = await newDevToken(env, dev.id as string, "first");
     return { developer: dev, token: token.token };
   },
@@ -38,7 +95,7 @@ export const developerHandlers: Handlers = {
   },
 
   async me({ caller }) {
-    return { developer: caller.developer };
+    return { developer: caller.developer, limits: caller.developer!.trusted ? null : NEW_DEVELOPER_LIMITS };
   },
 
   async tokensList({ env, caller }) {
@@ -67,6 +124,10 @@ export const developerHandlers: Handlers = {
     if (existing && existing.developer_id !== caller.developer!.id) throw bad(`project id ${id} is taken`, "pick another id");
     const name = body.name !== undefined ? String(body.name) : existing?.name ?? id;
     const project = { id, name, plan: "free", created_at: existing ? (existing as unknown as { created_at: number }).created_at : now() };
+    if (!existing && !caller.developer!.trusted) {
+      const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM projects WHERE developer_id = ?").bind(caller.developer!.id).first<{ n: number }>();
+      if ((n?.n ?? 0) >= NEW_DEVELOPER_LIMITS.projects) throw new ApiError(403, "limit", `new developers can have ${NEW_DEVELOPER_LIMITS.projects} projects`, "ask partii for more (support@sterlinglong.me)");
+    }
     if (dryRun) return { dry_run: true, project, created: !existing };
     if (existing) await env.DB.prepare("UPDATE projects SET name = ? WHERE id = ?").bind(name, id).run();
     else await env.DB.prepare("INSERT INTO projects (id, developer_id, name, plan, created_at) VALUES (?, ?, ?, 'free', ?)").bind(id, caller.developer!.id, name, project.created_at).run();

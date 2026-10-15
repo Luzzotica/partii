@@ -29,16 +29,16 @@ function saveToken(t: string, remember: boolean) {
   }
 }
 
-const message = (e: unknown) => (e instanceof PartiiError ? `${e.message}${e.hint ? ` (${e.hint})` : ""}` : String(e));
+export const message = (e: unknown) => (e instanceof PartiiError ? `${e.message}${e.hint ? ` (${e.hint})` : ""}` : String(e));
 const pct = (x: number | null) => (x === null ? "–" : `${Math.round(x * 100)}%`);
-const secs = (s: number | null) => (s === null ? "–" : s < 90 ? `${Math.round(s)} s` : s < 5400 ? `${Math.round(s / 60)} min` : `${(s / 3600).toFixed(1)} h`);
+export const secs = (s: number | null) => (s === null ? "–" : s < 90 ? `${Math.round(s)} s` : s < 5400 ? `${Math.round(s / 60)} min` : `${(s / 3600).toFixed(1)} h`);
 const ago = (t: number) => {
   const m = Math.round((Date.now() - t) / 60_000);
   return m < 60 ? `${m} min ago` : m < 2880 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago`;
 };
 
 /** Bars per day; `parts` stack (bottom first). */
-function DayBars({ days, parts, label }: { days: { day: string }[]; parts: { key: string; className: string; name: string }[]; label: string }) {
+export function DayBars({ days, parts, label }: { days: { day: string }[]; parts: { key: string; className: string; name: string }[]; label: string }) {
   const totals = days.map((d: any) => parts.reduce((a, p) => a + (d[p.key] ?? 0), 0));
   const max = Math.max(1, ...totals);
   const w = 100 / Math.max(days.length, 1);
@@ -74,7 +74,7 @@ function DayBars({ days, parts, label }: { days: { day: string }[]; parts: { key
   );
 }
 
-function Tile({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
+export function Tile({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
   return (
     <div className="tile">
       <div className="tile-label">{label}</div>

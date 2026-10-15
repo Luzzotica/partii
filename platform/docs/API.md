@@ -21,7 +21,14 @@ Auth (`x-auth`):
 |---|---|---|---|
 | `health` | `GET /health` | public | `partii status` |
 | `adminCreateDeveloper` | `POST /v1/admin/developers` | admin | `partii admin developers create` |
+| `adminDevelopersList` | `GET /v1/admin/developers` | admin | `partii admin developers list` |
+| `adminDevelopersTrust` | `POST /v1/admin/developers/{developer}/trust` | admin | `partii admin developers trust` |
+| `adminOverview` | `GET /v1/admin/overview` | admin | `partii admin overview` |
+| `adminGamesReview` | `GET /v1/admin/games/review` | admin | `partii admin games review` |
+| `adminGamesDecide` | `POST /v1/admin/games/{game}/review` | admin | `partii admin games decide` |
 | `adminUsage` | `GET /v1/admin/usage` | admin | `partii admin usage` |
+| `developersLoginStart` | `POST /v1/developers/login/start` | public | `partii developers login-start` |
+| `developersLogin` | `POST /v1/developers/login` | public | `partii developers login` |
 | `me` | `GET /v1/me` | developer | `partii whoami` |
 | `tokensList` | `GET /v1/tokens` | developer | `partii tokens list` |
 | `tokensCreate` | `POST /v1/tokens` | developer | `partii tokens create` |
@@ -146,6 +153,53 @@ Create a developer and their first token (platform operators).
 
 Body fields: `email` (required), `name`
 
+### adminDevelopersList
+
+`GET /v1/admin/developers` (auth: admin) · `partii admin developers list`
+
+Every developer, newest first, with trusted, how they signed up, and their project and game counts (platform operators).
+
+### adminDevelopersTrust
+
+`POST /v1/admin/developers/{developer}/trust` (auth: admin) · `partii admin developers trust`
+
+Trust a developer (or stop): trusted developers publish straight to the store and may charge; new ones publish into review, free only (platform operators).
+
+Parameters:
+- `developer` (path, required)
+
+Body fields: `trusted` (required)
+
+### adminOverview
+
+`GET /v1/admin/overview` (auth: admin) · `partii admin overview`
+
+All of partii on one page: per game players (today, 7 and 30 days, new), sessions, play time, open errors, sales and last activity; daily totals; developers; the store site's top pages and referrers (platform operators).
+
+Parameters:
+- `days` (query)
+- `site` (query)
+
+### adminGamesReview
+
+`GET /v1/admin/games/review` (auth: admin) · `partii admin games review`
+
+New developers' games waiting for review (status=all: every reviewed game), with the developer and the site's preview address (platform operators).
+
+Parameters:
+- `status` (query)
+
+### adminGamesDecide
+
+`POST /v1/admin/games/{game}/review` (auth: admin) · `partii admin games decide`
+
+Approve a game (it goes on the store and its site opens) or reject it with a note the developer reads (platform operators).
+
+Parameters:
+- `game` (path, required)
+
+Body fields: `verdict` (required), `note`
+
 ### adminUsage
 
 `GET /v1/admin/usage` (auth: admin) · `partii admin usage`
@@ -154,6 +208,22 @@ Live sessions and rooms, peaks, rate-limit hits and recent alerts, per project (
 
 Parameters:
 - `project` (query)
+
+### developersLoginStart
+
+`POST /v1/developers/login/start` (auth: public) · `partii developers login-start`
+
+Sign up or sign in as a developer, step 1: email a 6-digit code (no account needed). The CLI's `partii login --email` does this.
+
+Body fields: `email` (required)
+
+### developersLogin
+
+`POST /v1/developers/login` (auth: public) · `partii developers login`
+
+Step 2: the code makes the developer (new emails sign up) and returns a developer token. The CLI's `partii login --email --code` saves it.
+
+Body fields: `email` (required), `code` (required), `name`, `token_name`
 
 ### me
 
@@ -291,7 +361,7 @@ Parameters:
 
 `POST /v1/games/{game}/publish` (auth: developer) · `partii games publish`
 
-Put the game on the store.
+Put the game on the store. A new developer's game goes to review first (in_review: true) and onto the store when partii approves it; see games get for review.status and review.note.
 
 Parameters:
 - `game` (path, required)

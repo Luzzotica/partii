@@ -4,6 +4,8 @@
 //   * usage alerts (adminUsage) → a k2 ticket for the owner, once per alert;
 //   * player content waiting for review → wakes the moderator agent (k2 msg --inbox-wake);
 //     content left unreviewed for 30 minutes → a k2 ticket for the owner;
+//   * a new developer's game asks to go on the store → a k2 ticket for the owner
+//     (approve at partii.games/admin, or partii admin games decide);
 //   * errors (crashes, failed requests, failed purchases) of the games in
 //     WATCH_ERRORS (default partii=partii-backend: partii's own) → wakes the
 //     agent that owns the game, with the error, for each new group and again
@@ -186,10 +188,25 @@ async function checkErrors(s) {
   }
 }
 
+/** New developers' games waiting for review: one ticket each. */
+async function checkGameReview(s) {
+  const { games } = await get("/v1/admin/games/review");
+  s.reviewTold ??= [];
+  for (const g of games) {
+    const key = `${g.id}@${g.review?.at}`;
+    if (s.reviewTold.includes(key)) continue;
+    tellOwner(
+      `Review a new game: ${g.title}`,
+      `${g.developer.email} wants ${g.title} (${g.id}) on the store. ${g.site_preview ? `Its site: ${g.site_preview}. ` : ""}Approve or reject (with a note) at https://partii.games/admin, Review tab, or: partii admin games decide ${g.id} --verdict approve`,
+    );
+    s.reviewTold = [...s.reviewTold, key].slice(-200);
+  }
+}
+
 async function tick() {
   const s = loadState();
   if (await checkHealth(s)) {
-    for (const check of [checkAlerts, checkReview, checkErrors]) {
+    for (const check of [checkAlerts, checkReview, checkGameReview, checkErrors]) {
       try {
         await check(s);
       } catch (e) {

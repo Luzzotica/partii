@@ -30,8 +30,8 @@ pub fn find(args: &[String]) -> Option<(&'static Op, usize)> {
 }
 
 fn globals(c: Command) -> Command {
-    c.arg(Arg::new("api").long("api").env("PARTII_API").default_value("http://127.0.0.1:8787").help("Platform API base URL."))
-        .arg(Arg::new("token").long("token").env("PARTII_TOKEN").hide_env_values(true).help("Developer token."))
+    c.arg(Arg::new("api").long("api").env("PARTII_API").default_value(crate::config::DEFAULT_API).help("Platform API base URL."))
+        .arg(Arg::new("token").long("token").env("PARTII_TOKEN").hide_env_values(true).help("Developer token (saved by `partii login`)."))
         .arg(Arg::new("key").long("key").env("PARTII_KEY").hide_env_values(true).help("Publishable key (games and players)."))
         .arg(Arg::new("player-token").long("player-token").env("PARTII_PLAYER_TOKEN").hide_env_values(true).help("Player token."))
         .arg(Arg::new("admin-token").long("admin-token").env("PARTII_ADMIN_TOKEN").hide_env_values(true).help("Platform admin token."))

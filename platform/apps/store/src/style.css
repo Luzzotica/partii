@@ -909,3 +909,78 @@ footer .spacer {
   color: var(--muted);
   font-style: italic;
 }
+
+/* The admin page (/admin) */
+.admin h1 {
+  margin: 0;
+}
+.scroll {
+  overflow-x: auto;
+  margin-bottom: 18px;
+}
+.games-table td:first-child {
+  min-width: 200px;
+}
+.sortable {
+  cursor: pointer;
+  white-space: nowrap;
+}
+.sortable.on {
+  color: var(--ink);
+  text-decoration: underline;
+}
+.badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 99px;
+  background: var(--line);
+  color: var(--muted);
+  vertical-align: middle;
+}
+.badge.published {
+  background: color-mix(in srgb, #22c55e 18%, transparent);
+  color: #16a34a;
+}
+.badge.in-review {
+  background: color-mix(in srgb, #f59e0b 20%, transparent);
+  color: #b45309;
+}
+.badge.rejected {
+  background: color-mix(in srgb, #ef4444 18%, transparent);
+  color: #dc2626;
+}
+.review-card {
+  display: grid;
+  gap: 10px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 12px;
+}
+.review-card p {
+  margin: 6px 0;
+}
+.review-card textarea {
+  min-height: 60px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--bg, transparent);
+  color: var(--ink);
+  font: inherit;
+}
+
+.dev-band pre.cmds {
+  margin: 14px 0 10px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  overflow-x: auto;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre;
+}

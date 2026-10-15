@@ -13,39 +13,43 @@ You drive all of it from the `partii` command line. Every command prints one JSO
 - Reference: [API.md](API.md) (every operation; generated) and `partii help --json` (every command).
 - Wire details: [PROTOCOL.md](PROTOCOL.md) (live rooms) and [CONTROLLER.md](CONTROLLER.md) (phones).
 
-## 0. Get the CLI and a platform
+## 0. Get the CLI and an account
 
 ```sh
-cd partii/platform
-cargo build -p partii-cli            # → target/debug/partii (put it on PATH)
+curl -fsSL https://partii.games/install.sh | sh     # macOS, Linux; Windows: irm https://partii.games/install.ps1 | iex
+partii login --email you@example.com                # emails a 6-digit code
+partii login --email you@example.com --code 123456  # saves the sign-in for every later command
+partii whoami
 ```
+
+New emails get a free developer account. Until partii trusts the account, a game you publish goes to review first (usually under a day), only free games, and up to 5 projects and 20 games (`partii whoami` shows the limits). Building from source instead: `cargo build -p partii-cli` in `partii/platform`.
 
 Which platform you use:
 
-- **Local** (everything on your machine): `partii dev up` (leave it running). It prints its URL and a ready-made publishable key for a built-in `demo` project, handy for a first multiplayer test. For a real game make your own project and key (section 1); `partii dev key` mints more demo keys. Locally, purchases go through a fake store and logins are fake, so nothing needs Stripe or Apple.
-- **Staging** or **production**: set `PARTII_API` to its URL.
+- **Production** (the default): https://api.partii.games.
+- **Local** (everything on your machine): `partii dev up` (leave it running), then `export PARTII_API=http://127.0.0.1:8787`. It prints a ready-made publishable key for a built-in `demo` project, handy for a first multiplayer test; `partii dev key` mints more. Locally, purchases go through a fake store and logins are fake, so nothing needs Stripe or Apple, and an operator makes developers: `partii admin developers create --email you@example.com --admin-token dev-admin-token`.
+- **Staging**: `export PARTII_API=https://api-staging.partii.games` (no email there: `partii login` returns the code).
 
-Credentials come from the environment:
+`partii login` saves the API and token to `~/.config/partii/cli.json` (`PARTII_CONFIG` moves it; `partii logout` revokes and forgets it). Anything in the environment wins over the saved sign-in:
 
 | Variable | What |
 |---|---|
-| `PARTII_API` | Platform URL (default `http://127.0.0.1:8787`) |
-| `PARTII_TOKEN` | Your developer token |
+| `PARTII_API` | Platform URL (default `https://api.partii.games`) |
+| `PARTII_TOKEN` | Your developer token (CI; `partii login --print-token` shows one) |
 | `PARTII_KEY` | A publishable key (games and web pages ship this) |
 | `PARTII_PLAYER_TOKEN` | A player's token (for player commands and tests) |
 | `PARTII_ADMIN_TOKEN` | Platform operators only (`partii admin …`); locally `dev-admin-token` |
 
-## 1. Account, project, key
+## 1. Project, key, game
 
 ```sh
-# Platform operators create developers (locally the admin token is dev-admin-token):
-partii admin developers create --email you@example.com --name "You" --admin-token dev-admin-token
-export PARTII_TOKEN=pd_...                        # from the reply's "token"
-
 partii projects put mystudio --name "My Studio"   # ids: lowercase letters and digits
 partii keys create mystudio --key-id game         # reply: key.key = pk_mystudio_game_...
 export PARTII_KEY=pk_mystudio_game_...
+partii games put my-game --project mystudio --title "My Game" --platforms '["web"]'
 ```
+
+When it's ready: `partii games publish my-game`. A new developer's game goes to review (`in_review: true`); `partii games get my-game` shows `review.status` (pending, approved, rejected) and `review.note` (what to fix). Approved, it's on https://partii.games and its site opens at https://my-game.partii.games; until then the site is reachable at its preview address (`partii web list my-game`).
 
 Every create is safe to repeat: `put` updates, and `create` with the same id returns the same key. Add `--dry-run` to any change to see it without making it.
 

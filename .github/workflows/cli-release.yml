@@ -1,0 +1,85 @@
+# Release the partii CLI: push a tag cli-v<version> (matching
+# platform/crates/partii-cli/Cargo.toml) and this builds partii for macOS,
+# Linux and Windows and attaches them, with SHA-256 sums, to a GitHub release.
+# https://partii.games/install.sh and install.ps1 install the newest one.
+name: cli-release
+on:
+  push:
+    tags: ["cli-v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build (cli-v…); it must exist"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: aarch64-apple-darwin, os: macos-14 }
+          - { target: x86_64-apple-darwin, os: macos-14 }
+          - { target: x86_64-unknown-linux-gnu, os: ubuntu-22.04 }
+          - { target: aarch64-unknown-linux-gnu, os: ubuntu-22.04-arm }
+          - { target: x86_64-pc-windows-msvc, os: windows-2022 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+      - name: Rust
+        shell: bash
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup target add ${{ matrix.target }}
+      - name: Build
+        shell: bash
+        working-directory: platform
+        run: cargo build --release --locked -p partii-cli --target ${{ matrix.target }}
+      - name: Check the binary runs
+        if: matrix.target != 'x86_64-apple-darwin'
+        shell: bash
+        working-directory: platform
+        run: ./target/${{ matrix.target }}/release/partii --version
+      - name: Package
+        shell: bash
+        run: |
+          mkdir dist
+          bin=platform/target/${{ matrix.target }}/release/partii
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            cp "$bin.exe" dist/partii.exe
+            (cd dist && 7z a -tzip ../partii-${{ matrix.target }}.zip partii.exe >/dev/null)
+            f=partii-${{ matrix.target }}.zip
+          else
+            cp "$bin" dist/partii
+            tar -C dist -czf partii-${{ matrix.target }}.tar.gz partii
+            f=partii-${{ matrix.target }}.tar.gz
+          fi
+          if command -v sha256sum >/dev/null; then sha256sum "$f" > "$f.sha256"; else shasum -a 256 "$f" > "$f.sha256"; fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: partii-${{ matrix.target }}
+          path: partii-${{ matrix.target }}.*
+
+  release:
+    needs: build
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          ls -l out
+          gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
+            gh release create "$TAG" -R "$GITHUB_REPOSITORY" --title "partii CLI ${TAG#cli-v}" \
+              --notes "Install: curl -fsSL https://partii.games/install.sh | sh (macOS, Linux) or irm https://partii.games/install.ps1 | iex (Windows). Then: partii login --email you@example.com"
+          gh release upload "$TAG" -R "$GITHUB_REPOSITORY" --clobber out/*

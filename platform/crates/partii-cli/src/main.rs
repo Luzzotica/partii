@@ -5,6 +5,8 @@
 
 mod api_cmd;
 mod bot;
+mod config;
+mod login;
 mod dev;
 mod help;
 mod out;
@@ -19,9 +21,9 @@ use out::{CliError, CliResult};
 #[command(name = "partii", version, disable_help_subcommand = true, about = "The partii platform CLI. Every command prints one JSON document.")]
 pub struct Cli {
     /// Platform API base URL.
-    #[arg(long, global = true, env = "PARTII_API", default_value = "http://127.0.0.1:8787")]
+    #[arg(long, global = true, env = "PARTII_API", default_value = config::DEFAULT_API)]
     pub api: String,
-    /// Developer token (from `partii admin developers create`, or your platform operator).
+    /// Developer token (saved by `partii login`; or set PARTII_TOKEN).
     #[arg(long, global = true, env = "PARTII_TOKEN", hide_env_values = true)]
     pub token: Option<String>,
     /// Show what a mutation would do without doing it.
@@ -51,6 +53,11 @@ pub enum Cmd {
     /// Network torture harness: run real clients through bad networks.
     #[command(subcommand)]
     Torture(torture::TortureCmd),
+    /// Sign up or sign in as a developer with an email code; saves the token for every command.
+    #[command(after_help = "partii login --email you@example.com              # emails a code\npartii login --email you@example.com --code 123456  # saves the sign-in")]
+    Login(login::LoginArgs),
+    /// Revoke the saved token and forget it.
+    Logout,
     /// Host a game's site at <game>.partii.games (deploy; also web list, activate, take-down).
     #[command(subcommand)]
     Web(web::WebCmd),
@@ -62,6 +69,7 @@ fn main() {
         let _ = env_logger::Builder::from_default_env().format_timestamp_millis().try_init();
     }
     // API operations (generated from the spec) first, then the built-in commands.
+    config::apply();
     let args: Vec<String> = std::env::args().skip(1).collect();
     if let Some((op, n)) = api_cmd::find(&args) {
         std::process::exit(api_cmd::run(op, &args[n..]));
@@ -85,6 +93,8 @@ fn main() {
         Cmd::Bot(c) => bot::run(&cli, c),
         Cmd::Torture(c) => torture::run(&cli, c),
         Cmd::Web(c) => web::run(&cli, c),
+        Cmd::Login(a) => login::login(&cli, a),
+        Cmd::Logout => login::logout(&cli),
     };
     std::process::exit(out::print(result, pretty));
 }

@@ -139,6 +139,52 @@ paths:
       requestBody: { content: { application/json: { schema: { type: object, required: [email], properties: { email: { type: string }, name: { type: string } } } } } }
       responses: { "200": { description: "{developer, token}" } }
 
+    get:
+      operationId: adminDevelopersList
+      summary: Every developer, newest first, with trusted, how they signed up, and their project and game counts (platform operators).
+      x-auth: admin
+      x-cli: admin developers list
+      responses: { "200": { description: "{developers}" } }
+  /v1/admin/developers/{developer}/trust:
+    post:
+      operationId: adminDevelopersTrust
+      summary: "Trust a developer (or stop): trusted developers publish straight to the store and may charge; new ones publish into review, free only (platform operators)."
+      x-auth: admin
+      x-cli: admin developers trust
+      parameters: [{ name: developer, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [trusted], properties: { trusted: { type: boolean } } } } } }
+      responses: { "200": { description: "{developer}" } }
+
+  /v1/admin/overview:
+    get:
+      operationId: adminOverview
+      summary: "All of partii on one page: per game players (today, 7 and 30 days, new), sessions, play time, open errors, sales and last activity; daily totals; developers; the store site's top pages and referrers (platform operators)."
+      x-auth: admin
+      x-cli: admin overview
+      parameters:
+        - { name: days, in: query, schema: { type: integer } }
+        - { name: site, in: query, schema: { type: string } }
+      responses: { "200": { description: "{range, totals, games, daily, site}" } }
+
+  /v1/admin/games/review:
+    get:
+      operationId: adminGamesReview
+      summary: "New developers' games waiting for review (status=all: every reviewed game), with the developer and the site's preview address (platform operators)."
+      x-auth: admin
+      x-cli: admin games review
+      parameters:
+        - { name: status, in: query, schema: { type: string } }
+      responses: { "200": { description: "{games}" } }
+  /v1/admin/games/{game}/review:
+    post:
+      operationId: adminGamesDecide
+      summary: "Approve a game (it goes on the store and its site opens) or reject it with a note the developer reads (platform operators)."
+      x-auth: admin
+      x-cli: admin games decide
+      parameters: [{ name: game, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [verdict], properties: { verdict: { type: string, enum: [approve, reject] }, note: { type: string } } } } } }
+      responses: { "200": { description: "{game}" } }
+
   /v1/admin/usage:
     get:
       operationId: adminUsage
@@ -148,6 +194,23 @@ paths:
       parameters:
         - { name: project, in: query, schema: { type: string } }
       responses: { "200": { description: "{projects}" } }
+
+  /v1/developers/login/start:
+    post:
+      operationId: developersLoginStart
+      summary: "Sign up or sign in as a developer, step 1: email a 6-digit code (no account needed). The CLI's `partii login --email` does this."
+      x-auth: public
+      x-cli: developers login-start
+      requestBody: { content: { application/json: { schema: { type: object, required: [email], properties: { email: { type: string } } } } } }
+      responses: { "200": { description: "{sent, new_developer, hint}" } }
+  /v1/developers/login:
+    post:
+      operationId: developersLogin
+      summary: "Step 2: the code makes the developer (new emails sign up) and returns a developer token. The CLI's `partii login --email --code` saves it."
+      x-auth: public
+      x-cli: developers login
+      requestBody: { content: { application/json: { schema: { type: object, required: [email, code], properties: { email: { type: string }, code: { type: string }, name: { type: string }, token_name: { type: string } } } } } }
+      responses: { "200": { description: "{developer, token, token_id, created, next}" } }
 
   /v1/me:
     get:
@@ -278,7 +341,7 @@ paths:
   /v1/games/{game}/publish:
     post:
       operationId: gamesPublish
-      summary: Put the game on the store.
+      summary: "Put the game on the store. A new developer's game goes to review first (in_review: true) and onto the store when partii approves it; see games get for review.status and review.note."
       x-auth: developer
       x-cli: games publish
       parameters: [{ name: game, in: path, required: true, schema: { type: string } }]

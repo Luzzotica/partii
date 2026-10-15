@@ -12,7 +12,8 @@ pub fn tree() -> Value {
             "output": "one JSON document on stdout: {\"ok\":true,...} or {\"ok\":false,\"error\":{\"code\",\"message\",\"hint\"}}",
             "progress": "long commands write JSON lines to stderr",
             "exit": {"0": "ok", "1": "error", "2": "usage"},
-            "auth": "PARTII_API (base URL); PARTII_TOKEN (developer), PARTII_KEY (publishable key), PARTII_PLAYER_TOKEN (player), PARTII_ADMIN_TOKEN (operators)",
+            "auth": "PARTII_API (base URL, default https://api.partii.games); PARTII_TOKEN (developer), PARTII_KEY (publishable key), PARTII_PLAYER_TOKEN (player), PARTII_ADMIN_TOKEN (operators). `partii login` saves the API and developer token to ~/.config/partii/cli.json (PARTII_CONFIG moves it); the environment wins over it",
+            "start": "partii login --email <email> (a code is emailed) → partii login --email <email> --code <code> → partii projects put <project> → partii keys create <project> → partii games put <game> --project <project> --title <title> → partii web deploy <game> <dir> → partii games publish <game> (new developers: into review)",
             "api_commands": "one per API operation, generated from api/openapi.yaml: path params positional, body fields as --kebab-flags, --body for a whole JSON body",
             "mutations": "idempotent; --dry-run shows the change without making it"
         },

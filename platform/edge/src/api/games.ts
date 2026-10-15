@@ -4,6 +4,13 @@ import { files } from "../files";
 
 import { ApiError, bad, b64url, fromB64url, gameView, now, ownGame, ownProject, randomSlug, sha256hex, type GameRow } from "./core";
 import type { Handlers } from "./index";
+import { NEW_DEVELOPER_LIMITS } from "./developers";
+import type { Caller } from "./core";
+
+/** Paid games wait for trusted developers (payouts come later). */
+function mayCharge(caller: Caller, price: number) {
+  if (price > 0 && !caller.developer!.trusted) throw new ApiError(403, "paid_later", "paid games aren't open to new developers yet", "publish it free for now; paid games and payouts are coming");
+}
 
 const GAME_ID = /^[a-z0-9-]{1,40}$/;
 const PLATFORMS = ["macos", "windows", "linux", "ios", "android", "web"];
@@ -70,6 +77,11 @@ export const gameHandlers: Handlers = {
     if (!Array.isArray(platforms) || platforms.some((p) => !PLATFORMS.includes(p))) throw bad(`platforms must be some of ${PLATFORMS.join(", ")}`);
     const price = Number(pick("price_cents", existing?.price_cents ?? 0));
     if (!Number.isInteger(price) || price < 0) throw bad("price_cents must be a whole number of cents");
+    if (price !== (existing?.price_cents ?? 0)) mayCharge(caller, price);
+    if (!existing && !caller.developer!.trusted) {
+      const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM games g JOIN projects p ON p.id = g.project_id WHERE p.developer_id = ?").bind(caller.developer!.id).first<{ n: number }>();
+      if ((n?.n ?? 0) >= NEW_DEVELOPER_LIMITS.games) throw new ApiError(403, "limit", `new developers can have ${NEW_DEVELOPER_LIMITS.games} games`, "ask partii for more (support@sterlinglong.me)");
+    }
     const g: GameRow = {
       id,
       project_id: project,
@@ -83,6 +95,9 @@ export const gameHandlers: Handlers = {
       platforms: JSON.stringify(platforms),
       store: JSON.stringify(pick("store", existing ? JSON.parse(existing.store) : {})),
       status: existing?.status ?? "draft",
+      review: existing?.review ?? null,
+      review_note: existing?.review_note ?? "",
+      review_at: existing?.review_at ?? null,
       created_at: existing?.created_at ?? now(),
       updated_at: now(),
     };
@@ -105,6 +120,13 @@ export const gameHandlers: Handlers = {
   async gamesPublish({ env, caller, params, dryRun }) {
     const g = await ownGame(env, caller, params.game);
     if (!g.title.trim()) throw bad("a game needs a title before it goes on the store");
+    // A new developer's game goes to review first; partii puts it on the store when it's approved.
+    if (!caller.developer!.trusted && g.review !== "approved") {
+      const asked = { ...gameView(g), review: { status: "pending", note: "", at: now() } };
+      if (dryRun) return { dry_run: true, game: asked, in_review: true };
+      await env.DB.prepare("UPDATE games SET review = 'pending', review_note = '', review_at = ?, updated_at = ? WHERE id = ?").bind(now(), now(), g.id).run();
+      return { game: asked, in_review: true, hint: "partii reviews new developers' games (usually within a day); it goes on the store when approved. Check with: partii games get " + g.id };
+    }
     if (dryRun) return { dry_run: true, game: { ...gameView(g), status: "published" } };
     await env.DB.prepare("UPDATE games SET status = 'published', updated_at = ? WHERE id = ?").bind(now(), g.id).run();
     return { game: { ...gameView(g), status: "published" } };
@@ -121,6 +143,7 @@ export const gameHandlers: Handlers = {
     const g = await ownGame(env, caller, params.game);
     const price = Number(body.price_cents);
     if (!Number.isInteger(price) || price < 0) throw bad("price_cents must be a whole number of cents", "e.g. --field price_cents=499 for $4.99");
+    mayCharge(caller, price);
     const currency = body.currency ? String(body.currency).toLowerCase() : g.currency;
     if (dryRun) return { dry_run: true, game: { ...gameView(g), price_cents: price, currency } };
     await env.DB.prepare("UPDATE games SET price_cents = ?, currency = ?, updated_at = ? WHERE id = ?").bind(price, currency, now(), g.id).run();

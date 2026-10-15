@@ -7,8 +7,22 @@ export function operations(t: Transport) {
     health: () => t.call("GET", `/health`, "public", {}, undefined, "json"),
     /** Create a developer and their first token (platform operators). (admin) */
     adminCreateDeveloper: (body: Record<string, unknown> = {}) => t.call("POST", `/v1/admin/developers`, "admin", {}, body, "json"),
+    /** Every developer, newest first, with trusted, how they signed up, and their project and game counts (platform operators). (admin) */
+    adminDevelopersList: () => t.call("GET", `/v1/admin/developers`, "admin", {}, undefined, "json"),
+    /** Trust a developer (or stop): trusted developers publish straight to the store and may charge; new ones publish into review, free only (platform operators). (admin) */
+    adminDevelopersTrust: (developer: string, body: Record<string, unknown> = {}) => t.call("POST", `/v1/admin/developers/${encodeURIComponent(developer)}/trust`, "admin", {}, body, "json"),
+    /** All of partii on one page: per game players (today, 7 and 30 days, new), sessions, play time, open errors, sales and last activity; daily totals; developers; the store site's top pages and referrers (platform operators). (admin) */
+    adminOverview: (query: { days?: string | number; site?: string | number } = {}) => t.call("GET", `/v1/admin/overview`, "admin", query, undefined, "json"),
+    /** New developers' games waiting for review (status=all: every reviewed game), with the developer and the site's preview address (platform operators). (admin) */
+    adminGamesReview: (query: { status?: string | number } = {}) => t.call("GET", `/v1/admin/games/review`, "admin", query, undefined, "json"),
+    /** Approve a game (it goes on the store and its site opens) or reject it with a note the developer reads (platform operators). (admin) */
+    adminGamesDecide: (game: string, body: Record<string, unknown> = {}) => t.call("POST", `/v1/admin/games/${encodeURIComponent(game)}/review`, "admin", {}, body, "json"),
     /** Live sessions and rooms, peaks, rate-limit hits and recent alerts, per project (platform operators). (admin) */
     adminUsage: (query: { project?: string | number } = {}) => t.call("GET", `/v1/admin/usage`, "admin", query, undefined, "json"),
+    /** Sign up or sign in as a developer, step 1: email a 6-digit code (no account needed). The CLI's `partii login --email` does this. (public) */
+    developersLoginStart: (body: Record<string, unknown> = {}) => t.call("POST", `/v1/developers/login/start`, "public", {}, body, "json"),
+    /** Step 2: the code makes the developer (new emails sign up) and returns a developer token. The CLI's `partii login --email --code` saves it. (public) */
+    developersLogin: (body: Record<string, unknown> = {}) => t.call("POST", `/v1/developers/login`, "public", {}, body, "json"),
     /** The developer this token belongs to. (developer) */
     me: () => t.call("GET", `/v1/me`, "developer", {}, undefined, "json"),
     /** Your developer tokens (without secrets). (developer) */
@@ -39,7 +53,7 @@ export function operations(t: Transport) {
     gamesPut: (game: string, body: Record<string, unknown> = {}) => t.call("PUT", `/v1/games/${encodeURIComponent(game)}`, "developer", {}, body, "json"),
     /** One of your games (drafts too). (developer) */
     gamesGet: (game: string) => t.call("GET", `/v1/games/${encodeURIComponent(game)}`, "developer", {}, undefined, "json"),
-    /** Put the game on the store. (developer) */
+    /** Put the game on the store. A new developer's game goes to review first (in_review: true) and onto the store when partii approves it; see games get for review.status and review.note. (developer) */
     gamesPublish: (game: string) => t.call("POST", `/v1/games/${encodeURIComponent(game)}/publish`, "developer", {}, undefined, "json"),
     /** Take the game off the store (owners keep it). (developer) */
     gamesUnpublish: (game: string) => t.call("POST", `/v1/games/${encodeURIComponent(game)}/unpublish`, "developer", {}, undefined, "json"),

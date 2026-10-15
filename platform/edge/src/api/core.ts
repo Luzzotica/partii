@@ -85,7 +85,7 @@ export async function playerToken(env: Env, playerId: string): Promise<string> {
 // ── Auth ──
 
 export interface Caller {
-  developer?: { id: string; email: string; name: string };
+  developer?: { id: string; email: string; name: string; trusted: boolean };
   tokenId?: string;
   project?: string;
   player?: { id: string; display_name: string; test_developer_id: string | null };
@@ -107,12 +107,12 @@ export async function asDeveloper(env: Env, req: Request): Promise<Caller> {
   const t = bearer(req);
   if (!t || !t.startsWith("pd_")) throw new ApiError(401, "unauthorized", "developer token required", "set PARTII_TOKEN (from `partii admin developers create` or `partii tokens create`)");
   const row = await env.DB.prepare(
-    "SELECT d.id, d.email, d.name, t.id AS token_id FROM dev_tokens t JOIN developers d ON d.id = t.developer_id WHERE t.token_hash = ? AND t.revoked_at IS NULL",
+    "SELECT d.id, d.email, d.name, d.trusted, t.id AS token_id FROM dev_tokens t JOIN developers d ON d.id = t.developer_id WHERE t.token_hash = ? AND t.revoked_at IS NULL",
   )
     .bind(await sha256hex(t))
-    .first<{ id: string; email: string; name: string; token_id: string }>();
+    .first<{ id: string; email: string; name: string; trusted: number; token_id: string }>();
   if (!row) throw new ApiError(401, "unauthorized", "unknown or revoked developer token", "make a new one with `partii tokens create`");
-  return { developer: { id: row.id, email: row.email, name: row.name }, tokenId: row.token_id };
+  return { developer: { id: row.id, email: row.email, name: row.name, trusted: !!row.trusted }, tokenId: row.token_id };
 }
 
 const revokedCache = new Map<string, { revoked: boolean; at: number }>();
@@ -179,6 +179,9 @@ export interface GameRow {
   platforms: string;
   store: string;
   status: string;
+  review?: string | null;
+  review_note?: string;
+  review_at?: number | null;
   created_at: number;
   updated_at: number;
 }
@@ -197,6 +200,7 @@ export function gameView(g: GameRow) {
     platforms: JSON.parse(g.platforms),
     store: JSON.parse(g.store),
     status: g.status,
+    review: g.review ? { status: g.review, note: g.review_note ?? "", at: g.review_at ?? null } : null,
     updated_at: g.updated_at,
   };
 }

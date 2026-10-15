@@ -247,7 +247,15 @@ const KNOWN_PATHS: Record<string, string> = { ".well-known/apple-app-site-associ
 const typeOf = (path: string) => KNOWN_PATHS[path] ?? TYPES[path.split(".").pop()!.toLowerCase()] ?? "application/octet-stream";
 
 /** Per isolate, briefly: the live deploy and its manifest per game. */
-const siteCache = new Map<string, { at: number; deploy: string | null; manifest: Manifest | null }>();
+const siteCache = new Map<string, { at: number; deploy: string | null; manifest: Manifest | null; open: boolean }>();
+
+/** A game's main address serves once it may be public: a trusted developer's game, or one partii approved. Previews always serve (not indexed). */
+async function siteOpen(env: Env, game: string): Promise<boolean> {
+  const r = await env.DB.prepare("SELECT d.trusted, g.review FROM games g JOIN projects p ON p.id = g.project_id JOIN developers d ON d.id = p.developer_id WHERE g.id = ?")
+    .bind(game)
+    .first<{ trusted: number; review: string | null }>();
+  return !r || !!r.trusted || r.review === "approved";
+}
 const SITE_CACHE_MS = 15_000;
 
 /** The game (and preview deploy) this host is for, or null when it isn't a site host. */
@@ -280,10 +288,11 @@ export async function serveWeb(env: Env, req: Request, target: { game: string; d
     } else {
       deploy = await liveDeploy(env, target.game);
     }
-    site = { at: Date.now(), deploy, manifest: deploy ? await loadManifest(env, target.game, deploy) : null };
+    site = { at: Date.now(), deploy, manifest: deploy ? await loadManifest(env, target.game, deploy) : null, open: target.deploy ? true : await siteOpen(env, target.game) };
     if (!target.deploy) siteCache.set(target.game, site);
   }
   if (!site.manifest) return page(404, "Nothing here yet", `There's no site at this address.`);
+  if (!site.open) return page(403, "Coming soon", "This game is waiting for partii's review. Its developer can share a preview link meanwhile.");
   const m = site.manifest;
   let path: string;
   try {
@@ -324,6 +333,7 @@ export async function serveWeb(env: Env, req: Request, target: { game: string; d
     "x-content-type-options": "nosniff",
     "referrer-policy": "strict-origin-when-cross-origin",
   });
+  if (target.deploy) headers.set("x-robots-tag", "noindex");
   // Unity's pre-compressed builds: the stored bytes are already encoded.
   const enc = /\.(br|gz)$/.exec(path);
   if (enc) {

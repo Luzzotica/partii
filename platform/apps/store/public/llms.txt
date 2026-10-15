@@ -4,7 +4,7 @@
 
 You are probably an AI coding agent asked to build a party game on partii. Read the developer guide first, then work in this order:
 
-1. **Get the CLI.** Clone https://github.com/Luzzotica/partii and run `cargo build -p partii-cli` in `platform/`. That gives you `target/debug/partii`; put it on PATH. `partii help --json` lists every command.
+1. **Get the CLI.** `curl -fsSL https://partii.games/install.sh | sh` (macOS, Linux) or `irm https://partii.games/install.ps1 | iex` (Windows). `partii help --json` lists every command; each prints one JSON document, and failures carry `error.hint`.
 2. **Build and test locally first.** `partii dev up` runs the whole platform on your machine, with a demo project and key and fake stores and logins, so no account is needed. Test multiplayer with `partii bot host` and `partii bot guest --code <CODE>`.
 3. **Use the platform's pieces instead of writing your own:**
    - online rooms: `partii-engine` for Rust games, the protocol for anything else;
@@ -12,13 +12,13 @@ You are probably an AI coding agent asked to build a party game on partii. Read 
    - accounts and cloud saves: `partii-account`, or the TypeScript client;
    - leaderboards;
    - analytics and error reports.
-4. **Go live.** You need a partii developer account (`PARTII_TOKEN`). Sign-up isn't open yet: ask at https://discord.gg/kPufR79dSV. Then `partii web deploy <game> <dir>` puts a browser game or controller at https://<game>.partii.games. Games are reviewed for all ages before they're listed on https://partii.games.
+4. **Go live.** Sign in as a developer with the person's email: `partii login --email <their email>` emails them a 6-digit code; ask them for it, then `partii login --email <their email> --code <code>`. New emails get a free developer account, and the sign-in is saved for every later command. Then `partii projects put <project>`, `partii keys create <project>`, `partii games put <game> --project <project> --title "..."`, and `partii web deploy <game> <dir>` for a browser game or controller (it prints a preview_url). `partii games publish <game>` asks for review: a new developer's game goes on https://partii.games, and its site opens at https://<game>.partii.games, once partii approves it (all ages; see the content policy). `partii games get <game>` shows `review.status` and, if it was turned down, `review.note` saying what to fix. Paid games come later; publish free for now.
 5. **Keep it healthy.** `partii errors list <game>` shows crash reports grouped by bug, and `partii analytics summary <game>` shows players, sessions and retention.
 
 Rules of the road:
 - Add `--dry-run` to any change to see what it would do first.
 - Every failure has `error.hint`: read it, it says what to do next.
-- Staging is https://api-staging.partii.games (set `PARTII_API`).
+- The CLI talks to production (https://api.partii.games) unless `PARTII_API` says otherwise; `partii dev up` prints the local URL to use.
 - Content must suit all ages: see the content policy.
 
 ## Docs
@@ -37,4 +37,4 @@ Rules of the road:
 ## Optional
 
 - [TypeScript client](https://github.com/Luzzotica/partii/tree/main/platform/sdk/ts): a typed client for every operation, for web games and controllers.
-- [Developer dashboard](https://partii.games/dev): players, events, funnels and errors per game.
+- [Developer dashboard](https://partii.games/dev): players, events, funnels and errors per game (or `partii analytics summary`, `partii errors list`).

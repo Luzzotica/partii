@@ -374,11 +374,17 @@ export function Developers({ go }: { go: Go }) {
 
       <section className="dev-band">
         <div>
-          <h2>Developer sign-up opens soon</h2>
-          <p>Want in early? Say hi on Discord and tell us what you're imagining.</p>
+          <h2>Sign up from your terminal (or let your AI do it)</h2>
+          <p>Install the partii command line, then sign in with your email. New emails get a free developer account. Your first game is reviewed before it's listed; that usually takes under a day.</p>
+          <pre className="cmds">
+            <code>
+              {"curl -fsSL https://partii.games/install.sh | sh\npartii login --email you@example.com"}
+            </code>
+          </pre>
+          <p className="muted small">Windows: irm https://partii.games/install.ps1 | iex. Questions? Ask on Discord.</p>
         </div>
         <a className="button" href={LINKS.discord}>
-          Get early access
+          Join the Discord
         </a>
       </section>
       <p className="muted small center">

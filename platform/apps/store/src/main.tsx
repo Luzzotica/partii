@@ -6,6 +6,7 @@ import { createRoot } from "react-dom/client";
 import { createClient, PartiiError } from "../../../sdk/ts/src/client";
 import policyText from "../../../docs/CONTENT-POLICY.md?raw";
 import privacyText from "../../../docs/PRIVACY.md?raw";
+import { AdminPage } from "./admin";
 import { DevDashboard } from "./dev";
 import { Developers, GameCard, Home, LINKS } from "./home";
 import { deviceId, reportError, startTracking, track } from "./track";
@@ -351,6 +352,7 @@ function App() {
   else if (path.startsWith("/content-policy")) page = <ContentPolicy />;
   else if (path.startsWith("/privacy")) page = <Privacy />;
   else if (path.startsWith("/developers")) page = <Developers go={go} />;
+  else if (path.startsWith("/admin")) page = <AdminPage api={API} />;
   else if (path.startsWith("/dev")) page = <DevDashboard api={API} />;
   else page = <Home go={go} games={games} signedIn={member} />;
   return (
