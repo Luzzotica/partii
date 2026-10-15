@@ -1,6 +1,6 @@
 // partii.games' front page (players first) and /developers (the pitch to
 // game makers). Facts here must match what the platform does: docs/GUIDE.md.
-import type { MouseEvent, ReactNode } from "react";
+import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
 
 export interface HomeGame {
   id: string;
@@ -44,26 +44,99 @@ export function GameCard({ g, go }: { g: HomeGame; go: Go }) {
   );
 }
 
-/** A room code and a phone: what joining looks like. */
+/** The story of joining, on a loop: pick a game on the TV, its code appears,
+ * a phone opens partii.games, types the code, and the seats fill up. Times in
+ * tenths of a second. With reduced motion: the last frame, still. */
+const LOOP = 120;
+const GAMES = [
+  { name: "Tankii", color: "#22c55e" },
+  { name: "Bouncy Blobs", color: "#ec4899" },
+  { name: "Hexii", color: "#6366f1" },
+];
+const CODE = "KZ4P";
+const URL_TEXT = "partii.games";
+const SEAT_COLORS = ["#ec4899", "#f59e0b", "#22c55e", "#38bdf8"];
+
+function useTicks(): number {
+  const reduce = typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const [t, setT] = useState(reduce ? 100 : 0);
+  useEffect(() => {
+    if (reduce) return;
+    const id = setInterval(() => setT((x) => (x + 1) % LOOP), 100);
+    return () => clearInterval(id);
+  }, [reduce]);
+  return t;
+}
+
 function JoinArt() {
+  const t = useTicks();
+  const picking = t < 24;
+  const highlight = t < 8 ? 0 : 1; // the cursor lands on Bouncy Blobs
+  const chosen = t >= 16;
+  const typedUrl = URL_TEXT.slice(0, Math.max(0, Math.min(URL_TEXT.length, Math.floor((t - 40) / 1.2))));
+  const typedCode = CODE.slice(0, Math.max(0, Math.min(4, Math.floor((t - 58) / 3))));
+  const seats = t < 74 ? 0 : Math.min(4, 1 + Math.floor((t - 74) / 6));
+  const phone = t < 40 ? "home" : t < 56 ? "url" : t < 76 ? "code" : "pad";
+  const game = GAMES[1];
   return (
     <div className="join-art" aria-hidden="true">
       <div className="tv">
-        <div className="tv-label">Join at partii.games</div>
-        <div className="tv-code">KZ4P</div>
-        <div className="tv-seats">
-          <span className="seat s1" />
-          <span className="seat s2" />
-          <span className="seat s3" />
-          <span className="seat s4 empty" />
-        </div>
+        {picking ? (
+          <div className="tv-pick">
+            <div className="tv-label">Pick a game</div>
+            <div className="tv-tiles">
+              {GAMES.map((g, i) => (
+                <div key={g.name} className={`tv-tile${i === highlight ? " on" : ""}${chosen && i === highlight ? " chosen" : ""}`} style={{ background: g.color }}>
+                  {g.name}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="tv-room">
+            <div className="tv-game" style={{ color: game.color }}>
+              {game.name}
+            </div>
+            <div className="tv-label">Join at partii.games</div>
+            <div className="tv-code">{CODE}</div>
+            <div className="tv-seats">
+              {SEAT_COLORS.map((c, i) => (
+                <span key={i} className={`seat${i < seats ? " in" : ""}`} style={i < seats ? { background: c } : undefined} />
+              ))}
+            </div>
+          </div>
+        )}
       </div>
-      <div className="phone">
-        <div className="pad">
-          <span className="stick" />
-          <span className="btn a" />
-          <span className="btn b" />
-        </div>
+      <div className={`phone is-${phone}`}>
+        {phone === "home" && <div className="ph-home">tap the link or scan the QR</div>}
+        {phone === "url" && (
+          <div className="ph-browser">
+            <div className="ph-url">
+              {typedUrl}
+              <i className="caret" />
+            </div>
+          </div>
+        )}
+        {phone === "code" && (
+          <div className="ph-browser">
+            <div className="ph-url">partii.games</div>
+            <div className="ph-form">
+              <div className="ph-code">
+                {Array.from({ length: 4 }, (_, i) => (
+                  <span key={i}>{typedCode[i] ?? ""}</span>
+                ))}
+              </div>
+              <div className={`ph-join${t >= 71 ? " pressed" : ""}`}>Join</div>
+            </div>
+          </div>
+        )}
+        {phone === "pad" && (
+          <div className="pad">
+            <span className="stick" />
+            <span className="btn a" />
+            <span className="btn b" />
+          </div>
+        )}
       </div>
     </div>
   );

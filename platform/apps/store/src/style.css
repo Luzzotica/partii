@@ -492,20 +492,58 @@ nav a.button.small:hover {
 }
 .tv {
   position: absolute;
-  inset: 0 70px 50px 0;
+  inset: 0 104px 40px 0;
   border-radius: 18px;
   background: linear-gradient(135deg, #1e3a8a, #0f766e);
   color: white;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 10px;
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.18);
+  overflow: hidden;
+}
+.tv-pick,
+.tv-room {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  animation: fade-in 0.35s ease;
 }
 .tv-label {
   opacity: 0.8;
   font-size: 14px;
+}
+.tv-tiles {
+  display: flex;
+  gap: 10px;
+}
+.tv-tile {
+  width: 84px;
+  height: 58px;
+  border-radius: 10px;
+  display: flex;
+  align-items: flex-end;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-weight: 800;
+  opacity: 0.55;
+  transition: transform 0.25s, opacity 0.25s, box-shadow 0.25s;
+}
+.tv-tile.on {
+  opacity: 1;
+  transform: scale(1.08);
+  box-shadow: 0 0 0 3px white;
+}
+.tv-tile.chosen {
+  transform: scale(1.16);
+}
+.tv-game {
+  font-weight: 900;
+  font-size: 15px;
+  background: white;
+  padding: 2px 10px;
+  border-radius: 999px;
 }
 .tv-code {
   font-size: 64px;
@@ -521,37 +559,133 @@ nav a.button.small:hover {
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  background: #f59e0b;
-}
-.seat.s2 {
-  background: #ec4899;
-}
-.seat.s3 {
-  background: #22c55e;
-}
-.seat.empty {
-  background: transparent;
   border: 2px dashed rgba(255, 255, 255, 0.6);
+  transition: transform 0.3s;
+}
+.seat.in {
+  border: 2px solid white;
+  animation: pop 0.35s ease;
+}
+@keyframes pop {
+  0% {
+    transform: scale(0.3);
+  }
+  70% {
+    transform: scale(1.25);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 .phone {
   position: absolute;
   right: 0;
   bottom: 0;
-  width: 190px;
-  height: 110px;
-  border-radius: 22px;
+  width: 132px;
+  height: 230px;
+  border-radius: 24px;
   background: var(--card);
   border: 6px solid var(--ink);
   box-shadow: 0 14px 30px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+  transition: width 0.45s ease, height 0.45s ease;
+}
+/* The controller is held sideways. */
+.phone.is-pad {
+  width: 196px;
+  height: 112px;
+}
+.ph-home {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  padding: 14px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.ph-browser {
+  padding: 10px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  animation: fade-in 0.3s ease;
+}
+.ph-url {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 11px;
+  padding: 5px 7px;
+  min-height: 14px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+.caret {
+  display: inline-block;
+  width: 1px;
+  height: 11px;
+  background: var(--ink);
+  margin-left: 1px;
+  vertical-align: middle;
+  animation: blink 0.8s steps(1) infinite;
+}
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+.ph-form {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.ph-code {
+  display: flex;
+  gap: 4px;
+}
+.ph-code span {
+  width: 22px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+.ph-join {
+  background: var(--accent);
+  color: white;
+  font-weight: 800;
+  font-size: 13px;
+  padding: 6px 22px;
+  border-radius: 8px;
+  transition: transform 0.15s;
+}
+.ph-join.pressed {
+  transform: scale(0.9);
 }
 .pad {
   position: relative;
   height: 100%;
+  animation: fade-in 0.3s ease;
 }
 .pad .stick {
   position: absolute;
   left: 18px;
-  top: 22px;
+  top: 24px;
   width: 52px;
   height: 52px;
   border-radius: 50%;
@@ -667,10 +801,61 @@ footer .spacer {
     grid-template-columns: 1fr;
   }
   .join-art {
-    height: 240px;
+    height: 300px;
+  }
+  /* The TV leaves room on the right for the phone and below for the sideways controller. */
+  .tv {
+    inset: 0 96px 96px 0;
+  }
+  .tv-room,
+  .tv-pick {
+    gap: 6px;
   }
   .tv-code {
-    font-size: 48px;
+    font-size: 40px;
+  }
+  .tv-tiles {
+    gap: 6px;
+  }
+  .tv-tile {
+    width: 50px;
+    height: 40px;
+    font-size: 9px;
+    padding: 4px 5px;
+  }
+  .phone {
+    width: 116px;
+    height: 200px;
+  }
+  .phone.is-pad {
+    width: 150px;
+    height: 88px;
+  }
+  .ph-code {
+    gap: 3px;
+  }
+  .ph-code span {
+    width: 19px;
+    height: 24px;
+    font-size: 12px;
+  }
+  .pad .stick {
+    left: 12px;
+    top: 14px;
+    width: 44px;
+    height: 44px;
+  }
+  .pad .btn {
+    width: 24px;
+    height: 24px;
+  }
+  .pad .btn.a {
+    right: 14px;
+    top: 30px;
+  }
+  .pad .btn.b {
+    right: 46px;
+    top: 10px;
   }
   nav {
     gap: 12px;
