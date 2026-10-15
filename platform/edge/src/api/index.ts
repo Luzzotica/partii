@@ -16,7 +16,7 @@ import { secretHandlers } from "./secrets";
 import { steamHandlers } from "./steam";
 import { themeHandlers } from "./theme";
 import { webHandlers } from "./web";
-import { analyticsHandlers } from "./analytics";
+import { analyticsHandlers, reportPlatformError } from "./analytics";
 import { leaderboardHandlers } from "./leaderboards";
 
 export interface Ctx {
@@ -75,6 +75,29 @@ function errorResponse(c: Context, e: unknown) {
   return c.json({ ok: false, error: { code: "internal", message: String(e), hint: "this is a platform bug; the request was not applied" } }, 500);
 }
 
+/** Where money changes hands: any failure here is reported, not just 5xx (a 409 "you already own it" is not a failure). */
+const PURCHASE_OPS = new Set(["storeCheckout", "webhookStripe", "playersReceipt"]);
+
+/** partii's own failures go to its dashboard (platformGame): every 5xx, and failed purchases. */
+function reportFailure(c: Context, route: Route, e: unknown) {
+  const api = e instanceof ApiError ? e : null;
+  const status = api?.status ?? 500;
+  const purchase = PURCHASE_OPS.has(route.op) && api?.code !== "owned";
+  if (status < 500 && !purchase) return;
+  const message = api ? `${route.op}: ${api.code}: ${api.message}` : `${route.op}: ${e instanceof Error ? e.message : String(e)}`;
+  const report = reportPlatformError(c.env, {
+    kind: status >= 500 ? "error" : "warning",
+    message,
+    backtrace: !api && e instanceof Error ? (e.stack ?? "") : "",
+    context: { op: route.op, method: route.method, path: route.path, status, code: api?.code ?? "internal", purchase },
+  });
+  try {
+    c.executionCtx.waitUntil(report);
+  } catch {
+    /* no execution context (tests): the report runs on its own */
+  }
+}
+
 /** Player content routes, switched on per environment by the UGC var. */
 const isUgc = (op: string) => /^ugc[A-Z]/.test(op) || /^adminUgc[A-Z]/.test(op);
 
@@ -107,6 +130,7 @@ export function registerApi(app: Hono<{ Bindings: Env }>) {
         if (out instanceof Response) return out;
         return c.json({ ok: true, ...out });
       } catch (e) {
+        reportFailure(c, route, e);
         return errorResponse(c, e);
       }
     });

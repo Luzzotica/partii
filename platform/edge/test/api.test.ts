@@ -229,6 +229,14 @@ describe("games and the store", () => {
 });
 
 describe("players", () => {
+  it("two first guest calls from one install at once get the same player", async () => {
+    const { key } = await setup();
+    const device = `race-${Date.now()}-${n++}-xxxx`;
+    const [a, b] = await Promise.all([guest(key, device), guest(key, device)]);
+    expect(a.player.id).toBe(b.player.id);
+    expect((await guest(key, device)).player.id).toBe(a.player.id);
+  });
+
   it("guests are one per device; names change", async () => {
     const { key } = await setup();
     const a = await guest(key, "device-aaaaaaaa");
@@ -377,6 +385,12 @@ describe("stripe webhooks", () => {
     // Stripe retries: still one purchase.
     await api("POST", "/v1/webhooks/stripe", { raw: ev, headers: { "stripe-signature": await sign(ev, (env as any).STRIPE_WEBHOOK_SECRET) } });
     expect((await api("GET", `/v1/games/${game}/sales`, { token })).json.purchases).toHaveLength(1);
+    // partii's own dashboard: the forged webhook is a reported failure; the purchase one event despite the retry.
+    await new Promise((r) => setTimeout(r, 50));
+    const forgery = await (env as any).DB.prepare("SELECT kind, count FROM error_groups WHERE game_id = 'partii' AND message LIKE 'webhookStripe: bad_signature%'").first();
+    expect(forgery?.kind).toBe("warning");
+    const bought = await (env as any).DB.prepare("SELECT COUNT(*) AS n FROM events WHERE game_id = 'partii' AND name = 'purchase' AND json_extract(props, '$.game') = ?").bind(game).first();
+    expect(bought?.n).toBe(1);
     expect((await api("GET", `/v1/players/me/entitlements?game=${game}`, { key, player: me.token })).json.entitlements).toHaveLength(1);
     const refund = JSON.stringify({ type: "charge.refunded", data: { object: { payment_intent: "pi_test_1" } } });
     await api("POST", "/v1/webhooks/stripe", { raw: refund, headers: { "stripe-signature": await sign(refund, (env as any).STRIPE_WEBHOOK_SECRET) } });

@@ -24,6 +24,10 @@ export interface Env extends IceEnv, LimitEnv {
   ALERT_LIMITED?: string;
   ALERT_RELAY_DROPPED?: string;
   PARTII_ENV: string;
+  /** The deployed version (its id goes on partii's own error reports). */
+  CF_VERSION_METADATA?: { id: string; tag?: string; timestamp?: string };
+  /** The game partii reports its own failures and events under (default "partii"). */
+  PLATFORM_GAME?: string;
   KEY_SECRET: string;
   /** "on": the player content (UGC) routes are served. */
   UGC?: string;

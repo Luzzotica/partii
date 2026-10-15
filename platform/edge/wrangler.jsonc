@@ -4,6 +4,7 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-09-01",
   "compatibility_flags": ["nodejs_compat"],
+  "version_metadata": { "binding": "CF_VERSION_METADATA" },
   "durable_objects": {
     "bindings": [
       { "name": "SESSION", "class_name": "Session" },
@@ -38,6 +39,7 @@
       "workers_dev": true,
       "routes": [{ "pattern": "api-staging.partii.games", "custom_domain": true }, { "pattern": "*-staging.partii.games/*", "zone_name": "partii.games" }],
       "vars": { "PARTII_ENV": "staging", "RATE_LIMITS": "on", "TURN_MODE": "cloudflare", "ALLOW_FAKE_LOGIN": "1", "ALLOW_FAKE_STORE": "1", "EMAIL_MODE": "dev", "STORE_URL": "https://partii-store.vercel.app", "R2_BUCKET": "partii-staging-files", "UGC": "on", "WEB_DOMAIN": "-staging.partii.games", "APPLE_CLIENT_IDS": "me.sterlinglong.tankii" },
+      "version_metadata": { "binding": "CF_VERSION_METADATA" },
       "durable_objects": {
         "bindings": [
           { "name": "SESSION", "class_name": "Session" },
@@ -59,6 +61,7 @@
       "workers_dev": true,
       "routes": [{ "pattern": "api.partii.games", "custom_domain": true }, { "pattern": "*.partii.games/*", "zone_name": "partii.games" }],
       "vars": { "PARTII_ENV": "production", "RATE_LIMITS": "on", "TURN_MODE": "cloudflare", "EMAIL_MODE": "resend", "STORE_URL": "https://partii.games", "R2_BUCKET": "partii-prod-files", "UGC": "on", "WEB_DOMAIN": ".partii.games", "APPLE_CLIENT_IDS": "me.sterlinglong.tankii" },
+      "version_metadata": { "binding": "CF_VERSION_METADATA" },
       "durable_objects": {
         "bindings": [
           { "name": "SESSION", "class_name": "Session" },

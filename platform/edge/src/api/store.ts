@@ -9,6 +9,7 @@ import { ApiError, bad, currentPrice, gameView, now, randomSlug, type GameRow } 
 import { grant } from "./games";
 import type { Handlers } from "./index";
 import { siteUrl } from "./web";
+import { recordPlatformEvent } from "./analytics";
 
 async function stripe(env: Env, path: string, form: Record<string, string>, fetcher: typeof fetch = fetch) {
   const res = await fetcher(`https://api.stripe.com/v1/${path}`, {
@@ -34,9 +35,11 @@ async function published(env: Env, game: string): Promise<GameRow> {
 
 /** Record a paid purchase and grant the game (idempotent on the store ref). */
 export async function recordPurchase(env: Env, p: { player: string | null; game: string; store: string; ref: string; amount: number; currency: string; test: boolean }) {
-  await env.DB.prepare("INSERT OR IGNORE INTO purchases (id, player_id, game_id, store, ref, amount_cents, currency, status, test, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'paid', ?, ?)")
+  const ins = await env.DB.prepare("INSERT OR IGNORE INTO purchases (id, player_id, game_id, store, ref, amount_cents, currency, status, test, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'paid', ?, ?)")
     .bind(randomSlug(14), p.player, p.game, p.store, p.ref, p.amount, p.currency, p.test ? 1 : 0, now())
     .run();
+  // Once per purchase: stores repeat their notifications.
+  if (ins.meta.changes) await recordPlatformEvent(env, "purchase", { game: p.game, store: p.store, amount_cents: p.amount, currency: p.currency, test: p.test }, p.player);
   return p.player ? grant(env, p.player, p.game, p.store, p.ref) : null;
 }
 

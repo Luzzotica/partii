@@ -26,6 +26,10 @@ What isn't kept:
 
 Raw events are deleted after 90 days. Daily totals (how many players played each day) are kept longer. Only the game's developer and partii can see a game's statistics, and we never sell them.
 
+## This website
+
+partii.games counts its own visits the same way: the pages and games you look at, sign-ups, purchases started, and how long the visit lasted, tied to a random id stored in your browser. It sets no cookies and has no ads or third-party trackers. If your browser sends Global Privacy Control or Do Not Track, none of this is sent. Errors the site runs into are still reported, without the browser's id, so we can fix them.
+
 ## Questions and deletion
 
 To see or delete what we have about you, email **{{CONTACT}}**. Include your account's name, or the game and device if you play as a guest. Deleting your account from a game's settings deletes its sign-ins, saves, purchases on partii and published content, and unlinks its statistics, which then belong to no account.

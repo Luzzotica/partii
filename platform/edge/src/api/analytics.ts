@@ -125,6 +125,102 @@ export async function fingerprint(kind: string, message: string, backtrace: stri
   return (await sha256hex([kind, normalizeMessage(message), ...topFrames(backtrace)].join("\n"))).slice(0, 24);
 }
 
+
+interface Report {
+  kind: string;
+  message: string;
+  backtrace: string;
+  fp: string;
+  top: string;
+  at: number;
+  session: string;
+  context: string;
+}
+
+/** Add reports to their groups (a fixed group that comes back is open again), keeping the last few samples of each. */
+async function storeErrors(env: Env, game: string, cx: Context, reports: Report[], t: number) {
+  const db = env.DB;
+  const fps = [...new Set(reports.map((r) => r.fp))];
+  const existing = await db
+    .prepare(`SELECT * FROM error_groups WHERE game_id = ? AND fingerprint IN (${fps.map(() => "?").join(",")})`)
+    .bind(game, ...fps)
+    .all<GroupRow>();
+  const groups = new Map(existing.results.map((g) => [g.fingerprint, g]));
+  const stmts: D1PreparedStatement[] = [];
+  for (const r of reports) {
+    const g: GroupRow = groups.get(r.fp) ?? { game_id: game, fingerprint: r.fp, kind: r.kind, message: r.message.slice(0, 500), top_frame: r.top, first_seen: r.at, last_seen: r.at, count: 0, devices: 0, versions: "[]", platforms: "[]", status: "open", status_at: null };
+    g.count++;
+    g.first_seen = Math.min(g.first_seen, r.at);
+    g.last_seen = Math.max(g.last_seen, r.at);
+    g.versions = addTo(g.versions, cx.version);
+    g.platforms = addTo(g.platforms, cx.platform);
+    // A fixed bug that comes back is open again.
+    if (g.status === "fixed") (g.status = "open"), (g.status_at = t);
+    groups.set(r.fp, g);
+    stmts.push(
+      db
+        .prepare("INSERT INTO error_samples (game_id, fingerprint, at, device, player_id, session, platform, version, build, backtrace, context) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        .bind(game, r.fp, r.at, cx.device, cx.player, r.session, cx.platform, cx.version, cx.build, r.backtrace, r.context),
+    );
+  }
+  for (const g of groups.values()) {
+    stmts.push(db.prepare("INSERT OR IGNORE INTO error_devices (game_id, fingerprint, device) VALUES (?, ?, ?)").bind(game, g.fingerprint, cx.device));
+    stmts.push(
+      db
+        .prepare(
+          `INSERT INTO error_groups (game_id, fingerprint, kind, message, top_frame, first_seen, last_seen, count, devices, versions, platforms, status, status_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, (SELECT COUNT(*) FROM error_devices WHERE game_id = ? AND fingerprint = ?), ?, ?, ?, ?)
+           ON CONFLICT DO UPDATE SET first_seen = excluded.first_seen, last_seen = excluded.last_seen, count = error_groups.count + ?, devices = excluded.devices,
+             versions = excluded.versions, platforms = excluded.platforms, status = excluded.status, status_at = excluded.status_at`,
+        )
+        .bind(game, g.fingerprint, g.kind, g.message, g.top_frame, g.first_seen, g.last_seen, g.count, game, g.fingerprint, g.versions, g.platforms, g.status, g.status_at, reports.filter((r) => r.fp === g.fingerprint).length),
+    );
+    stmts.push(
+      db
+        .prepare("DELETE FROM error_samples WHERE game_id = ? AND fingerprint = ? AND id NOT IN (SELECT id FROM error_samples WHERE game_id = ? AND fingerprint = ? ORDER BY id DESC LIMIT ?)")
+        .bind(game, g.fingerprint, game, g.fingerprint, ANALYTICS_LIMITS.samplesKept),
+    );
+  }
+  await db.batch(stmts);
+}
+
+// ── partii's own reports ──
+// partii watches itself with the same tools it gives games: its API's
+// failures and its purchases land on the dashboard under one game
+// (PLATFORM_GAME, "partii"), next to the store site's own events.
+
+export const platformGame = (env: Env) => env.PLATFORM_GAME || "partii";
+
+const serverContext = (env: Env): Context => ({ device: "server", player: null, platform: "server", version: env.CF_VERSION_METADATA?.id.slice(0, 8) ?? "", build: env.PARTII_ENV ?? "", owned: null });
+
+/** Report one of the API's own failures. Never throws: a report must not fail the request. */
+export async function reportPlatformError(env: Env, r: { kind?: "error" | "warning"; message: string; backtrace?: string; context?: Record<string, string | number | boolean> }) {
+  try {
+    const kind = r.kind ?? "error";
+    const message = r.message.slice(0, ANALYTICS_LIMITS.messageChars);
+    const backtrace = (r.backtrace ?? "").slice(0, ANALYTICS_LIMITS.backtraceBytes);
+    const t = now();
+    await storeErrors(env, platformGame(env), serverContext(env), [
+      { kind, message, backtrace, fp: await fingerprint(kind, message, backtrace), top: topFrames(backtrace, 1)[0] ?? "", at: t, session: "", context: cleanProps(r.context, ANALYTICS_LIMITS.contextBytes) ?? "{}" },
+    ], t);
+  } catch (e) {
+    console.error("platform error report failed", e);
+  }
+}
+
+/** Record one of partii's own events (a purchase): the events table only, so the server isn't counted as a player. Never throws. */
+export async function recordPlatformEvent(env: Env, name: string, props: Record<string, string | number | boolean>, player: string | null = null) {
+  try {
+    const cx = serverContext(env);
+    const t = now();
+    await env.DB.prepare("INSERT INTO events (game_id, at, day, name, device, player_id, session, platform, version, build, owned, props) VALUES (?, ?, ?, ?, ?, ?, '', ?, ?, ?, NULL, ?)")
+      .bind(platformGame(env), t, dayOf(t), name, cx.device, player, cx.platform, cx.version, cx.build, cleanProps(props, ANALYTICS_LIMITS.propsBytes) ?? "{}")
+      .run();
+  } catch (e) {
+    console.error("platform event failed", e);
+  }
+}
+
 // ── Reading: filters ──
 
 interface Filters {
@@ -262,7 +358,7 @@ export const analyticsHandlers: Handlers = {
     await rateLimit(env, req, "errors", params.game, cx.device);
     const t = now();
     const game = params.game;
-    const reports = [];
+    const reports: Report[] = [];
     for (const e of body.errors) {
       if (!e || typeof e !== "object") throw bad("each error must be an object");
       if (!["panic", "error", "warning"].includes(e.kind)) throw bad("kind must be panic, error or warning");
@@ -273,50 +369,7 @@ export const analyticsHandlers: Handlers = {
       reports.push({ kind: e.kind as string, message, backtrace, fp, top: topFrames(backtrace, 1)[0] ?? "", at: clampAt(e.at, t), session: short(e.session, 64, /^[A-Za-z0-9_-]*$/), context: cleanProps(e.context, ANALYTICS_LIMITS.contextBytes) ?? "{}" });
     }
     if (dryRun) return { dry_run: true, groups: reports.map((r) => r.fp) };
-
-    const db = env.DB;
-    const fps = [...new Set(reports.map((r) => r.fp))];
-    const existing = await db
-      .prepare(`SELECT * FROM error_groups WHERE game_id = ? AND fingerprint IN (${fps.map(() => "?").join(",")})`)
-      .bind(game, ...fps)
-      .all<GroupRow>();
-    const groups = new Map(existing.results.map((g) => [g.fingerprint, g]));
-    const stmts: D1PreparedStatement[] = [];
-    for (const r of reports) {
-      const g: GroupRow = groups.get(r.fp) ?? { game_id: game, fingerprint: r.fp, kind: r.kind, message: r.message.slice(0, 500), top_frame: r.top, first_seen: r.at, last_seen: r.at, count: 0, devices: 0, versions: "[]", platforms: "[]", status: "open", status_at: null };
-      g.count++;
-      g.first_seen = Math.min(g.first_seen, r.at);
-      g.last_seen = Math.max(g.last_seen, r.at);
-      g.versions = addTo(g.versions, cx.version);
-      g.platforms = addTo(g.platforms, cx.platform);
-      // A fixed bug that comes back is open again.
-      if (g.status === "fixed") (g.status = "open"), (g.status_at = t);
-      groups.set(r.fp, g);
-      stmts.push(
-        db
-          .prepare("INSERT INTO error_samples (game_id, fingerprint, at, device, player_id, session, platform, version, build, backtrace, context) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-          .bind(game, r.fp, r.at, cx.device, cx.player, r.session, cx.platform, cx.version, cx.build, r.backtrace, r.context),
-      );
-    }
-    for (const g of groups.values()) {
-      stmts.push(db.prepare("INSERT OR IGNORE INTO error_devices (game_id, fingerprint, device) VALUES (?, ?, ?)").bind(game, g.fingerprint, cx.device));
-      stmts.push(
-        db
-          .prepare(
-            `INSERT INTO error_groups (game_id, fingerprint, kind, message, top_frame, first_seen, last_seen, count, devices, versions, platforms, status, status_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, (SELECT COUNT(*) FROM error_devices WHERE game_id = ? AND fingerprint = ?), ?, ?, ?, ?)
-             ON CONFLICT DO UPDATE SET first_seen = excluded.first_seen, last_seen = excluded.last_seen, count = error_groups.count + ?, devices = excluded.devices,
-               versions = excluded.versions, platforms = excluded.platforms, status = excluded.status, status_at = excluded.status_at`,
-          )
-          .bind(game, g.fingerprint, g.kind, g.message, g.top_frame, g.first_seen, g.last_seen, g.count, game, g.fingerprint, g.versions, g.platforms, g.status, g.status_at, reports.filter((r) => r.fp === g.fingerprint).length),
-      );
-      stmts.push(
-        db
-          .prepare("DELETE FROM error_samples WHERE game_id = ? AND fingerprint = ? AND id NOT IN (SELECT id FROM error_samples WHERE game_id = ? AND fingerprint = ? ORDER BY id DESC LIMIT ?)")
-          .bind(game, g.fingerprint, game, g.fingerprint, ANALYTICS_LIMITS.samplesKept),
-      );
-    }
-    await db.batch(stmts);
+    await storeErrors(env, game, cx, reports, t);
     return { groups: reports.map((r) => r.fp) };
   },
 

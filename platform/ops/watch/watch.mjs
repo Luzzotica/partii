@@ -3,10 +3,17 @@
 //   * health: down for 3 checks in a row → a k2 ticket for the owner (and one when it's back);
 //   * usage alerts (adminUsage) → a k2 ticket for the owner, once per alert;
 //   * player content waiting for review → wakes the moderator agent (k2 msg --inbox-wake);
-//     content left unreviewed for 30 minutes → a k2 ticket for the owner.
+//     content left unreviewed for 30 minutes → a k2 ticket for the owner;
+//   * errors (crashes, failed requests, failed purchases) of the games in
+//     WATCH_ERRORS (default partii=partii-backend: partii's own) → wakes the
+//     agent that owns the game, with the error, for each new group and again
+//     when a known one keeps happening (at most hourly); a failed purchase
+//     also tickets the owner. Needs WATCH_DEV_TOKEN (a developer token that
+//     owns those games: partii tokens create --name partii-watch).
 // No dependencies. Config (names only in git): ~/.config/partii/watch.env with
 // PARTII_API, PARTII_ADMIN_TOKEN, and optionally WATCH_OWNER (default luzzotica),
-// WATCH_MODERATOR (default partii-moderator), WATCH_K2_WORKSPACE (where tickets come from).
+// WATCH_MODERATOR (default partii-moderator), WATCH_K2_WORKSPACE (where tickets come from),
+// WATCH_DEV_TOKEN and WATCH_ERRORS (game=agent,game=agent).
 // Run: node watch.mjs [--once]   (installed as a LaunchAgent by install.sh)
 
 import { execFileSync } from "node:child_process";
@@ -19,6 +26,9 @@ const STATE = process.env.WATCH_STATE ?? join(CONF, "watch-state.json");
 const EVERY_MS = 30_000;
 const DOWN_AFTER = 3;
 const STALE_REVIEW_MS = 30 * 60_000;
+const ERROR_REPEAT_MS = 60 * 60_000;
+/** Errors from these API operations are failed purchases. */
+const PURCHASE = /^(storeCheckout|webhookStripe|playersReceipt|checkout|download)\b/;
 
 function loadEnv(file) {
   const out = {};
@@ -35,6 +45,11 @@ const ADMIN = env.PARTII_ADMIN_TOKEN;
 const OWNER = env.WATCH_OWNER ?? "luzzotica";
 const MODERATOR = env.WATCH_MODERATOR ?? "partii-moderator";
 const WORKSPACE = env.WATCH_K2_WORKSPACE ?? process.cwd();
+const DEV = env.WATCH_DEV_TOKEN;
+const ERROR_GAMES = (env.WATCH_ERRORS ?? "partii=partii-backend")
+  .split(",")
+  .map((p) => p.trim().split("="))
+  .filter(([g, a]) => g && a);
 if (!API || !ADMIN) throw new Error("set PARTII_API and PARTII_ADMIN_TOKEN in ~/.config/partii/watch.env");
 
 function loadState() {
@@ -66,8 +81,8 @@ function tellOwner(title, body) {
   k2(["tickets", "ask", title, "--html", file, "--assign", OWNER]);
 }
 
-async function get(path) {
-  const r = await fetch(API + path, { headers: { authorization: `Bearer ${ADMIN}`, "user-agent": "partii-watch/1" }, signal: AbortSignal.timeout(15_000) });
+async function get(path, token = ADMIN) {
+  const r = await fetch(API + path, { headers: { authorization: `Bearer ${token}`, "user-agent": "partii-watch/1" }, signal: AbortSignal.timeout(15_000) });
   const j = await r.json().catch(() => ({}));
   if (!r.ok || j.ok === false) throw new Error(`${path}: HTTP ${r.status} ${j.error?.code ?? ""}`);
   return j;
@@ -128,10 +143,53 @@ async function checkReview(s) {
   }
 }
 
+const list = (v) => (Array.isArray(v) ? v : typeof v === "string" ? (() => { try { return JSON.parse(v); } catch { return []; } })() : []).join(", ");
+
+/** New error groups, and known ones still happening, go to the agent that owns the game. */
+async function checkErrors(s) {
+  if (!DEV) return;
+  s.errors ??= {};
+  for (const [game, agent] of ERROR_GAMES) {
+    const { groups } = await get(`/v1/games/${game}/errors?status=open&limit=50`, DEV);
+    const seen = (s.errors[game] ??= { told: {}, since: null });
+    const first = seen.since === null;
+    seen.since ??= Date.now();
+    const tell = [];
+    for (const g of groups) {
+      const t = seen.told[g.fingerprint];
+      // First run: only what happens from now on.
+      if (first) {
+        seen.told[g.fingerprint] = { count: g.count, at: Date.now() };
+        continue;
+      }
+      const isNew = !t;
+      const growing = t && g.count > t.count && Date.now() - t.at > ERROR_REPEAT_MS;
+      if (!isNew && !growing) continue;
+      tell.push({ g, isNew, more: t ? g.count - t.count : g.count });
+      seen.told[g.fingerprint] = { count: g.count, at: Date.now() };
+    }
+    if (!tell.length) continue;
+    const lines = tell.map(({ g, isNew, more }) =>
+      [
+        `## ${isNew ? "NEW" : `still happening (+${more})`}: ${g.kind}: ${g.message}`,
+        `- fingerprint ${g.fingerprint}; ${g.count} reports from ${g.devices} devices; first ${new Date(g.first_seen).toISOString()}, last ${new Date(g.last_seen).toISOString()}`,
+        `- versions ${list(g.versions) || "?"}; platforms ${list(g.platforms) || "?"}${g.top_frame ? `; top frame ${g.top_frame}` : ""}`,
+        `- details and samples: partii errors get ${game} ${g.fingerprint}; when fixed and deployed: partii errors update ${game} ${g.fingerprint} --status fixed`,
+      ].join("\n"),
+    );
+    const file = join(CONF, `watch-errors-${game}.md`);
+    writeFileSync(file, `# Errors in ${game} on ${API}\n\nFix what's yours, deploy, and mark it fixed (a fixed group that comes back reopens).\n\n${lines.join("\n\n")}\n`);
+    log("wake", agent, "with", tell.length, "error groups of", game);
+    k2(["msg", agent, "--inbox-wake", file]);
+    const money = tell.filter(({ g }) => PURCHASE.test(g.message) && g.kind !== "warning");
+    if (money.length) tellOwner(`Purchases are failing on ${game}`, `${money.map(({ g }) => `${g.message} (${g.count}×)`).join("; ")}. ${agent} has been woken to fix it.`);
+  }
+}
+
 async function tick() {
   const s = loadState();
   if (await checkHealth(s)) {
-    for (const check of [checkAlerts, checkReview]) {
+    for (const check of [checkAlerts, checkReview, checkErrors]) {
       try {
         await check(s);
       } catch (e) {

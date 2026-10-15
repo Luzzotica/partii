@@ -8,6 +8,7 @@ import policyText from "../../../docs/CONTENT-POLICY.md?raw";
 import privacyText from "../../../docs/PRIVACY.md?raw";
 import { DevDashboard } from "./dev";
 import { Developers, GameCard, Home, LINKS } from "./home";
+import { deviceId, reportError, startTracking, track } from "./track";
 import "./style.css";
 
 const API = import.meta.env.VITE_PARTII_API ?? "https://api.partii.games";
@@ -45,12 +46,6 @@ function store<T>(k: string, v?: T): T | null {
   } catch {
     return null;
   }
-}
-
-function deviceId(): string {
-  let id = store<string>("partii.device");
-  if (!id) id = store("partii.device", crypto.randomUUID().replace(/-/g, ""))!;
-  return id;
 }
 
 function usePlayer() {
@@ -147,12 +142,22 @@ function AllGames({ go, games }: { go: (to: string) => void; games: Game[] | nul
 
 const PLATFORM_NAMES: Record<string, string> = { macos: "Mac", windows: "Windows", linux: "Linux", ios: "iPhone & iPad", android: "Android", web: "Browser" };
 
+/** A step that failed for the visitor: an event, and an error report when the API never answered (the API reports its own). */
+function failed(step: string, game: string, e: unknown) {
+  const code = e instanceof PartiiError ? e.code : "network";
+  track(`${step}_failed`, { game, code });
+  if (!(e instanceof PartiiError)) reportError(`${step} failed: ${e instanceof Error ? e.message : String(e)}`, { context: { step, game } });
+}
+
 function GamePage({ id, owned, refresh }: { id: string; owned: Set<string>; refresh: () => Promise<void> }) {
   const [data, setData] = useState<{ game: Game; builds: { platform: string; version: string; size: number }[] } | null>(null);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   useEffect(() => {
-    api.storeGame(id).then(setData, () => setNote("This game is not on the store."));
+    api.storeGame(id).then(
+      (d) => (setData(d), track("game_view", { game: id })),
+      () => setNote("This game is not on the store."),
+    );
   }, [id]);
   if (!data) return <p className="muted">{note ?? "Loading…"}</p>;
   const g = data.game;
@@ -160,20 +165,24 @@ function GamePage({ id, owned, refresh }: { id: string; owned: Set<string>; refr
   const buy = async () => {
     setBusy(true);
     setNote(null);
+    track("checkout_start", { game: g.id, cents: g.price_now_cents ?? g.price_cents });
     try {
       const r = await api.storeCheckout(g.id, { success_url: `${location.origin}/library?bought=${g.id}`, cancel_url: location.href });
       if (r.url) location.href = r.url;
       else {
         await refresh();
+        track("got_free", { game: g.id });
         setNote("It's yours. Find it in your library.");
       }
     } catch (e) {
+      failed("checkout", g.id, e);
       setNote(e instanceof PartiiError ? e.message : String(e));
     } finally {
       setBusy(false);
     }
   };
   const download = async (platform: string) => {
+    track("download", { game: g.id, platform });
     try {
       const blob: Blob = await api.storeDownload(g.id, platform);
       const a = document.createElement("a");
@@ -181,6 +190,7 @@ function GamePage({ id, owned, refresh }: { id: string; owned: Set<string>; refr
       a.download = `${g.id}-${platform}`;
       a.click();
     } catch (e) {
+      failed("download", g.id, e);
       setNote(e instanceof PartiiError ? e.message : String(e));
     }
   };
@@ -195,7 +205,7 @@ function GamePage({ id, owned, refresh }: { id: string; owned: Set<string>; refr
         {g.demo?.free_levels ? <p className="demo">The first {g.demo.free_levels} levels are free to play.</p> : null}
         {g.play_url && (
           <p>
-            <a className="button" href={g.play_url} data-testid="play">
+            <a className="button" href={g.play_url} data-testid="play" onClick={() => track("play", { game: g.id })}>
               Play in your browser
             </a>
           </p>
@@ -228,6 +238,8 @@ function GamePage({ id, owned, refresh }: { id: string; owned: Set<string>; refr
 function Library({ go }: { go: (to: string) => void }) {
   const [games, setGames] = useState<Game[] | null>(null);
   useEffect(() => {
+    const bought = new URLSearchParams(location.search).get("bought");
+    if (bought) track("checkout_return", { game: bought.slice(0, 40) });
     api.storeLibrary().then((r) => setGames(r.games), () => setGames([]));
   }, []);
   if (!games) return <p className="muted">Loading…</p>;
@@ -249,21 +261,29 @@ function SignIn({ onDone, signup }: { onDone: (token: string, p: Player) => void
   const [code, setCode] = useState("");
   const [sent, setSent] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  const failedSignIn = (step: string, e: unknown) => {
+    track("signin_failed", { step, code: e instanceof PartiiError ? e.code : "network" });
+    if (!(e instanceof PartiiError)) reportError(`sign-in ${step} failed: ${e instanceof Error ? e.message : String(e)}`);
+  };
   const start = async () => {
     try {
       const r = await api.playersEmailStart({ email });
+      track("signin_code_sent", { signup: !!signup });
       setSent(true);
       setNote(r.sent ? "Check your email for a 6-digit code." : `No mail on this server; your code is ${r.code}.`);
     } catch (e) {
+      failedSignIn("code", e);
       setNote(e instanceof PartiiError ? e.message : String(e));
     }
   };
   const finish = async () => {
     try {
       const r = await api.playersLogin({ provider: "email", email, code });
+      track(signup ? "signup" : "signin", { merged: !!r.merged });
       onDone(r.player_token, r.player);
       setNote(r.merged ? "Signed in. This browser's games joined your account." : "Signed in.");
     } catch (e) {
+      failedSignIn("login", e);
       setNote(e instanceof PartiiError ? e.message : String(e));
     }
   };
@@ -319,6 +339,7 @@ function App() {
       {label}
     </a>
   );
+  useEffect(() => track("page_view", { path: path.slice(0, 100) }), [path]);
   const member = !!player && player.providers.includes("email");
   let page;
   const m = /^\/games\/([a-z0-9-]+)/.exec(path);
@@ -376,6 +397,7 @@ function App() {
   );
 }
 
+startTracking();
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <App />

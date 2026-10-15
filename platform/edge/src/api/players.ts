@@ -134,12 +134,25 @@ export const playerHandlers: Handlers = {
   async playersGuest({ env, body }) {
     const device = String(body.device_id ?? "");
     if (!/^[A-Za-z0-9_-]{8,80}$/.test(device)) throw bad("device_id must be 8–80 chars of [A-Za-z0-9_-]", "generate a random id once per install and keep it");
-    const known = await env.DB.prepare("SELECT p.id, p.display_name, p.test_developer_id, p.created_at FROM identities i JOIN players p ON p.id = i.player_id WHERE i.provider = 'device' AND i.subject = ? AND p.deleted_at IS NULL")
-      .bind(device)
-      .first<{ id: string; display_name: string; created_at: number }>();
-    const p = known ?? (await newPlayer(env, String(body.display_name ?? "Player")));
-    if (!known) await env.DB.prepare("INSERT INTO identities (provider, subject, player_id, created_at) VALUES ('device', ?, ?, ?)").bind(device, p.id, now()).run();
-    return { player: await view(env, p), player_token: await playerToken(env, p.id), created: !known };
+    const find = () =>
+      env.DB.prepare("SELECT p.id, p.display_name, p.test_developer_id, p.created_at FROM identities i JOIN players p ON p.id = i.player_id WHERE i.provider = 'device' AND i.subject = ? AND p.deleted_at IS NULL")
+        .bind(device)
+        .first<{ id: string; display_name: string; created_at: number }>();
+    const known = await find();
+    if (known) return { player: await view(env, known), player_token: await playerToken(env, known.id), created: false };
+    const p = await newPlayer(env, String(body.display_name ?? "Player"));
+    const claimed = await env.DB.prepare("INSERT OR IGNORE INTO identities (provider, subject, player_id, created_at) VALUES ('device', ?, ?, ?)").bind(device, p.id, now()).run();
+    if (!claimed.meta.changes) {
+      // Two first calls from one install at once (two tabs, a retry): the other one won, so drop ours.
+      const winner = await find();
+      if (winner) {
+        await env.DB.prepare("DELETE FROM players WHERE id = ?").bind(p.id).run();
+        return { player: await view(env, winner), player_token: await playerToken(env, winner.id), created: false };
+      }
+      // The id still points at a deleted player: it's ours now.
+      await env.DB.prepare("UPDATE identities SET player_id = ?, created_at = ? WHERE provider = 'device' AND subject = ?").bind(p.id, now(), device).run();
+    }
+    return { player: await view(env, p), player_token: await playerToken(env, p.id), created: true };
   },
 
   async playersEmailStart({ env, body }) {

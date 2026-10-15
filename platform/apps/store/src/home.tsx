@@ -1,5 +1,6 @@
 // partii.games' front page (players first) and /developers (the pitch to
 // game makers). Facts here must match what the platform does: docs/GUIDE.md.
+import { track } from "./track";
 import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
 
 export interface HomeGame {
@@ -276,7 +277,7 @@ const AGENT_FEATURES: [string, string][] = [
 const PROMPT = `Build a party game on partii. Start by reading https://partii.games/llms.txt and follow the guide it links. My game: `;
 
 function PromptBox() {
-  const copy = () => navigator.clipboard?.writeText(PROMPT).catch(() => {});
+  const copy = () => (track("prompt_copy"), navigator.clipboard?.writeText(PROMPT).catch(() => {}));
   return (
     <div className="prompt-box">
       <div className="prompt-head">
