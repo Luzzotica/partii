@@ -231,6 +231,16 @@ paths:
         - { name: key_id, in: path, required: true, schema: { type: string } }
       responses: { "200": { description: "{revoked}" } }
 
+  /v1/projects/{project}/publisher:
+    post:
+      operationId: projectsPublisher
+      summary: "The project's official publisher player, for official player content (seed levels and worlds) shown as the studio or game: author.official is true on its items. Made on first call; returns a player token (30 days; call again for a fresh one). display_name names it (e.g. the game's name)."
+      x-auth: developer
+      x-cli: projects publisher
+      parameters: [{ name: project, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { display_name: { type: string } } } } } }
+      responses: { "200": { description: "{player, player_token}" } }
+
   /v1/projects/{project}/timings:
     get:
       operationId: timingsList

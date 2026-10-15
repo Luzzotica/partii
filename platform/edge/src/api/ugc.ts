@@ -53,6 +53,8 @@ interface ItemRow {
   game_id: string;
   author_id: string;
   author_name?: string;
+  /** The author is a project's official publisher (players.ts projectsPublisher). */
+  author_official?: number;
   kind: string;
   title: string;
   description: string;
@@ -76,7 +78,8 @@ interface ItemRow {
   updated_at: number;
 }
 
-const ITEM_SELECT = "SELECT i.*, p.display_name AS author_name FROM ugc_items i LEFT JOIN players p ON p.id = i.author_id";
+const ITEM_SELECT =
+  "SELECT i.*, p.display_name AS author_name, EXISTS (SELECT 1 FROM identities x WHERE x.player_id = i.author_id AND x.provider = 'publisher') AS author_official FROM ugc_items i LEFT JOIN players p ON p.id = i.author_id";
 
 function origin(req: Request) {
   return new URL(req.url).origin;
@@ -91,7 +94,7 @@ function itemView(req: Request, r: ItemRow, extra: Record<string, unknown> = {})
     title: r.title,
     description: r.description,
     tags: JSON.parse(r.tags) as string[],
-    author: { id: r.author_id, display_name: r.author_name ?? "" },
+    author: { id: r.author_id, display_name: r.author_name ?? "", official: !!r.author_official },
     visibility: r.visibility,
     share_code: r.share_code,
     version: r.version,

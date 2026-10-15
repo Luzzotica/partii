@@ -29,6 +29,8 @@ export function operations(t: Transport) {
     keysCreate: (project: string, body: Record<string, unknown> = {}) => t.call("POST", `/v1/projects/${encodeURIComponent(project)}/keys`, "developer", {}, body, "json"),
     /** Revoke a publishable key (clients using it are refused within a minute). (developer) */
     keysRevoke: (project: string, key_id: string) => t.call("DELETE", `/v1/projects/${encodeURIComponent(project)}/keys/${encodeURIComponent(key_id)}`, "developer", {}, undefined, "json"),
+    /** The project's official publisher player, for official player content (seed levels and worlds) shown as the studio or game: author.official is true on its items. Made on first call; returns a player token (30 days; call again for a fresh one). display_name names it (e.g. the game's name). (developer) */
+    projectsPublisher: (project: string, body: Record<string, unknown> = {}) => t.call("POST", `/v1/projects/${encodeURIComponent(project)}/publisher`, "developer", {}, body, "json"),
     /** Recent connection timings clients reported (create, join, connect, path). (developer) */
     timingsList: (project: string, query: { limit?: string | number } = {}) => t.call("GET", `/v1/projects/${encodeURIComponent(project)}/timings`, "developer", query, undefined, "json"),
     /** Your games. (developer) */

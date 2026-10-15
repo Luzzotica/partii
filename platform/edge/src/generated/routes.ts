@@ -94,6 +94,13 @@ export const ROUTES: Route[] = [
     "body": "none"
   },
   {
+    "op": "projectsPublisher",
+    "method": "POST",
+    "path": "/v1/projects/:project/publisher",
+    "auth": "developer",
+    "body": "json"
+  },
+  {
     "op": "timingsList",
     "method": "GET",
     "path": "/v1/projects/:project/timings",

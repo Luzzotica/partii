@@ -331,3 +331,24 @@ describe("player content: review queue (the moderator)", () => {
     expect(await pendingFor(it1.id)).toEqual([]);
   });
 });
+
+describe("player content: the official publisher", () => {
+  it("a developer gets their project's publisher player; its items are official and authored as the game", async () => {
+    const s = await setup();
+    const project = s.game.slice(2);
+    const pub = await api("POST", `/v1/projects/${project}/publisher`, { token: s.dev, body: { display_name: "Tankii" } });
+    expect(pub.json.ok, JSON.stringify(pub.json)).toBe(true);
+    expect(pub.json.player).toMatchObject({ display_name: "Tankii", providers: ["publisher"] });
+    // The same player every time, with a fresh token.
+    const again = await api("POST", `/v1/projects/${project}/publisher`, { token: s.dev, body: {} });
+    expect(again.json.player.id).toBe(pub.json.player.id);
+    const item = await publish(s, pub.json.player_token, { title: "Starter Isles" });
+    expect(item.author).toEqual({ id: pub.json.player.id, display_name: "Tankii", official: true });
+    // A person's items aren't official.
+    expect((await publish(s, await signedIn(s.key))).author.official).toBe(false);
+    // Only the project's developer; nobody can sign in as the publisher.
+    const stranger = (await api("POST", "/v1/admin/developers", { token: "dev-admin-token", body: { email: `x${uniq()}@example.com` } })).json.token;
+    expect((await api("POST", `/v1/projects/${project}/publisher`, { token: stranger, body: {} })).status).toBe(404);
+    expect((await api("POST", "/v1/players/login", { key: s.key, body: { provider: "publisher", subject: project } })).status).toBe(400);
+  });
+});

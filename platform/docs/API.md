@@ -32,6 +32,7 @@ Auth (`x-auth`):
 | `keysList` | `GET /v1/projects/{project}/keys` | developer | `partii keys list` |
 | `keysCreate` | `POST /v1/projects/{project}/keys` | developer | `partii keys create` |
 | `keysRevoke` | `DELETE /v1/projects/{project}/keys/{key_id}` | developer | `partii keys revoke` |
+| `projectsPublisher` | `POST /v1/projects/{project}/publisher` | developer | `partii projects publisher` |
 | `timingsList` | `GET /v1/projects/{project}/timings` | developer | `partii timings` |
 | `gamesList` | `GET /v1/games` | developer | `partii games list` |
 | `gamesPut` | `PUT /v1/games/{game}` | developer | `partii games put` |
@@ -238,6 +239,17 @@ Revoke a publishable key (clients using it are refused within a minute).
 Parameters:
 - `project` (path, required)
 - `key_id` (path, required)
+
+### projectsPublisher
+
+`POST /v1/projects/{project}/publisher` (auth: developer) · `partii projects publisher`
+
+The project's official publisher player, for official player content (seed levels and worlds) shown as the studio or game: author.official is true on its items. Made on first call; returns a player token (30 days; call again for a fresh one). display_name names it (e.g. the game's name).
+
+Parameters:
+- `project` (path, required)
+
+Body fields: `display_name`
 
 ### timingsList
 

@@ -5,7 +5,7 @@ import { files } from "../files";
 // test players for developers.
 
 import type { Env } from "../index";
-import { ApiError, bad, now, playerToken, randomSlug, sha256hex, signClaims } from "./core";
+import { ApiError, bad, now, ownProject, playerToken, randomSlug, sha256hex, signClaims } from "./core";
 import { grant } from "./games";
 import type { Ctx, Handlers } from "./index";
 import { verifyProvider } from "./providers";
@@ -108,6 +108,29 @@ export async function signIn(env: Env, provider: string, subject: string, curren
 }
 
 export const playerHandlers: Handlers = {
+  /**
+   * The project's official publisher: a player that signs in only through its
+   * developer (identity publisher:<project>), for official player content
+   * (seed levels, worlds) authored as the studio or game, not a person.
+   */
+  async projectsPublisher({ env, caller, params, body, dryRun }) {
+    await ownProject(env, caller, params.project);
+    const name = String(body.display_name ?? "").trim().slice(0, 40);
+    if (body.display_name !== undefined && !name) throw bad("display_name can't be empty");
+    if (dryRun) return { dry_run: true };
+    const owner = await env.DB.prepare("SELECT player_id FROM identities WHERE provider = 'publisher' AND subject = ?").bind(params.project).first<{ player_id: string }>();
+    let id = owner?.player_id;
+    if (!id) {
+      id = (await newPlayer(env, name || params.project)).id;
+      await env.DB.prepare("INSERT INTO identities (provider, subject, player_id, created_at) VALUES ('publisher', ?, ?, ?)").bind(params.project, id, now()).run();
+    } else if (name) {
+      await env.DB.prepare("UPDATE players SET display_name = ? WHERE id = ?").bind(name, id).run();
+    }
+    const p = await env.DB.prepare("SELECT id, display_name, test_developer_id, created_at FROM players WHERE id = ?").bind(id).first<{ id: string; display_name: string }>();
+    return { player: await view(env, p!), player_token: await playerToken(env, id), hint: "use it with the project's publishable key; ask again for a fresh token (they last 30 days)" };
+  },
+
+
   async playersGuest({ env, body }) {
     const device = String(body.device_id ?? "");
     if (!/^[A-Za-z0-9_-]{8,80}$/.test(device)) throw bad("device_id must be 8–80 chars of [A-Za-z0-9_-]", "generate a random id once per install and keep it");
