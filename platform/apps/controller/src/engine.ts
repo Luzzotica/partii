@@ -12,12 +12,43 @@ export interface Engine {
   online(): boolean;
 }
 
-export async function startEngine(edge: string, key: string, playerToken: string | null): Promise<Engine> {
+/**
+ * The session id for this room code, kept for the tab's life: a reload within
+ * the grace window (20 s) resumes the same member and seat instead of joining again.
+ */
+export function connFor(code: string): string {
+  const k = `partii.conn.${code.toUpperCase()}`;
+  try {
+    const had = sessionStorage.getItem(k);
+    if (had && /^[A-Za-z0-9_-]{16,64}$/.test(had)) return had;
+  } catch {
+    /* storage blocked: a fresh session every load */
+  }
+  const a = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+  const id = Array.from(crypto.getRandomValues(new Uint8Array(24)), (b) => a[b & 63]).join("");
+  try {
+    sessionStorage.setItem(k, id);
+  } catch {
+    /* fine */
+  }
+  return id;
+}
+
+/** Forget the room's session (left, kicked, or the room is over). */
+export function forgetConn(code: string) {
+  try {
+    sessionStorage.removeItem(`partii.conn.${code.toUpperCase()}`);
+  } catch {
+    /* fine */
+  }
+}
+
+export async function startEngine(edge: string, key: string, playerToken: string | null, conn = ""): Promise<Engine> {
   // Served next to the page (public/engine), not bundled.
   const url = new URL("/engine/partii_engine.js", location.href).href;
   const mod: any = await import(/* @vite-ignore */ url);
   await mod.default();
-  const e = new mod.WebEngine(JSON.stringify({ edge, key, conn: "", client: `controller/${navigator.userAgent.includes("Mobile") ? "phone" : "web"}`, player_token: playerToken, no_webrtc: false }));
+  const e = new mod.WebEngine(JSON.stringify({ edge, key, conn, client: `controller/${navigator.userAgent.includes("Mobile") ? "phone" : "web"}`, player_token: playerToken, no_webrtc: false }));
   return {
     poll: () => JSON.parse(e.poll()),
     join: (code, kind, name, meta) => e.join(code, kind, name, JSON.stringify(meta)),

@@ -399,3 +399,17 @@ fn the_host_keeps_its_reclaim_token_through_room_updates() {
     c.on_text(&json!({"t": "ok", "id": up, "room": room(1, &[1, 2])}).to_string(), 3.0);
     assert_eq!(c.room().unwrap().reclaim.as_deref(), Some("tok"));
 }
+
+#[test]
+fn a_fresh_engine_on_a_resumed_session_learns_its_room_and_peers() {
+    let mut c = core(true);
+    c.tick(0.0);
+    c.on_socket_open(0.0);
+    c.drain();
+    c.on_text(&json!({"t": "welcome", "resumed": true, "relay": "ws", "ice_servers": [], "room": room(3, &[1, 3])}).to_string(), 0.0);
+    let evs = events(&c.drain());
+    assert!(matches!(&evs[0], Event::Resumed { room } if room.you == 3));
+    assert!(evs.iter().any(|e| matches!(e, Event::Online { resumed: true, .. })));
+    assert_eq!(c.me(), Some(3));
+    assert!(c.link(1).is_some(), "a link to the host");
+}

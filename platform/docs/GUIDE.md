@@ -117,6 +117,7 @@ engine.send(BROADCAST, true, bytes);      // everyone else in the room
 | `MemberLeft` | `mid: u16, reason: String` | Someone left (or their seat grace ran out). |
 | `MemberSuspended` / `MemberResumed` | `mid: u16` | A member's connection dropped / came back (seat kept meanwhile). |
 | `RoomUpdated` | `room: Room` | Room settings changed (joinable, meta, size). |
+| `Resumed` | `room: Room` | A new engine on an old session (a reloaded web page that passed its previous `conn`) is back in its room, same seat. |
 | `RoomClosed` | `reason: String` | The room is gone for you. When the host leaves, guests get `host_left`. |
 | `PeerConnected` | `mid: u16, path: PathId` | You can send to `mid` now. |
 | `PathChanged` | `mid: u16, from, to: PathId, rtt: Option<f64>` | The route to a member changed (ws relay ↔ TURN ↔ direct). Informational. |
@@ -327,6 +328,8 @@ if bytes.len() >= 9 && bytes[0] == 0x50 {
     let buttons = u16::from_le_bytes([bytes[7], bytes[8]]); // 1 primary, 2 secondary, 4 start
 }
 ```
+
+**Reloads.** Keep the page's `conn` per room code in `sessionStorage` and pass it in the engine config (`connFor` in `apps/controller/src/engine.ts`): a reload within 20 s comes back as the same member (`Resumed`, and a `join` of the same code returns the same seat). On `room_closed` with reason `host_lost`, keep retrying the join every few seconds for up to 10 minutes: the game may be taking its code back.
 
 Tell the phone its seat so it can colour itself: `engine.send(mid, true, br#"{"t":"seat","label":"P2","color":"#3B82F6"}"#.to_vec())`. Rename its buttons with `{"t":"layout","buttons":["JUMP","GRAB"]}`.
 

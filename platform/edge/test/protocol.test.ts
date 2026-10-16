@@ -206,6 +206,19 @@ describe("dropped sockets", () => {
     expect(await host.binary()).toEqual({ from: 2, bytes: [42] });
   });
 
+  it("a reloaded page that kept its conn joins the same code again and keeps its seat", async () => {
+    const { host, guest, code } = await roomWithGuest();
+    guest.close();
+    await host.event("member_suspended");
+    const page = await new Client(guest.conn).open();
+    expect(await page.hello()).toMatchObject({ resumed: true, room: { you: 2 } });
+    const again = await page.req({ t: "join", code: code.toLowerCase(), kind: "phone" });
+    expect(again).toMatchObject({ t: "ok", resumed: true, room: { you: 2, code } });
+    expect(host.frames.filter((f: any) => f.t === "member_joined")).toEqual([]);
+    // A different code is still refused while in a room.
+    expect(await page.req({ t: "join", code: "QQQQQ" })).toMatchObject({ code: "already_in_room" });
+  });
+
   it("a newer socket for the same session replaces the old one", async () => {
     const { host, guest } = await roomWithGuest();
     const again = await new Client(guest.conn).open();

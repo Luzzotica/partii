@@ -428,9 +428,14 @@ export class Session extends DurableObject<Env> {
   private async join(m: Msg) {
     const t0 = Date.now();
     const s = this.need();
-    if (s.room) throw new ProtoError("already_in_room", "leave your room first");
     const code = normalizeCode(m.code);
     if (!code) throw new ProtoError("bad_request", "code must be 4–8 letters");
+    if (s.room?.code === code) {
+      // Already in it (a reloaded page that resumed its session): the same seat.
+      const j = (await this.roomStub(s).viewFor(s.room.mid)) as Joined | null;
+      if (j) return { ...this.entered(s, code, j), server_ms: Date.now() - t0, resumed: true };
+    }
+    if (s.room) throw new ProtoError("already_in_room", "leave your room first");
     const args = { project: s.project, conn: s.conn, kind: str(m.kind, 16) ?? "game", name: str(m.name) ?? "", meta: m.meta ?? null };
     let r = (await this.roomStub(s, code).join(args)) as RoomResult<Joined>;
     for (let i = 0; i < 5 && !r.ok && (r.code as string) === "reserved"; i++) {

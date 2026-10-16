@@ -87,6 +87,24 @@ await phone.waitForTimeout(300);
 await phone.mouse.up();
 await phone.waitForTimeout(300);
 
+// Reload the phone page: it resumes its session (same member), no second join.
+await phone.reload();
+let resumed = true;
+try {
+  await phone.waitForFunction(() => document.querySelector("[data-testid=status]")?.textContent?.includes("Connected"), null, { timeout: 15000 });
+} catch {
+  resumed = false;
+}
+const before = await game.evaluate(() => window.__game.frames.length);
+const stick2 = await phone.locator("[data-testid=move]").boundingBox();
+await phone.mouse.move(stick2.x + stick2.width / 2, stick2.y + stick2.height / 2);
+await phone.mouse.down();
+await phone.mouse.move(stick2.x + stick2.width * 0.05, stick2.y + stick2.height / 2, { steps: 4 });
+await phone.waitForTimeout(400);
+await phone.mouse.up();
+await phone.waitForTimeout(300);
+const afterReload = await game.evaluate((n) => ({ members: window.__game.members.length, movedLeft: window.__game.frames.slice(n).some((f) => f.lx < -80) }), before);
+
 const g = await game.evaluate(() => ({ frames: window.__game.frames, hello: window.__game.hello, members: window.__game.members }));
 const moved = g.frames.some((f) => f.lx > 80);
 const fired = g.frames.some((f) => (f.buttons & 1) === 1);
@@ -98,6 +116,9 @@ const checks = {
   moved,
   fired,
   released,
+  reload_resumed: resumed,
+  reload_same_member: afterReload.members === 1,
+  reload_input: afterReload.movedLeft,
 };
 console.log(JSON.stringify({ ok: Object.values(checks).every(Boolean), join_ms: joinMs, frames: g.frames.length, checks }));
 await browser.close();

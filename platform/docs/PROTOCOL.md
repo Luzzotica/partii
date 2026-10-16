@@ -33,7 +33,7 @@ The first frame must be `hello`. Until the server answers `welcome`, nothing els
 |---|---|---|
 | `hello` | `key` (publishable key), `v: 1`, `player_token?`, `client?` (free-form, e.g. `"tankii/0.9 macos"`) | `welcome`: `conn`, `project`, `resumed`, `ice_servers`, `ice_expires_at`, `server_time`, `room?` (when resumed in a room) |
 | `create` | `id`, `game`, `max_members?` (default 8, max 32), `kinds?` (see below), `reclaim?` (`{code, token}`, see below), `kind?` (default `"game"`), `name?`, `meta?` | `ok`: `room` (with `reclaim`, the host's token), `reclaimed?` (when `reclaim` was asked) |
-| `join` | `id`, `code`, `kind?`, `name?`, `meta?` | `ok`: `room`. Errors: `not_found`, `full` (the room, or your kind's `max`), `closed`, `not_joinable` (the room, or your kind), `already_in_room` |
+| `join` | `id`, `code`, `kind?`, `name?`, `meta?` | `ok`: `room` (and `resumed: true` when your session is already in that room: same seat, no new member). Errors: `not_found`, `full` (the room, or your kind's `max`), `closed`, `not_joinable` (the room, or your kind), `already_in_room` |
 | `leave` | `id` | `ok` |
 | `update` | `id`, `joinable?`, `meta?`, `max_members?`, `kinds?` (host only) | `ok`: `room` |
 | `member_update` | `id`, `name?`, `meta?`: your own member | `ok`: `member`. The others get `member_updated` |

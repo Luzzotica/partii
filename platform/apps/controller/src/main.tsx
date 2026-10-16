@@ -3,7 +3,7 @@
 // more gamepad (docs/CONTROLLER.md).
 import { StrictMode, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { BUTTON, inputFrame, startEngine, type Engine } from "./engine";
+import { BUTTON, connFor, forgetConn, inputFrame, startEngine, type Engine } from "./engine";
 import { Stick, type Vec } from "./stick";
 import { fetchProfile, finishEmail, signOut, startEmail, storedPlayer } from "./account";
 import { bootTheme, currentTheme, THEME_EVENT, themeFor } from "./theme";
@@ -42,6 +42,9 @@ function storedName(): string {
 const BUSY = "Lots of players are on this network right now. Still trying, this can take up to a minute…";
 /** A refused join is retried after this long. */
 const JOIN_RETRY_MS = 10_000;
+/** After `host_lost`: try the same code this often, for this long. */
+const HOST_LOST_RETRY_MS = 5_000;
+const HOST_LOST_WAIT_MS = 10 * 60_000;
 
 type Phase = { kind: "connecting"; note?: string } | { kind: "joined"; host: number } | { kind: "error"; message: string } | { kind: "closed" };
 
@@ -61,7 +64,10 @@ function Controller({ code, keyStr, edge, name, game }: { code: string; keyStr: 
     let joined = false;
     let timer = 0;
     let lastSent = "";
-    startEngine(edge, keyStr, null).then(
+    let retryAfter = JOIN_RETRY_MS;
+    let lostSince = 0;
+    const rejoin = (ms: number) => window.setTimeout(() => engine.current?.join(code, "phone", name, { name }), ms);
+    startEngine(edge, keyStr, null, connFor(code)).then(
       (e) => {
         engine.current = e;
         timer = window.setInterval(() => {
@@ -74,10 +80,18 @@ function Controller({ code, keyStr, edge, name, game }: { code: string; keyStr: 
               // A refused hello (rate_limited) has no request id, so it comes as a
               // plain error; the engine reconnects by itself.
               setPhase({ kind: "connecting", note: /too many/i.test(ev.message ?? "") ? BUSY : ev.message });
+            } else if (ev.ev === "rate_limited") {
+              // partii says how long to wait (then the matching "failed" comes).
+              retryAfter = Math.max(1000, ev.retry_after_ms ?? JOIN_RETRY_MS) + Math.random() * 1000;
             } else if (ev.ev === "failed" && ev.code === "rate_limited") {
               setPhase({ kind: "connecting", note: BUSY });
-              window.setTimeout(() => e.join(code, "phone", name, { name }), JOIN_RETRY_MS);
-            } else if (ev.ev === "joined") {
+              rejoin(retryAfter);
+              retryAfter = JOIN_RETRY_MS;
+            } else if (ev.ev === "failed" && lostSince && Date.now() - lostSince < HOST_LOST_WAIT_MS) {
+              // The game is getting its room back: keep trying the same code.
+              rejoin(HOST_LOST_RETRY_MS);
+            } else if (ev.ev === "joined" || ev.ev === "resumed") {
+              lostSince = 0;
               host = ev.room.host;
               const to = ev.room.host;
               setPhase({ kind: "joined", host: to });
@@ -91,7 +105,14 @@ function Controller({ code, keyStr, edge, name, game }: { code: string; keyStr: 
               else hello(null);
             } else if (ev.ev === "failed") {
               setPhase({ kind: "error", message: ev.code === "not_found" ? `No room ${code}. Check the code on the game's screen.` : ev.message });
+            } else if (ev.ev === "room_closed" && ev.reason === "host_lost") {
+              // The game's connection dropped; it may take this code back (PROTOCOL.md, Reclaim).
+              host = null;
+              lostSince = Date.now();
+              setPhase({ kind: "connecting", note: "The game lost its connection. Waiting for it to come back…" });
+              rejoin(HOST_LOST_RETRY_MS);
             } else if (ev.ev === "room_closed") {
+              forgetConn(code);
               setPhase({ kind: "closed" });
               host = null;
             } else if (ev.ev === "message" && ev.from === host && ev.reliable) {

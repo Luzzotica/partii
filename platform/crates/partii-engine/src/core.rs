@@ -103,6 +103,9 @@ pub enum Event {
     MemberSuspended { mid: u16 },
     MemberResumed { mid: u16 },
     RoomUpdated { room: Room },
+    /// A new engine (say, a reloaded web page that kept its `conn`) came back
+    /// into the room its session was in: the same seat, nothing to join.
+    Resumed { room: Room },
     RoomClosed { reason: String },
     /// The first usable path to this member is up.
     PeerConnected { mid: u16, path: PathId },
@@ -610,6 +613,19 @@ impl Core {
         let resumed = m["resumed"].as_bool().unwrap_or(false);
         if resumed {
             if let Ok(room) = serde_json::from_value::<Room>(m["room"].clone()) {
+                if self.room.is_none() {
+                    // A fresh engine on an old session: learn the room and its members.
+                    self.room = Some(room.clone());
+                    let others: Vec<u16> = room.members.iter().filter(|x| x.mid != room.you).map(|x| x.mid).collect();
+                    self.emit(Event::Resumed { room });
+                    for mid in others {
+                        self.add_peer(mid, now);
+                    }
+                    let relay = self.relay.clone();
+                    self.emit(Event::Online { resumed, relay });
+                    self.pump_queued(None);
+                    return;
+                }
                 self.room = Some(room);
                 for (_, p) in self.peers.iter_mut() {
                     p.link.set_open(PathId::Ws, true, now);
