@@ -10,6 +10,7 @@ import { DEFAULT_MAX_MEMBERS, MAX_MEMBERS, mergeKinds, RECLAIM_MS, RESERVATION_M
 
 interface MemberRec extends Member {
   conn: string;
+  caps?: string[];
 }
 
 interface RoomState {
@@ -40,12 +41,17 @@ interface Tomb {
 
 export interface MemberArgs {
   conn: string;
+  /** What the member's engine can do (from its hello), e.g. "reset": restart a link to a reloaded member. */
+  caps?: string[];
   kind: string;
   name: string;
   meta: unknown;
 }
 
 type Result<T> = { ok: true; value: T } | { ok: false; code: ProtoError["code"]; message: string };
+
+/** A member as others see it (no session name, no caps). */
+const pub = ({ conn: _conn, caps: _caps, ...m }: MemberRec): Member => m;
 
 const fail = (e: unknown): Result<never> =>
   e instanceof ProtoError ? { ok: false, code: e.code, message: e.message } : { ok: false, code: "internal", message: String(e) };
@@ -73,7 +79,7 @@ export class Room extends DurableObject<Env> {
       max_members: s.maxMembers,
       ...(s.kinds ? { kinds: s.kinds } : {}),
       meta: s.meta,
-      members: Object.values(s.members).map(({ conn: _conn, ...m }) => m),
+      members: Object.values(s.members).map(pub),
     };
   }
   private joined(s: RoomState, you: number): Joined {
@@ -190,8 +196,7 @@ export class Room extends DurableObject<Env> {
       s.members[m.mid] = m;
       this.save(s);
       this.counted(s);
-      const { conn, ...pub } = m;
-      this.tell(s, { t: "member_joined", member: pub, _conn: conn }, m.mid);
+      this.tell(s, { t: "member_joined", member: pub(m), _conn: m.conn }, m.mid);
       return { ok: true, value: this.joined(s, m.mid) };
     } catch (e) {
       return fail(e);
@@ -231,6 +236,27 @@ export class Room extends DurableObject<Env> {
     this.tell(s, { t: status === "suspended" ? "member_suspended" : "member_resumed", mid }, mid);
   }
 
+  /**
+   * A member's session came back from a brand-new engine (a reloaded page). Its
+   * reliable links restart from zero, so the others must restart theirs: when
+   * every other member's engine can ("reset" cap), they're told to, and the seat
+   * is kept. Otherwise the stale member leaves now and the page joins afresh.
+   */
+  async freshResume(mid: number): Promise<"reset" | "dropped" | null> {
+    const s = this.load();
+    const m = s?.members[mid];
+    if (!s || !m) return null;
+    const others = Object.values(s.members).filter((x) => x.mid !== mid);
+    if (others.every((x) => x.caps?.includes("reset"))) {
+      m.status = "active";
+      this.save(s);
+      this.tell(s, { t: "member_resumed", mid, reset: true }, mid);
+      return "reset";
+    }
+    await this.leave(mid, "left");
+    return "dropped";
+  }
+
   async update(mid: number, patch: { joinable?: boolean; meta?: unknown; maxMembers?: number; kinds?: unknown }): Promise<Result<RoomView>> {
     try {
       const s = this.load();
@@ -260,9 +286,8 @@ export class Room extends DurableObject<Env> {
       if (patch.name !== undefined) m.name = patch.name;
       if (patch.meta !== undefined) m.meta = patch.meta;
       this.save(s);
-      const { conn: _conn, ...pub } = m;
-      this.tell(s, { t: "member_updated", member: pub }, mid);
-      return { ok: true, value: pub };
+      this.tell(s, { t: "member_updated", member: pub(m) }, mid);
+      return { ok: true, value: pub(m) };
     } catch (e) {
       return fail(e);
     }

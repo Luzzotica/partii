@@ -219,6 +219,35 @@ describe("dropped sockets", () => {
     expect(await page.req({ t: "join", code: "QQQQQ" })).toMatchObject({ code: "already_in_room" });
   });
 
+  it("a fresh engine on an old session: members that can reset their link are told to, and the seat stays", async () => {
+    const host = await new Client().open();
+    await host.hello(undefined, { caps: ["reset"] });
+    const code = (await host.req({ t: "create", game: "g" })).room.code;
+    const phone = await new Client().open();
+    await phone.hello(undefined, { caps: ["reset"] });
+    await phone.req({ t: "join", code, kind: "phone" });
+    await host.event("member_joined");
+    phone.close();
+    await host.event("member_suspended");
+    const page = await new Client(phone.conn).open();
+    expect(await page.hello(undefined, { caps: ["reset"], fresh: true })).toMatchObject({ resumed: true, room: { you: 2 } });
+    expect(await host.event("member_resumed")).toMatchObject({ mid: 2, reset: true });
+    expect(await page.req({ t: "join", code, kind: "phone" })).toMatchObject({ resumed: true, room: { you: 2 } });
+  });
+
+  it("a fresh engine whose room has an old engine in it leaves and joins again (the old behaviour)", async () => {
+    const { host, guest, code } = await roomWithGuest(); // no caps: old engines
+    guest.close();
+    await host.event("member_suspended");
+    const page = await new Client(guest.conn).open();
+    const w = await page.hello(undefined, { caps: ["reset"], fresh: true });
+    expect(w.room).toBeUndefined();
+    expect(await host.event("member_left")).toMatchObject({ mid: 2 });
+    const again = await page.req({ t: "join", code, kind: "phone" });
+    expect(again.room.you).toBe(3);
+    expect(await host.event("member_joined")).toMatchObject({ member: { mid: 3 } });
+  });
+
   it("a newer socket for the same session replaces the old one", async () => {
     const { host, guest } = await roomWithGuest();
     const again = await new Client(guest.conn).open();

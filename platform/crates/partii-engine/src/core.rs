@@ -419,7 +419,10 @@ impl Core {
     pub fn on_socket_open(&mut self, now: f64) {
         self.sock = Sock::Hello;
         self.last_rx = now;
-        let mut hello = json!({"t": "hello", "v": 1, "key": self.cfg.key, "client": self.cfg.client});
+        // `fresh`: this engine has never been welcomed, so if its session is
+        // an old one (a reloaded page), its links start over. `caps`: it can
+        // restart its own link to a member that comes back fresh.
+        let mut hello = json!({"t": "hello", "v": 1, "key": self.cfg.key, "client": self.cfg.client, "caps": ["reset"], "fresh": !self.ever_up});
         if let Some(t) = &self.cfg.player_token {
             hello["player_token"] = json!(t);
         }
@@ -484,6 +487,11 @@ impl Core {
             }
             "member_suspended" | "member_resumed" => {
                 let mid = m["mid"].as_u64().unwrap_or(0) as u16;
+                if m["reset"] == true && self.peers.contains_key(&mid) {
+                    // It came back as a new engine: its link starts from zero, so ours does too.
+                    self.drop_peer(mid);
+                    self.add_peer(mid, now);
+                }
                 let suspended = m["t"] == "member_suspended";
                 if let Some(r) = self.room.as_mut() {
                     if let Some(x) = r.members.iter_mut().find(|x| x.mid == mid) {

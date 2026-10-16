@@ -31,7 +31,7 @@ The first frame must be `hello`. Until the server answers `welcome`, nothing els
 
 | `t` | Fields | Reply |
 |---|---|---|
-| `hello` | `key` (publishable key), `v: 1`, `player_token?`, `client?` (free-form, e.g. `"tankii/0.9 macos"`) | `welcome`: `conn`, `project`, `resumed`, `ice_servers`, `ice_expires_at`, `server_time`, `room?` (when resumed in a room) |
+| `hello` | `key` (publishable key), `v: 1`, `player_token?`, `client?` (free-form, e.g. `"tankii/0.9 macos"`), `caps?` (`["reset"]`: this engine restarts its link to a member that comes back fresh), `fresh?` (this engine is new, e.g. a reloaded page reusing its `conn`) | `welcome`: `conn`, `project`, `resumed`, `ice_servers`, `ice_expires_at`, `server_time`, `room?` (when resumed in a room) |
 | `create` | `id`, `game`, `max_members?` (default 8, max 32), `kinds?` (see below), `reclaim?` (`{code, token}`, see below), `kind?` (default `"game"`), `name?`, `meta?` | `ok`: `room` (with `reclaim`, the host's token), `reclaimed?` (when `reclaim` was asked) |
 | `join` | `id`, `code`, `kind?`, `name?`, `meta?` | `ok`: `room` (and `resumed: true` when your session is already in that room: same seat, no new member). Errors: `not_found`, `full` (the room, or your kind's `max`), `closed`, `not_joinable` (the room, or your kind), `already_in_room` |
 | `leave` | `id` | `ok` |
@@ -51,13 +51,15 @@ The first frame must be `hello`. Until the server answers `welcome`, nothing els
 | `member_updated` | `member` (it changed its own name or meta) |
 | `member_left` | `mid`, `reason` (`left`, `kicked`, `timeout`) |
 | `member_suspended` | `mid`: its socket dropped; the seat is held for the grace window |
-| `member_resumed` | `mid` |
+| `member_resumed` | `mid`, `reset?` (true: it came back as a new engine, so restart your reliable link to it from zero) |
 | `room_updated` | `room` |
 | `room_closed` | `reason` (`host_left`: the host left; `host_lost`: the host's connection timed out and it may reclaim the code, so phones can keep trying to rejoin for a few minutes; `kicked`, `ended`) |
 | `signal` | `from`, `data` |
 | `ice` | `ice_servers`, `ice_expires_at` (fresh relay credentials before the old ones expire) |
 
 A **room** is `{code, game, host: mid, you: mid, joinable, max_members, kinds?, meta, members: [member]}`.
+
+**Fresh resume.** A `hello` with `fresh: true` on a session that is in a room means a new engine took over (a reloaded page): its reliable links start from zero. If every other member's engine sent `caps: ["reset"]`, they get `member_resumed {mid, reset: true}` and restart their link to it, so the seat is kept. Otherwise the stale member leaves at once (`member_left`), the welcome has no room, and the client's next `join` makes it a new member.
 
 **Reclaim.** The host's `create` reply carries `room.reclaim`, a token only the host gets. If the host's session times out (not when it leaves), the room closes with `host_lost` and its code is held for 10 minutes: a `create` with `reclaim: {code, token}` from any new session gets that same code back (`reclaimed: true`, and a new token). Anything else (wrong token, expired, the host left on purpose) makes a fresh code with `reclaimed: false`. This keeps printed and on-screen QR codes working through a host's network drop.
 

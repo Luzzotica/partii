@@ -413,3 +413,39 @@ fn a_fresh_engine_on_a_resumed_session_learns_its_room_and_peers() {
     assert_eq!(c.me(), Some(3));
     assert!(c.link(1).is_some(), "a link to the host");
 }
+
+#[test]
+fn hello_says_fresh_only_before_the_first_welcome() {
+    let mut c = core(true);
+    c.tick(0.0);
+    c.on_socket_open(0.0);
+    let h = texts(&c.drain());
+    assert_eq!(h[0]["fresh"], true);
+    assert_eq!(h[0]["caps"], json!(["reset"]));
+    c.on_text(r#"{"t":"welcome","resumed":false,"relay":"ws","ice_servers":[]}"#, 1.0);
+    c.on_socket_closed(2.0);
+    c.tick(10_000.0);
+    c.on_socket_open(10_000.0);
+    let again = texts(&c.drain());
+    let h2 = again.iter().find(|t| t["t"] == "hello").unwrap();
+    assert_eq!(h2["fresh"], false);
+}
+
+#[test]
+fn a_member_back_from_a_new_engine_gets_a_fresh_link() {
+    let mut c = core(true);
+    online(&mut c, "ws");
+    let id = c.create("g", None, "game", "", Value::Null);
+    c.on_text(&json!({"t": "ok", "id": id, "room": room(1, &[1, 2])}).to_string(), 1.0);
+    c.drain();
+    // Reliable traffic moves the link's sequence on.
+    for i in 0..5u8 {
+        c.send(2, true, &[i], 2.0);
+    }
+    c.drain();
+    assert!(c.link(2).unwrap().pending_reliable() > 0);
+    c.on_text(r#"{"t":"member_suspended","mid":2}"#, 3.0);
+    c.on_text(r#"{"t":"member_resumed","mid":2,"reset":true}"#, 4.0);
+    assert_eq!(c.link(2).unwrap().pending_reliable(), 0, "the old link and its unacked sends are gone");
+    assert!(events(&c.drain()).iter().any(|e| matches!(e, Event::MemberResumed { mid: 2 })));
+}

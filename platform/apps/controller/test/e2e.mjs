@@ -50,7 +50,15 @@ const code = await game.evaluate(async ({ edge, key }) => {
             const v = new DataView(b.buffer);
             window.__game.frames.push({ lx: v.getInt8(3), ly: v.getInt8(4), buttons: v.getUint16(7, true) });
           } else {
-            try { const m = JSON.parse(new TextDecoder().decode(b)); if (m.t === "hello") window.__game.hello = m; } catch {}
+            try {
+              const m = JSON.parse(new TextDecoder().decode(b));
+              if (m.t === "hello") {
+                window.__game.hello = m;
+                window.__game.hellos = (window.__game.hellos ?? 0) + 1;
+                // Game → phone, reliable: the phone shows its seat.
+                e.send(ev.from, true, new TextEncoder().encode(JSON.stringify({ t: "seat", label: "P2", color: "#3B82F6" })));
+              }
+            } catch {}
           }
         }
       }
@@ -87,11 +95,14 @@ await phone.waitForTimeout(300);
 await phone.mouse.up();
 await phone.waitForTimeout(300);
 
-// Reload the phone page: it resumes its session (same member), no second join.
+// The seat arrived (game → phone) before the reload.
+const seatedBefore = await phone.waitForFunction(() => document.querySelector("[data-testid=status]")?.textContent?.includes("P2"), null, { timeout: 10000 }).then(() => true, () => false);
+// Reload the phone page: it resumes its session (same member), no second join,
+// and the game's reliable messages reach the new page.
 await phone.reload();
 let resumed = true;
 try {
-  await phone.waitForFunction(() => document.querySelector("[data-testid=status]")?.textContent?.includes("Connected"), null, { timeout: 15000 });
+  await phone.waitForFunction(() => document.querySelector("[data-testid=status]")?.textContent?.includes("P2"), null, { timeout: 15000 });
 } catch {
   resumed = false;
 }
@@ -116,7 +127,8 @@ const checks = {
   moved,
   fired,
   released,
-  reload_resumed: resumed,
+  seated: seatedBefore,
+  reload_seat_arrives: resumed,
   reload_same_member: afterReload.members === 1,
   reload_input: afterReload.movedLeft,
 };

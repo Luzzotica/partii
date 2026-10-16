@@ -35,6 +35,8 @@ interface SessState {
   project: string;
   keyId: string;
   client?: string;
+  /** The engine's capabilities from its hello. */
+  caps?: string[];
   room?: { code: string; mid: number };
   /** A warm room made ahead of time, so `create` skips a cold start. */
   reserved?: string;
@@ -282,11 +284,12 @@ export class Session extends DurableObject<Env> {
       resumed = true;
       s.disconnectedAt = undefined;
       if (s.room) {
-        const j = (await this.roomStub(s).viewFor(s.room.mid)) as Joined | null;
+        const fresh = m.fresh === true && (await this.roomStub(s).freshResume(s.room.mid)) === "dropped";
+        const j = fresh ? null : ((await this.roomStub(s).viewFor(s.room.mid)) as Joined | null);
         if (j) {
           room = j.room;
           s.conns = j.conns;
-          await this.roomStub(s).setStatus(s.room.mid, "active");
+          if (m.fresh !== true) await this.roomStub(s).setStatus(s.room.mid, "active");
         } else {
           s.room = undefined;
           s.conns = {};
@@ -306,6 +309,7 @@ export class Session extends DurableObject<Env> {
       usage(this.env, s.project).up(s.project, "session", conn).catch(() => {});
     }
     s.client = str(m.client, 120);
+    s.caps = Array.isArray(m.caps) ? m.caps.filter((c): c is string => typeof c === "string").slice(0, 16).map((c) => c.slice(0, 32)) : undefined;
     if (!s.ice || s.ice.ice_expires_at - Date.now() < ICE_REFRESH_LEAD_MS) s.ice = await mintIce(this.env);
     this.save(s);
     ws.serializeAttachment({ hello: true, conn, ip } satisfies Attachment);
@@ -365,7 +369,7 @@ export class Session extends DurableObject<Env> {
     if (s.room) throw new ProtoError("already_in_room", "leave your room first");
     const game = str(m.game);
     if (!game) throw new ProtoError("bad_request", "game is required");
-    const host = { conn: s.conn, kind: str(m.kind, 16) ?? "game", name: str(m.name) ?? "", meta: m.meta ?? null };
+    const host = { conn: s.conn, caps: s.caps, kind: str(m.kind, 16) ?? "game", name: str(m.name) ?? "", meta: m.meta ?? null };
     const kinds = mergeKinds(undefined, m.kinds);
     // Every room's host gets a reclaim token: after a timeout it can create
     // with {reclaim: {code, token}} and get the same code back (RECLAIM_MS).
@@ -436,7 +440,7 @@ export class Session extends DurableObject<Env> {
       if (j) return { ...this.entered(s, code, j), server_ms: Date.now() - t0, resumed: true };
     }
     if (s.room) throw new ProtoError("already_in_room", "leave your room first");
-    const args = { project: s.project, conn: s.conn, kind: str(m.kind, 16) ?? "game", name: str(m.name) ?? "", meta: m.meta ?? null };
+    const args = { project: s.project, conn: s.conn, caps: s.caps, kind: str(m.kind, 16) ?? "game", name: str(m.name) ?? "", meta: m.meta ?? null };
     let r = (await this.roomStub(s, code).join(args)) as RoomResult<Joined>;
     for (let i = 0; i < 5 && !r.ok && (r.code as string) === "reserved"; i++) {
       await new Promise((ok) => setTimeout(ok, 40));

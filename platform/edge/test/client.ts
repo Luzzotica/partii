@@ -89,8 +89,8 @@ export class Client {
     return this.next((f) => f.id === id && (f.t === "ok" || f.t === "err"));
   }
 
-  async hello(k?: string): Promise<Frame> {
-    this.send({ t: "hello", v: 1, key: k ?? (await key()), client: "test" });
+  async hello(k?: string, extra: Record<string, unknown> = {}): Promise<Frame> {
+    this.send({ t: "hello", v: 1, key: k ?? (await key()), client: "test", ...extra });
     return this.next((f) => f.t === "welcome" || f.t === "err");
   }
 
