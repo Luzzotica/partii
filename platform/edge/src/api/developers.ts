@@ -90,7 +90,24 @@ export const developerHandlers: Handlers = {
     const ids = query.project
       ? [query.project]
       : [EDGE_USAGE, ...(await env.DB.prepare("SELECT id FROM projects ORDER BY id").all<{ id: string }>()).results.map((r) => r.id)];
-    const projects = await Promise.all(ids.map(async (id) => ({ ...(await usage(env, id).view()), project: id })));
+    // One project's Usage object can fail transiently ("internal error; reference = …"); retry it once,
+    // then report that project's error rather than failing the whole report.
+    const view = async (id: string) => {
+      try {
+        return await usage(env, id).view();
+      } catch {
+        return await usage(env, id).view();
+      }
+    };
+    const projects = await Promise.all(
+      ids.map(async (id) => {
+        try {
+          return { ...(await view(id)), project: id };
+        } catch (e) {
+          return { project: id, error: String((e as Error)?.message ?? e) };
+        }
+      }),
+    );
     return { projects };
   },
 
