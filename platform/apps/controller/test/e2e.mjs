@@ -48,7 +48,7 @@ const code = await game.evaluate(async ({ edge, key }) => {
           const b = new Uint8Array(ev.bytes);
           if (b[0] === 0x50) {
             const v = new DataView(b.buffer);
-            window.__game.frames.push({ lx: v.getInt8(3), ly: v.getInt8(4), buttons: v.getUint16(7, true) });
+            window.__game.frames.push({ seq: v.getUint16(1, true), at: performance.now(), lx: v.getInt8(3), ly: v.getInt8(4), buttons: v.getUint16(7, true) });
           } else {
             try {
               const m = JSON.parse(new TextDecoder().decode(b));
@@ -99,6 +99,7 @@ await phone.waitForTimeout(300);
 const seatedBefore = await phone.waitForFunction(() => document.querySelector("[data-testid=status]")?.textContent?.includes("P2"), null, { timeout: 10000 }).then(() => true, () => false);
 // Reload the phone page: it resumes its session (same member), no second join,
 // and the game's reliable messages reach the new page.
+const preReload = await game.evaluate(() => window.__game.frames.length);
 await phone.reload();
 let resumed = true;
 try {
@@ -132,7 +133,15 @@ const checks = {
   reload_same_member: afterReload.members === 1,
   reload_input: afterReload.movedLeft,
 };
-console.log(JSON.stringify({ ok: Object.values(checks).every(Boolean), join_ms: joinMs, frames: g.frames.length, checks }));
+// Unreliable frames should arrive roughly in order: list any that came after a much newer one.
+const late = [];
+let top = -1;
+const t0f = g.frames[0]?.at ?? 0;
+for (const f of g.frames.slice(0, preReload)) {
+  if (top >= 0 && f.seq < top && top - f.seq < 0x8000) late.push([f.seq, top, Math.round(f.at - t0f)]);
+  if (top < 0 || (f.seq > top && f.seq - top < 0x8000)) top = f.seq;
+}
+console.log(JSON.stringify({ ok: Object.values(checks).every(Boolean), join_ms: joinMs, frames: g.frames.length, late, checks }));
 await browser.close();
 server.close();
 process.exit(Object.values(checks).every(Boolean) ? 0 : 1);
