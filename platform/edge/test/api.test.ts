@@ -168,6 +168,14 @@ describe("games and the store", () => {
     const yes = await api("GET", `/v1/store/games/${game}/download/macos`, { key, player: me.token });
     expect(new Uint8Array(await yes.res.arrayBuffer())).toEqual(bytes);
     expect((await api("GET", `/v1/store/games/${game}`)).json.builds[0]).toMatchObject({ platform: "macos", version: "1.0.0" });
+    // A newer build is served; deleting it falls back to the older one, then to none.
+    const two = await api("POST", `/v1/games/${game}/builds?platform=macos&version=1.0.1`, { token, raw: new Uint8Array([9, 9]) });
+    expect(new Uint8Array(await (await api("GET", `/v1/store/games/${game}/download/macos`, { key, player: me.token })).res.arrayBuffer())).toEqual(new Uint8Array([9, 9]));
+    expect((await api("DELETE", `/v1/games/${game}/builds/${two.json.build.id}`, { token })).json).toMatchObject({ deleted: true, build: { version: "1.0.1" } });
+    expect((await api("DELETE", `/v1/games/${game}/builds/${two.json.build.id}`, { token })).status).toBe(404);
+    expect(new Uint8Array(await (await api("GET", `/v1/store/games/${game}/download/macos`, { key, player: me.token })).res.arrayBuffer())).toEqual(bytes);
+    await api("DELETE", `/v1/games/${game}/builds/${up.json.build.id}`, { token });
+    expect((await api("GET", `/v1/store/games/${game}/download/macos`, { key, player: me.token })).status).toBe(404);
   });
 
   it("checkout in the fake store grants the game; the library shows it", async () => {

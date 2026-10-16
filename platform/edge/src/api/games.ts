@@ -174,6 +174,17 @@ export const gameHandlers: Handlers = {
     return { builds: r.results.map((b) => ({ game: params.game, ...b })) };
   },
 
+  async buildsDelete({ env, caller, params, dryRun }) {
+    await ownGame(env, caller, params.game);
+    const b = await env.DB.prepare("SELECT id, platform, version, channel, filename, size, sha256, created_at, r2_key FROM builds WHERE game_id = ? AND id = ?").bind(params.game, params.build).first<Record<string, unknown> & { r2_key: string }>();
+    if (!b) throw new ApiError(404, "not_found", "no such build", "see `partii builds list <game>`");
+    const { r2_key, ...build } = b;
+    if (dryRun) return { dry_run: true, deleted: false, build: { game: params.game, ...build } };
+    await files(env).delete(r2_key);
+    await env.DB.prepare("DELETE FROM builds WHERE id = ?").bind(b.id).run();
+    return { deleted: true, build: { game: params.game, ...build } };
+  },
+
   async buildsUpload({ env, caller, params, query, req, dryRun }) {
     await ownGame(env, caller, params.game);
     const platform = String(query.platform ?? "");

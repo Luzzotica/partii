@@ -67,6 +67,8 @@ export function operations(t: Transport) {
     buildsList: (game: string) => t.call("GET", `/v1/games/${encodeURIComponent(game)}/builds`, "developer", {}, undefined, "json"),
     /** Upload a build (the request body is the file). (developer) */
     buildsUpload: (game: string, query: { platform?: string | number; version?: string | number; channel?: string | number; filename?: string | number } = {}, body: BodyInit) => t.call("POST", `/v1/games/${encodeURIComponent(game)}/builds`, "developer", query, body, "json"),
+    /** Delete a build and its file (players stop getting it; the store serves the next newest build for that platform and channel). (developer) */
+    buildsDelete: (game: string, build: string) => t.call("DELETE", `/v1/games/${encodeURIComponent(game)}/builds/${encodeURIComponent(build)}`, "developer", {}, undefined, "json"),
     /** Start a direct upload; returns a signed URL to PUT the file to storage (no size cap). `partii builds upload` uses this when the platform has R2. (developer) */
     buildsUploadStart: (game: string, body: Record<string, unknown> = {}) => t.call("POST", `/v1/games/${encodeURIComponent(game)}/builds/uploads`, "developer", {}, body, "json"),
     /** Record a build after its direct upload (checks the stored size). (developer) */

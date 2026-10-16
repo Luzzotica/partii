@@ -51,6 +51,7 @@ Auth (`x-auth`):
 | `gamesSaleEnd` | `DELETE /v1/games/{game}/sale` | developer | `partii games sale-end` |
 | `buildsList` | `GET /v1/games/{game}/builds` | developer | `partii builds list` |
 | `buildsUpload` | `POST /v1/games/{game}/builds` | developer | `partii builds upload` |
+| `buildsDelete` | `DELETE /v1/games/{game}/builds/{build}` | developer | `partii builds delete` |
 | `buildsUploadStart` | `POST /v1/games/{game}/builds/uploads` | developer | `partii builds upload-start` |
 | `buildsUploadFinish` | `POST /v1/games/{game}/builds/uploads/{upload}` | developer | `partii builds upload-finish` |
 | `codesList` | `GET /v1/games/{game}/codes` | developer | `partii codes list` |
@@ -429,6 +430,16 @@ Parameters:
 - `filename` (query)
 
 Body: the file's bytes.
+
+### buildsDelete
+
+`DELETE /v1/games/{game}/builds/{build}` (auth: developer) · `partii builds delete`
+
+Delete a build and its file (players stop getting it; the store serves the next newest build for that platform and channel).
+
+Parameters:
+- `game` (path, required)
+- `build` (path, required)
 
 ### buildsUploadStart
 

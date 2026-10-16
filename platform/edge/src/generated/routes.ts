@@ -227,6 +227,13 @@ export const ROUTES: Route[] = [
     "body": "binary"
   },
   {
+    "op": "buildsDelete",
+    "method": "DELETE",
+    "path": "/v1/games/:game/builds/:build",
+    "auth": "developer",
+    "body": "none"
+  },
+  {
     "op": "buildsUploadStart",
     "method": "POST",
     "path": "/v1/games/:game/builds/uploads",

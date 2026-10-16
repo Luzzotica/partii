@@ -402,6 +402,17 @@ paths:
         - { name: filename, in: query, schema: { type: string } }
       responses: { "200": { description: "{build}" } }
 
+  /v1/games/{game}/builds/{build}:
+    delete:
+      operationId: buildsDelete
+      summary: Delete a build and its file (players stop getting it; the store serves the next newest build for that platform and channel).
+      x-auth: developer
+      x-cli: builds delete
+      parameters:
+        - { name: game, in: path, required: true, schema: { type: string } }
+        - { name: build, in: path, required: true, schema: { type: string } }
+      responses: { "200": { description: "{deleted, build}" } }
+
   /v1/games/{game}/builds/uploads:
     post:
       operationId: buildsUploadStart
