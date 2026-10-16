@@ -176,7 +176,7 @@ async function checkErrors(s) {
         `## ${isNew ? "NEW" : `still happening (+${more})`}: ${g.kind}: ${g.message}`,
         `- fingerprint ${g.fingerprint}; ${g.count} reports from ${g.devices} devices; first ${new Date(g.first_seen).toISOString()}, last ${new Date(g.last_seen).toISOString()}`,
         `- versions ${list(g.versions) || "?"}; platforms ${list(g.platforms) || "?"}${g.top_frame ? `; top frame ${g.top_frame}` : ""}`,
-        `- details and samples: partii errors get ${game} ${g.fingerprint}; when fixed and deployed: partii errors update ${game} ${g.fingerprint} --status fixed`,
+        `- details and samples: partii errors get ${game} ${g.fingerprint}; when fixed and deployed: partii errors mark ${game} ${g.fingerprint} --status fixed`,
       ].join("\n"),
     );
     const file = join(CONF, `watch-errors-${game}.md`);

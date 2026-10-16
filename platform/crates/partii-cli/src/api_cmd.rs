@@ -29,6 +29,16 @@ pub fn find(args: &[String]) -> Option<(&'static Op, usize)> {
         .max_by_key(|(_, n)| *n)
 }
 
+/// For a command group that exists (`errors`) with a subcommand that doesn't (`errors update`):
+/// the group's real subcommands, e.g. "errors get, errors list, errors mark".
+pub fn group_commands(args: &[String]) -> Option<(String, Vec<&'static str>)> {
+    let group = args.first().filter(|a| !a.starts_with('-'))?;
+    let mut cmds: Vec<&str> = OPS.iter().filter_map(|o| o.cli).filter(|c| c.split(' ').next() == Some(group.as_str())).collect();
+    cmds.sort_unstable();
+    cmds.dedup();
+    (!cmds.is_empty()).then(|| (group.clone(), cmds))
+}
+
 fn globals(c: Command) -> Command {
     c.arg(Arg::new("api").long("api").env("PARTII_API").default_value(crate::config::DEFAULT_API).help("Platform API base URL."))
         .arg(Arg::new("token").long("token").env("PARTII_TOKEN").hide_env_values(true).help("Developer token (saved by `partii login`)."))

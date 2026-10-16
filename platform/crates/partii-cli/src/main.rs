@@ -74,6 +74,14 @@ fn main() {
     if let Some((op, n)) = api_cmd::find(&args) {
         std::process::exit(api_cmd::run(op, &args[n..]));
     }
+    if let Some((group, cmds)) = api_cmd::group_commands(&args) {
+        use clap::CommandFactory;
+        if Cli::command().find_subcommand(&group).is_none() {
+            let asked = args.iter().take_while(|a| !a.starts_with('-')).take(2).cloned().collect::<Vec<_>>().join(" ");
+            let msg = format!("unknown command `{asked}`; `{group}` has: {}", cmds.join(", "));
+            std::process::exit(out::print(Err(CliError::usage(msg, "run `partii help --json` for every command and its arguments")), false));
+        }
+    }
     let cli = match Cli::try_parse() {
         Ok(c) => c,
         Err(e) => {
