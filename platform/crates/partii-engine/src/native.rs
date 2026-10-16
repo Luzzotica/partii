@@ -22,11 +22,12 @@ use webrtc::peer_connection::{
 };
 
 enum Cmd {
-    Create { game: String, max: Option<u32>, kind: String, name: String, meta: Value, reply: async_channel::Sender<u32> },
+    Create { game: String, kind: String, name: String, meta: Value, settings: Value, reply: async_channel::Sender<u32> },
     Join { code: String, kind: String, name: String, meta: Value, reply: async_channel::Sender<u32> },
     Leave,
     Update(Value),
     Kick(u16),
+    MemberUpdate { name: Option<String>, meta: Option<Value>, reply: async_channel::Sender<u32> },
     Send { to: u16, reliable: bool, bytes: Vec<u8> },
     Report(Value),
     Stats(async_channel::Sender<Value>),
@@ -97,8 +98,18 @@ impl Engine {
     }
 
     pub fn create(&self, game: &str, max_members: Option<u32>, kind: &str, name: &str, meta: Value) -> u32 {
+        self.create_with(game, kind, name, meta, serde_json::json!({"max_members": max_members}))
+    }
+    /// `create` with room settings from the start, e.g. `{"max_members": 32, "kinds": {"game": {"joinable": false}}}`.
+    pub fn create_with(&self, game: &str, kind: &str, name: &str, meta: Value, settings: Value) -> u32 {
         let (tx, rx) = async_channel::bounded(1);
-        let _ = self.cmd.try_send(Cmd::Create { game: game.into(), max: max_members, kind: kind.into(), name: name.into(), meta, reply: tx });
+        let _ = self.cmd.try_send(Cmd::Create { game: game.into(), kind: kind.into(), name: name.into(), meta, settings, reply: tx });
+        rx.recv_blocking().unwrap_or(0)
+    }
+    /// Change your own member name and/or meta; the others get `Event::MemberUpdated`.
+    pub fn member_update(&self, name: Option<&str>, meta: Option<Value>) -> u32 {
+        let (tx, rx) = async_channel::bounded(1);
+        let _ = self.cmd.try_send(Cmd::MemberUpdate { name: name.map(Into::into), meta, reply: tx });
         rx.recv_blocking().unwrap_or(0)
     }
     pub fn join(&self, code: &str, kind: &str, name: &str, meta: Value) -> u32 {
@@ -174,11 +185,12 @@ async fn actor(cfg: Config, cmds: async_channel::Receiver<Cmd>, events: async_ch
         tokio::select! {
             biased;
             c = cmds.recv() => match c {
-                Ok(Cmd::Create { game, max, kind, name, meta, reply }) => { let _ = reply.try_send(core.create(&game, max, &kind, &name, meta)); }
+                Ok(Cmd::Create { game, kind, name, meta, settings, reply }) => { let _ = reply.try_send(core.create_with(&game, &kind, &name, meta, settings)); }
                 Ok(Cmd::Join { code, kind, name, meta, reply }) => { let _ = reply.try_send(core.join(&code, &kind, &name, meta)); }
                 Ok(Cmd::Leave) => { core.leave(); }
                 Ok(Cmd::Update(p)) => { core.update(p); }
                 Ok(Cmd::Kick(m)) => { core.kick(m); }
+                Ok(Cmd::MemberUpdate { name, meta, reply }) => { let _ = reply.try_send(core.member_update(name.as_deref(), meta)); }
                 Ok(Cmd::Send { to, reliable, bytes }) => {
                     // Take every send already waiting, then flush once:
                     // bundled frames cost the relay one request, not one each.
@@ -289,8 +301,8 @@ async fn actor(cfg: Config, cmds: async_channel::Receiver<Cmd>, events: async_ch
 /// A non-send command met while draining sends; false = shut down.
 fn apply_other(core: &mut Core, c: Cmd) -> bool {
     match c {
-        Cmd::Create { game, max, kind, name, meta, reply } => {
-            let _ = reply.try_send(core.create(&game, max, &kind, &name, meta));
+        Cmd::Create { game, kind, name, meta, settings, reply } => {
+            let _ = reply.try_send(core.create_with(&game, &kind, &name, meta, settings));
         }
         Cmd::Join { code, kind, name, meta, reply } => {
             let _ = reply.try_send(core.join(&code, &kind, &name, meta));
@@ -303,6 +315,9 @@ fn apply_other(core: &mut Core, c: Cmd) -> bool {
         }
         Cmd::Kick(m) => {
             core.kick(m);
+        }
+        Cmd::MemberUpdate { name, meta, reply } => {
+            let _ = reply.try_send(core.member_update(name.as_deref(), meta));
         }
         Cmd::Report(m) => core.report(m),
         Cmd::Stats(reply) => {

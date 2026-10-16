@@ -111,7 +111,9 @@ engine.send(BROADCAST, true, bytes);      // everyone else in the room
 | `Offline` | – | The socket dropped; the engine is reconnecting (rooms survive short drops). |
 | `Created` / `Joined` | `req: u32, room: Room` | You are in the room. |
 | `Failed` | `req: u32, code: String, message: String` | A create/join didn't happen. |
+| `RateLimited` | `req: u32, retry_after_ms: u64` | Comes just before a `Failed` with code `rate_limited`: partii is busy on this network; retry after this long. |
 | `MemberJoined` | `member: Member` | Someone joined. |
+| `MemberUpdated` | `member: Member` | A member changed its own name or meta (`engine.member_update(Some("Sam"), None)`). |
 | `MemberLeft` | `mid: u16, reason: String` | Someone left (or their seat grace ran out). |
 | `MemberSuspended` / `MemberResumed` | `mid: u16` | A member's connection dropped / came back (seat kept meanwhile). |
 | `RoomUpdated` | `room: Room` | Room settings changed (joinable, meta, size). |
@@ -129,6 +131,10 @@ What the engine does for you:
 - **Reliability.** Reliable messages survive path switches, network changes and short drops (the session resumes). Members who drop briefly keep their seat for 20 s.
 - **Network changes.** Phones changing networks, apps backgrounded for a few seconds, and hotel Wi-Fi that only allows port 443 all keep working.
 
+Room settings from the start: `engine.create_with("mygame", "game", "Alice", meta, json!({"max_members": 32, "kinds": {"game": {"joinable": false}, "phone": {"max": 16}}}))`. Per-kind rules let a room take phones at any time but games only while you host (`engine.update(json!({"kinds": {"game": {"joinable": true}}}))`); a refused join gets a clean `not_joinable` or `full`. See [PROTOCOL.md](PROTOCOL.md).
+
+If your session drops for longer than the grace window, the room closes. As host, keep `room.reclaim` and create again with `json!({"reclaim": {"code": old_code, "token": reclaim}})` in the settings: within 10 minutes you get the same code back, so the QR on screen still works, and phones that saw `RoomClosed { reason: "host_lost" }` can rejoin it.
+
 Members have a `kind` you choose:
 
 - `game`: a full game client.
@@ -136,7 +142,7 @@ Members have a `kind` you choose:
 
 Put anything you need about a member (your own player id, a team) in `meta` when you create or join. Other members see it in `room.members`.
 
-For web pages, the same engine is built for browsers (`scripts/build-engine-web.sh`, which makes `sdk/engine-web`). `new WebEngine(JSON.stringify(config))` has the same methods; `poll()` returns a JSON array.
+For web pages, the same engine is built for browsers (`scripts/build-engine-web.sh`, which makes `sdk/engine-web`). `new WebEngine(JSON.stringify(config))` has the same methods (`createWith`, `memberUpdate`, `update` and `kick` take JSON strings); `poll()` returns a JSON array.
 
 ### Test it without a second person
 
@@ -266,6 +272,14 @@ GET /v1/players/me/entitlements?game=mygame
 ```
 
 Keep `signed` (it is valid for a week) so the game stays unlocked offline. While the player doesn't own the game, play only the free part.
+
+**The free part, the same in every partii game:** joining is always free (a player without the game can join a friend who owns it, on a phone or a second screen); hosting is paid (the demo shows HOST locked, with Buy); story and campaign games give the first 10–20% free. Describe it in `demo`, which the store page shows and the game reads:
+
+```json
+{"join_free": true, "free": ["Kids Mode", "Story chapter 1"], "story_chapters": 1, "kids_mode": true}
+```
+
+`join_free` and `free` (names of what's free) are shown on the store; `free_levels` shows as "The first N levels are free"; any other keys are the game's own. A game with a `demo` can be downloaded by anyone (the binary is the demo); the full game unlocks with `owns("full")`. `demo: null` means nothing is free and only owners download.
 
 To unlock from inside the game:
 

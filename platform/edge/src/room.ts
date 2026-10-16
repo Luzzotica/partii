@@ -6,7 +6,7 @@
 import { DurableObject } from "cloudflare:workers";
 import type { Env } from "./index";
 import { usage } from "./usage";
-import { DEFAULT_MAX_MEMBERS, MAX_MEMBERS, RESERVATION_MS, type Joined, type Member, ProtoError, type RoomView } from "./protocol";
+import { DEFAULT_MAX_MEMBERS, MAX_MEMBERS, mergeKinds, RECLAIM_MS, RESERVATION_MS, type Joined, type KindRule, type Member, ProtoError, type RoomView } from "./protocol";
 
 interface MemberRec extends Member {
   conn: string;
@@ -19,12 +19,23 @@ interface RoomState {
   host: number;
   maxMembers: number;
   joinable: boolean;
+  /** Per-kind joinable and caps (the `kinds` room setting). */
+  kinds?: Record<string, KindRule>;
   meta: unknown;
   nextMid: number;
   members: Record<number, MemberRec>;
   createdAt: number;
   /** Made ahead of time for a session; invisible until that session claims it. */
   reserved?: boolean;
+  /** Hash of the host's reclaim token: if the host times out, it may take this code back (RECLAIM_MS). */
+  reclaimHash?: string;
+}
+
+/** What's left of a room whose host timed out: the code, held for that host. */
+interface Tomb {
+  project: string;
+  hash: string;
+  until: number;
 }
 
 export interface MemberArgs {
@@ -60,6 +71,7 @@ export class Room extends DurableObject<Env> {
       you,
       joinable: s.joinable,
       max_members: s.maxMembers,
+      ...(s.kinds ? { kinds: s.kinds } : {}),
       meta: s.meta,
       members: Object.values(s.members).map(({ conn: _conn, ...m }) => m),
     };
@@ -84,10 +96,17 @@ export class Room extends DurableObject<Env> {
     }
   }
 
-  async init(args: { code: string; project: string; game: string; maxMembers?: number; meta?: unknown; host: MemberArgs; reserved?: boolean }): Promise<Result<Joined>> {
+  async init(args: { code: string; project: string; game: string; maxMembers?: number; kinds?: Record<string, KindRule>; meta?: unknown; host: MemberArgs; reserved?: boolean; reclaimHash?: string; proof?: string }): Promise<Result<Joined>> {
     try {
       const existing = this.load();
       if (existing) throw new ProtoError("closed", "code taken");
+      const tomb = this.ctx.storage.kv.get("tomb") as Tomb | undefined;
+      if (tomb && tomb.until > Date.now()) {
+        if (!args.proof || args.proof !== tomb.hash || args.project !== tomb.project) throw new ProtoError("closed", "code held for its host");
+        this.ctx.storage.kv.delete("tomb");
+      } else if (args.proof) {
+        throw new ProtoError("closed", "nothing to reclaim");
+      }
       const max = Math.min(Math.max(args.maxMembers ?? DEFAULT_MAX_MEMBERS, 1), MAX_MEMBERS);
       const host: MemberRec = { mid: 1, status: "active", ...args.host };
       const s: RoomState = {
@@ -97,11 +116,13 @@ export class Room extends DurableObject<Env> {
         host: 1,
         maxMembers: max,
         joinable: true,
+        kinds: args.kinds,
         meta: args.meta ?? null,
         nextMid: 2,
         members: { 1: host },
         createdAt: Date.now(),
         reserved: args.reserved || undefined,
+        reclaimHash: args.reclaimHash,
       };
       this.save(s);
       // An unclaimed reservation cleans itself up (and is not counted until claimed).
@@ -114,7 +135,7 @@ export class Room extends DurableObject<Env> {
   }
 
   /** The reserving session takes its warm room: create without a cold start. */
-  async claim(args: { conn: string; game: string; maxMembers?: number; meta?: unknown; host: MemberArgs }): Promise<Result<Joined>> {
+  async claim(args: { conn: string; game: string; maxMembers?: number; kinds?: Record<string, KindRule>; meta?: unknown; host: MemberArgs; reclaimHash?: string }): Promise<Result<Joined>> {
     try {
       const s = this.load();
       if (!s || !s.reserved || s.members[1]?.conn !== args.conn) throw new ProtoError("not_found", "reservation gone");
@@ -122,6 +143,8 @@ export class Room extends DurableObject<Env> {
       s.game = args.game;
       s.maxMembers = Math.min(Math.max(args.maxMembers ?? DEFAULT_MAX_MEMBERS, 1), MAX_MEMBERS);
       s.meta = args.meta ?? null;
+      s.kinds = args.kinds;
+      s.reclaimHash = args.reclaimHash;
       s.members[1] = { mid: 1, status: "active", ...args.host };
       s.createdAt = Date.now();
       this.save(s);
@@ -142,6 +165,8 @@ export class Room extends DurableObject<Env> {
   async alarm() {
     const s = this.load();
     if (s?.reserved) this.save(null);
+    const tomb = this.ctx.storage.kv.get("tomb") as Tomb | undefined;
+    if (tomb && tomb.until <= Date.now()) this.ctx.storage.kv.delete("tomb");
   }
 
   async join(args: MemberArgs & { project: string }): Promise<Result<Joined>> {
@@ -156,6 +181,11 @@ export class Room extends DurableObject<Env> {
       if (again) return { ok: true, value: this.joined(s, again.mid) };
       if (!s.joinable) throw new ProtoError("not_joinable", "the host closed the room to new players");
       if (Object.keys(s.members).length >= s.maxMembers) throw new ProtoError("full", "the room is full");
+      const rule = s.kinds?.[args.kind];
+      if (rule?.joinable === false) throw new ProtoError("not_joinable", `this room isn't taking ${args.kind} members right now`);
+      if (rule?.max !== undefined && Object.values(s.members).filter((x) => x.kind === args.kind).length >= rule.max) {
+        throw new ProtoError("full", `this room has all the ${args.kind} members it takes`);
+      }
       const m: MemberRec = { mid: s.nextMid++, status: "active", ...args };
       s.members[m.mid] = m;
       this.save(s);
@@ -173,9 +203,17 @@ export class Room extends DurableObject<Env> {
     if (!s || !s.members[mid]) return { ok: true, value: null };
     if (mid === s.host) {
       delete s.members[mid];
-      this.tell(s, { t: "room_closed", reason: "host_left" });
+      // A host that timed out (not one that left) may take the code back for a while,
+      // so printed QR codes keep working; members hear `host_lost` and may retry joining.
+      const held = reason === "timeout" ? s.reclaimHash : undefined;
+      this.tell(s, { t: "room_closed", reason: held ? "host_lost" : "host_left" });
       usage(this.env, s.project).down("room", `${s.project}:${s.code}`).catch(() => {});
       this.save(null);
+      if (held) {
+        const until = Date.now() + RECLAIM_MS;
+        this.ctx.storage.kv.put("tomb", { project: s.project, hash: held, until } satisfies Tomb);
+        await this.ctx.storage.setAlarm(until);
+      }
       return { ok: true, value: null };
     }
     delete s.members[mid];
@@ -193,7 +231,7 @@ export class Room extends DurableObject<Env> {
     this.tell(s, { t: status === "suspended" ? "member_suspended" : "member_resumed", mid }, mid);
   }
 
-  async update(mid: number, patch: { joinable?: boolean; meta?: unknown; maxMembers?: number }): Promise<Result<RoomView>> {
+  async update(mid: number, patch: { joinable?: boolean; meta?: unknown; maxMembers?: number; kinds?: unknown }): Promise<Result<RoomView>> {
     try {
       const s = this.load();
       if (!s || !s.members[mid]) throw new ProtoError("not_in_room", "not in this room");
@@ -201,12 +239,30 @@ export class Room extends DurableObject<Env> {
       if (typeof patch.joinable === "boolean") s.joinable = patch.joinable;
       if (patch.meta !== undefined) s.meta = patch.meta;
       if (typeof patch.maxMembers === "number") s.maxMembers = Math.min(Math.max(patch.maxMembers, Object.keys(s.members).length), MAX_MEMBERS);
+      if (patch.kinds !== undefined) s.kinds = mergeKinds(s.kinds, patch.kinds);
       this.save(s);
       for (const m of Object.values(s.members)) {
         if (m.mid === mid) continue;
         this.env.SESSION.get(this.env.SESSION.idFromName(m.conn)).deliver({ t: "room_updated", room: this.view(s, m.mid) }).catch(() => {});
       }
       return { ok: true, value: this.view(s, mid) };
+    } catch (e) {
+      return fail(e);
+    }
+  }
+
+  /** A member changes its own name or meta; everyone else gets `member_updated`. */
+  async updateMember(mid: number, patch: { name?: string; meta?: unknown }): Promise<Result<Member>> {
+    try {
+      const s = this.load();
+      const m = s?.members[mid];
+      if (!s || !m) throw new ProtoError("not_in_room", "not in this room");
+      if (patch.name !== undefined) m.name = patch.name;
+      if (patch.meta !== undefined) m.meta = patch.meta;
+      this.save(s);
+      const { conn: _conn, ...pub } = m;
+      this.tell(s, { t: "member_updated", member: pub }, mid);
+      return { ok: true, value: pub };
     } catch (e) {
       return fail(e);
     }

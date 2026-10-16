@@ -69,6 +69,14 @@ pub struct Room {
     pub you: u16,
     pub joinable: bool,
     pub max_members: u32,
+    /// Per-kind rules the host set, e.g. `{"game": {"joinable": false}, "phone": {"max": 16}}`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kinds: Option<Value>,
+    /// The host's reclaim token (only the host has it). If the host's session
+    /// times out, `create_with(.., json!({"reclaim": {"code": code, "token": reclaim}}))`
+    /// within 10 minutes gets the same code back, so printed QR codes keep working.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reclaim: Option<String>,
     #[serde(default)]
     pub meta: Value,
     pub members: Vec<Member>,
@@ -85,7 +93,12 @@ pub enum Event {
     Created { req: u32, room: Room },
     Joined { req: u32, room: Room },
     Failed { req: u32, code: String, message: String },
+    /// Comes right before the `Failed` for request `req` when partii refused it
+    /// for being busy (`rate_limited`): wait this long before trying again.
+    RateLimited { req: u32, retry_after_ms: u64 },
     MemberJoined { member: Member },
+    /// A member changed its own name or meta (`member_update`).
+    MemberUpdated { member: Member },
     MemberLeft { mid: u16, reason: String },
     MemberSuspended { mid: u16 },
     MemberResumed { mid: u16 },
@@ -297,7 +310,19 @@ impl Core {
     }
 
     pub fn create(&mut self, game: &str, max_members: Option<u32>, kind: &str, name: &str, meta: Value) -> u32 {
-        self.request(Req::Create, json!({"t": "create", "game": game, "max_members": max_members, "kind": kind, "name": name, "meta": meta}))
+        self.create_with(game, kind, name, meta, json!({"max_members": max_members}))
+    }
+    /// `create` with room settings from the start: `{"max_members": 32, "kinds": {"game": {"joinable": false}}}`.
+    pub fn create_with(&mut self, game: &str, kind: &str, name: &str, meta: Value, settings: Value) -> u32 {
+        let mut v = json!({"t": "create", "game": game, "kind": kind, "name": name, "meta": meta});
+        if let Value::Object(o) = settings {
+            for (k, x) in o {
+                if !matches!(k.as_str(), "t" | "game" | "kind" | "name" | "meta") {
+                    v[k] = x;
+                }
+            }
+        }
+        self.request(Req::Create, v)
     }
     pub fn join(&mut self, code: &str, kind: &str, name: &str, meta: Value) -> u32 {
         self.request(Req::Join, json!({"t": "join", "code": code, "kind": kind, "name": name, "meta": meta}))
@@ -314,6 +339,17 @@ impl Core {
     }
     pub fn kick(&mut self, mid: u16) -> u32 {
         self.request(Req::Other, json!({"t": "kick", "mid": mid}))
+    }
+    /// Change your own member name and/or meta; the others get `MemberUpdated`.
+    pub fn member_update(&mut self, name: Option<&str>, meta: Option<Value>) -> u32 {
+        let mut v = json!({"t": "member_update"});
+        if let Some(n) = name {
+            v["name"] = json!(n);
+        }
+        if let Some(m) = meta {
+            v["meta"] = m;
+        }
+        self.request(Req::Other, v)
     }
     pub fn report(&mut self, metrics: Value) {
         if self.online() {
@@ -425,6 +461,16 @@ impl Core {
                     self.add_peer(mid, now);
                 }
             }
+            "member_updated" => {
+                if let Ok(member) = serde_json::from_value::<Member>(m["member"].clone()) {
+                    if let Some(r) = self.room.as_mut() {
+                        if let Some(x) = r.members.iter_mut().find(|x| x.mid == member.mid) {
+                            *x = member.clone();
+                        }
+                    }
+                    self.emit(Event::MemberUpdated { member });
+                }
+            }
             "member_left" => {
                 let mid = m["mid"].as_u64().unwrap_or(0) as u16;
                 self.drop_peer(mid);
@@ -452,7 +498,8 @@ impl Core {
                 self.emit(if suspended { Event::MemberSuspended { mid } } else { Event::MemberResumed { mid } });
             }
             "room_updated" => {
-                if let Ok(room) = serde_json::from_value::<Room>(m["room"].clone()) {
+                if let Ok(mut room) = serde_json::from_value::<Room>(m["room"].clone()) {
+                    room.reclaim = self.room.as_ref().and_then(|r| r.reclaim.clone());
                     self.room = Some(room.clone());
                     self.emit(Event::RoomUpdated { room });
                 }
@@ -594,6 +641,9 @@ impl Core {
         };
         let kind = self.reqs.remove(&id).unwrap_or(Req::Other);
         if m["t"] == "err" {
+            if let Some(ms) = m["retry_after_ms"].as_u64() {
+                self.emit(Event::RateLimited { req: id, retry_after_ms: ms });
+            }
             self.emit(Event::Failed { req: id, code: m["code"].as_str().unwrap_or("internal").into(), message: m["message"].as_str().unwrap_or("").into() });
             return;
         }
@@ -607,8 +657,13 @@ impl Core {
             for mid in others {
                 self.add_peer(mid, now);
             }
-        } else if let Ok(room) = serde_json::from_value::<Room>(m["room"].clone()) {
+        } else if let Ok(mut room) = serde_json::from_value::<Room>(m["room"].clone()) {
+            room.reclaim = self.room.as_ref().and_then(|r| r.reclaim.clone());
             self.room = Some(room);
+        } else if let Ok(member) = serde_json::from_value::<Member>(m["member"].clone()) {
+            if let Some(x) = self.room.as_mut().and_then(|r| r.members.iter_mut().find(|x| x.mid == member.mid)) {
+                *x = member;
+            }
         }
     }
 

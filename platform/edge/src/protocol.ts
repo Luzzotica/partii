@@ -12,6 +12,19 @@ export const GRACE_MS = 20_000;
 export const BUFFER_LIMIT = 512;
 /** A room made ahead of time lives this long unclaimed. */
 export const RESERVATION_MS = 30 * 60_000;
+/** A room whose host timed out keeps its code this long for that host to reclaim. */
+export const RECLAIM_MS = 10 * 60_000;
+
+/** Hex sha-256 (reclaim tokens are stored only as hashes). */
+export async function sha256Hex(s: string): Promise<string> {
+  const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
+  return Array.from(new Uint8Array(d), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+export function randomToken(): string {
+  const b = crypto.getRandomValues(new Uint8Array(18));
+  return btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
 
 export type ErrCode =
   | "bad_request"
@@ -27,9 +40,40 @@ export type ErrCode =
   | "internal";
 
 export class ProtoError extends Error {
-  constructor(public code: ErrCode, message: string) {
+  /** Extra fields for the `err` frame, e.g. `retry_after_ms` on `rate_limited`. */
+  constructor(public code: ErrCode, message: string, public extra?: Record<string, unknown>) {
     super(message);
   }
+}
+
+/** Per-kind room settings: whether that kind may join now, and how many of it fit. */
+export interface KindRule {
+  joinable?: boolean;
+  max?: number;
+}
+export const MAX_KIND_RULES = 8;
+
+/** Merge a client's `kinds` patch into the current rules (a kind set to null drops its rule). */
+export function mergeKinds(cur: Record<string, KindRule> | undefined, patch: unknown): Record<string, KindRule> | undefined {
+  if (patch === undefined) return cur;
+  if (patch === null) return undefined;
+  if (typeof patch !== "object" || Array.isArray(patch)) throw new ProtoError("bad_request", "kinds must be an object like {\"game\": {\"joinable\": false}, \"phone\": {\"max\": 16}}");
+  const out: Record<string, KindRule> = { ...(cur ?? {}) };
+  for (const [kind, v] of Object.entries(patch as Record<string, unknown>)) {
+    const k = kind.slice(0, 16);
+    if (v === null) {
+      delete out[k];
+      continue;
+    }
+    if (typeof v !== "object" || Array.isArray(v)) throw new ProtoError("bad_request", `kinds.${k} must be an object or null`);
+    const r = v as Record<string, unknown>;
+    const rule: KindRule = {};
+    if (typeof r.joinable === "boolean") rule.joinable = r.joinable;
+    if (typeof r.max === "number" && Number.isFinite(r.max)) rule.max = Math.min(Math.max(Math.floor(r.max), 0), MAX_MEMBERS);
+    out[k] = rule;
+  }
+  if (Object.keys(out).length > MAX_KIND_RULES) throw new ProtoError("bad_request", `at most ${MAX_KIND_RULES} kinds`);
+  return Object.keys(out).length ? out : undefined;
 }
 
 export interface Member {
@@ -48,6 +92,8 @@ export interface RoomView {
   you: number;
   joinable: boolean;
   max_members: number;
+  /** Per-kind rules, when the host set any. */
+  kinds?: Record<string, KindRule>;
   meta: unknown;
   members: Member[];
 }

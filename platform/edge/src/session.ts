@@ -8,7 +8,7 @@ import { DurableObject } from "cloudflare:workers";
 import type { Env } from "./index";
 import { type IceGrant, mintIce } from "./ice";
 import { verifyKey } from "./keys";
-import { allowed, Bucket, RELAY_BURST, RELAY_RATE } from "./limits";
+import { Bucket, RELAY_BURST, RELAY_RATE, retryAfter } from "./limits";
 import { usage } from "./usage";
 import {
   BROADCAST,
@@ -18,7 +18,10 @@ import {
   GRACE_MS,
   type Joined,
   MAX_RELAY_BYTES,
+  mergeKinds,
   newCode,
+  randomToken,
+  sha256Hex,
   normalizeCode,
   PROTOCOL_VERSION,
   ProtoError,
@@ -121,7 +124,7 @@ export class Session extends DurableObject<Env> {
       if (reply && msg.id !== undefined) this.send(ws, { t: "ok", id: msg.id, ...reply });
     } catch (e) {
       const pe = e instanceof ProtoError ? e : new ProtoError("internal", String(e));
-      this.send(ws, { t: "err", id: msg.id, code: pe.code, message: pe.message });
+      this.send(ws, { t: "err", id: msg.id, code: pe.code, message: pe.message, ...pe.extra });
     }
   }
 
@@ -208,8 +211,15 @@ export class Session extends DurableObject<Env> {
           joinable: typeof m.joinable === "boolean" ? m.joinable : undefined,
           meta: m.meta,
           maxMembers: typeof m.max_members === "number" ? m.max_members : undefined,
+          kinds: m.kinds,
         })) as RoomResult<unknown>;
         return { room: unwrap(r) };
+      }
+      case "member_update": {
+        const s = this.inRoom();
+        const name = str(m.name);
+        const r = (await this.roomStub(s).updateMember(s.room!.mid, { name, meta: m.meta })) as RoomResult<unknown>;
+        return { member: unwrap(r) };
       }
       case "kick": {
         const s = this.inRoom();
@@ -242,10 +252,11 @@ export class Session extends DurableObject<Env> {
   /** Refuse with `rate_limited` when this client's IP is over its limit. */
   private async limit(ws: WebSocket, kind: "create" | "join") {
     const ip = (ws.deserializeAttachment() as Attachment).ip;
-    if (await allowed(this.env, kind, ip)) return;
+    const wait = await retryAfter(this.env, kind, ip);
+    if (!wait) return;
     const s = this.load();
     if (s) usage(this.env, s.project).hit(s.project, kind).catch(() => {});
-    throw new ProtoError("rate_limited", `too many ${kind === "create" ? "rooms created" : "joins"} from this network; try again in a minute`);
+    throw new ProtoError("rate_limited", `too many ${kind === "create" ? "rooms created" : "joins"} from this network; try again in a minute`, { retry_after_ms: wait });
   }
 
   private need(): SessState {
@@ -284,9 +295,10 @@ export class Session extends DurableObject<Env> {
     } else {
       // A new session mints relay credentials and warms a room: limited per IP.
       // The socket is closed so the client backs off and retries.
-      if (!(await allowed(this.env, "session", ip))) {
+      const wait = await retryAfter(this.env, "session", ip);
+      if (wait) {
         usage(this.env, claims.project).hit(claims.project, "session").catch(() => {});
-        this.send(ws, { t: "err", code: "rate_limited", message: "too many new connections from this network; try again in a minute" });
+        this.send(ws, { t: "err", code: "rate_limited", message: "too many new connections from this network; try again in a minute", retry_after_ms: wait });
         ws.close(CLOSE_RATE_LIMITED, "rate_limited");
         return null;
       }
@@ -354,6 +366,29 @@ export class Session extends DurableObject<Env> {
     const game = str(m.game);
     if (!game) throw new ProtoError("bad_request", "game is required");
     const host = { conn: s.conn, kind: str(m.kind, 16) ?? "game", name: str(m.name) ?? "", meta: m.meta ?? null };
+    const kinds = mergeKinds(undefined, m.kinds);
+    // Every room's host gets a reclaim token: after a timeout it can create
+    // with {reclaim: {code, token}} and get the same code back (RECLAIM_MS).
+    const token = randomToken();
+    const reclaimHash = await sha256Hex(token);
+    const withToken = (r: { room: unknown }) => ({ ...r, room: { ...(r.room as object), reclaim: token } });
+    const want = m.reclaim && typeof m.reclaim === "object" ? (m.reclaim as Record<string, unknown>) : null;
+    const wantCode = want ? normalizeCode(want.code) : null;
+    if (wantCode && typeof want!.token === "string") {
+      const r = (await this.roomStub(s, wantCode).init({
+        code: wantCode,
+        project: s.project,
+        game,
+        maxMembers: typeof m.max_members === "number" ? m.max_members : undefined,
+        kinds,
+        meta: m.meta,
+        host,
+        reclaimHash,
+        proof: await sha256Hex(want!.token as string),
+      })) as RoomResult<Joined>;
+      if (r.ok) return { ...withToken(this.entered(s, wantCode, r.value as Joined)), reclaimed: true, server_ms: Date.now() - t0 };
+      // Gone or not ours: a fresh code, as if no reclaim was asked.
+    }
     // A reservation on its way is quicker than a second cold room.
     if (!s.reserved && this.reserving) {
       await this.reserving;
@@ -365,12 +400,12 @@ export class Session extends DurableObject<Env> {
       const code = s.reserved;
       s.reserved = undefined;
       const maxMembers = Math.min(Math.max(typeof m.max_members === "number" ? m.max_members : DEFAULT_MAX_MEMBERS, 1), MAX_MEMBERS);
-      const room = { code, game, host: 1, you: 1, joinable: true, max_members: maxMembers, meta: m.meta ?? null, members: [{ mid: 1, kind: host.kind, name: host.name, meta: host.meta, status: "active" as const }] };
+      const room = { code, game, host: 1, you: 1, joinable: true, max_members: maxMembers, ...(kinds ? { kinds } : {}), meta: m.meta ?? null, members: [{ mid: 1, kind: host.kind, name: host.name, meta: host.meta, status: "active" as const }] };
       const entered = this.entered(s, code, { room, conns: { 1: s.conn } });
       this.roomStub(s, code)
-        .claim({ conn: s.conn, game, maxMembers, meta: m.meta, host })
+        .claim({ conn: s.conn, game, maxMembers, kinds, meta: m.meta, host, reclaimHash })
         .catch(() => {});
-      return { ...entered, server_ms: Date.now() - t0, warm: true };
+      return { ...withToken(entered), ...(want ? { reclaimed: false } : {}), server_ms: Date.now() - t0, warm: true };
     }
     for (let attempt = 0; attempt < 6; attempt++) {
       const code = newCode();
@@ -379,10 +414,12 @@ export class Session extends DurableObject<Env> {
         project: s.project,
         game,
         maxMembers: typeof m.max_members === "number" ? m.max_members : undefined,
+        kinds,
         meta: m.meta,
         host,
+        reclaimHash,
       })) as RoomResult<Joined>;
-      if (r.ok) return { ...this.entered(s, code, r.value as Joined), server_ms: Date.now() - t0 };
+      if (r.ok) return { ...withToken(this.entered(s, code, r.value as Joined)), ...(want ? { reclaimed: false } : {}), server_ms: Date.now() - t0 };
       if (r.code !== "closed") unwrap(r);
     }
     throw new ProtoError("internal", "could not find a free room code");

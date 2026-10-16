@@ -96,7 +96,8 @@ interface Game {
   price_now_cents: number;
   currency: string;
   sale: { percent: number; ends_at: number } | null;
-  demo: { free_levels?: number } | null;
+  /** The free part (docs/GUIDE.md §4): `free` names what's free, `join_free` means anyone may join an owner's room; other keys are the game's own. */
+  demo: { free_levels?: number; free?: string[]; join_free?: boolean } | null;
   platforms: string[];
   store: { cover?: string; screenshots?: string[]; trailer?: string; appstore_url?: string; play_url?: string };
   /** The game's site, to play in the browser. */
@@ -204,6 +205,8 @@ function GamePage({ id, owned, refresh }: { id: string; owned: Set<string>; refr
         <p>{g.description}</p>
         <p className="muted">On {g.platforms.map((p) => PLATFORM_NAMES[p] ?? p).join(", ") || "—"}</p>
         {g.demo?.free_levels ? <p className="demo">The first {g.demo.free_levels} levels are free to play.</p> : null}
+        {g.demo?.free?.length ? <p className="demo" data-testid="demo-free">Free to play: {g.demo.free.join(", ")}.</p> : null}
+        {g.demo?.join_free ? <p className="demo" data-testid="demo-join">Join a friend who owns it, free. Hosting needs the full game.</p> : null}
         {g.play_url && (
           <p>
             <a className="button" href={g.play_url} data-testid="play" onClick={() => track("play", { game: g.id })}>

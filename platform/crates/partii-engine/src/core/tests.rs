@@ -336,3 +336,66 @@ fn queued_sends_go_out_as_one_bundled_relay_frame() {
     let got: Vec<Vec<u8>> = events(&b.drain()).into_iter().filter_map(|e| if let Event::Message { bytes, .. } = e { Some(bytes) } else { None }).collect();
     assert!(got.contains(&b"one".to_vec()) && got.contains(&b"two".to_vec()) && got.contains(&b"three".to_vec()), "{got:?}");
 }
+
+#[test]
+fn create_with_sends_room_settings_and_the_room_keeps_its_kinds() {
+    let mut c = core(true);
+    online(&mut c, "ws");
+    let id = c.create_with("g", "game", "Ann", Value::Null, json!({"max_members": 32, "kinds": {"game": {"joinable": false}}, "t": "nope"}));
+    let sent = texts(&c.drain());
+    assert_eq!(sent[0]["t"], "create", "settings never override the message type");
+    assert_eq!(sent[0]["max_members"], 32);
+    assert_eq!(sent[0]["kinds"], json!({"game": {"joinable": false}}));
+    let mut r = room(1, &[1]);
+    r["kinds"] = json!({"game": {"joinable": false}});
+    c.on_text(&json!({"t": "ok", "id": id, "room": r}).to_string(), 1.0);
+    assert_eq!(c.room().unwrap().kinds, Some(json!({"game": {"joinable": false}})));
+    // The old create still sends max_members.
+    c.create("g", Some(4), "game", "", Value::Null);
+    assert_eq!(texts(&c.drain())[0]["max_members"], 4);
+}
+
+#[test]
+fn a_busy_refusal_says_how_long_to_wait_before_it_fails() {
+    let mut c = core(true);
+    online(&mut c, "ws");
+    let id = c.join("ABCDE", "phone", "", Value::Null);
+    c.drain();
+    c.on_text(&json!({"t": "err", "id": id, "code": "rate_limited", "message": "busy", "retry_after_ms": 12000}).to_string(), 1.0);
+    let evs = events(&c.drain());
+    assert_eq!(evs[0], Event::RateLimited { req: id, retry_after_ms: 12000 });
+    assert!(matches!(&evs[1], Event::Failed { req, code, .. } if *req == id && code == "rate_limited"));
+}
+
+#[test]
+fn members_rename_themselves() {
+    let mut c = core(true);
+    online(&mut c, "ws");
+    let id = c.join("ABCDE", "game", "", Value::Null);
+    c.on_text(&json!({"t": "ok", "id": id, "room": room(2, &[1, 2])}).to_string(), 1.0);
+    c.drain();
+    let up = c.member_update(Some("Sam"), Some(json!({"color": "red"})));
+    let sent = texts(&c.drain());
+    assert_eq!(sent[0], json!({"t": "member_update", "id": up, "name": "Sam", "meta": {"color": "red"}}));
+    c.on_text(&json!({"t": "ok", "id": up, "member": {"mid": 2, "kind": "game", "name": "Sam", "meta": {"color": "red"}, "status": "active"}}).to_string(), 2.0);
+    assert_eq!(c.room().unwrap().members[1].name, "Sam");
+    c.on_text(r#"{"t":"member_updated","member":{"mid":1,"kind":"game","name":"Host","meta":null,"status":"active"}}"#, 3.0);
+    assert!(events(&c.drain()).iter().any(|e| matches!(e, Event::MemberUpdated { member } if member.name == "Host")));
+    assert_eq!(c.room().unwrap().members[0].name, "Host");
+}
+
+#[test]
+fn the_host_keeps_its_reclaim_token_through_room_updates() {
+    let mut c = core(true);
+    online(&mut c, "ws");
+    let id = c.create("g", None, "game", "", Value::Null);
+    let mut r = room(1, &[1]);
+    r["reclaim"] = json!("tok");
+    c.on_text(&json!({"t": "ok", "id": id, "room": r}).to_string(), 1.0);
+    assert_eq!(c.room().unwrap().reclaim.as_deref(), Some("tok"));
+    c.on_text(&json!({"t": "room_updated", "room": room(1, &[1, 2])}).to_string(), 2.0);
+    assert_eq!(c.room().unwrap().reclaim.as_deref(), Some("tok"));
+    let up = c.update(json!({"joinable": false}));
+    c.on_text(&json!({"t": "ok", "id": up, "room": room(1, &[1, 2])}).to_string(), 3.0);
+    assert_eq!(c.room().unwrap().reclaim.as_deref(), Some("tok"));
+}

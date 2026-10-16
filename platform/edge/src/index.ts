@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { registerApi } from "./api";
 import type { IceEnv } from "./ice";
-import { allowed, type LimitEnv } from "./limits";
+import { type LimitEnv, retryAfter } from "./limits";
 import { EDGE_USAGE, usage } from "./usage";
 export { Session } from "./session";
 export { Room } from "./room";
@@ -88,10 +88,12 @@ app.get("/v1/connect", async (c) => {
   const conn = c.req.query("conn") ?? "";
   if (!/^[A-Za-z0-9_-]{16,64}$/.test(conn)) return c.json({ ok: false, error: { code: "bad_request", message: "conn must be 16–64 chars of [A-Za-z0-9_-]" } }, 400);
   if (c.req.header("upgrade") !== "websocket") return c.json({ ok: false, error: { code: "bad_request", message: "expected a websocket upgrade" } }, 426);
-  if (!(await allowed(c.env, "connect", c.req.header("cf-connecting-ip") ?? ""))) {
+  const wait = await retryAfter(c.env, "connect", c.req.header("cf-connecting-ip") ?? "");
+  if (wait) {
     // No key has been seen yet, so the hit is counted edge-wide.
     c.executionCtx.waitUntil(usage(c.env, EDGE_USAGE).hit(EDGE_USAGE, "connect").catch(() => {}));
-    return c.json({ ok: false, error: { code: "rate_limited", message: "too many connections from this network; try again in a minute" } }, 429);
+    c.header("retry-after", String(Math.ceil(wait / 1000)));
+    return c.json({ ok: false, error: { code: "rate_limited", message: "too many connections from this network; try again in a minute", retry_after_ms: wait } }, 429);
   }
   const stub = c.env.SESSION.get(c.env.SESSION.idFromName(conn));
   return stub.fetch(c.req.raw);

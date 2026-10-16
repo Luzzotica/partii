@@ -379,6 +379,12 @@ impl Engine {
         r
     }
 
+    pub fn create_with(&self, game: &str, kind: &str, name: &str, meta: Value, settings: Value) -> u32 {
+        self.act(|c| c.create_with(game, kind, name, meta, settings))
+    }
+    pub fn member_update(&self, name: Option<&str>, meta: Option<Value>) -> u32 {
+        self.act(|c| c.member_update(name, meta))
+    }
     pub fn create(&self, game: &str, max_members: Option<u32>, kind: &str, name: &str, meta: Value) -> u32 {
         self.act(|c| c.create(game, max_members, kind, name, meta))
     }
@@ -443,6 +449,29 @@ impl WebEngine {
 
     pub fn join(&self, code: &str, kind: &str, name: &str, meta: &str) -> u32 {
         self.e.join(code, kind, name, serde_json::from_str(meta).unwrap_or(Value::Null))
+    }
+
+    /// `create` with room settings as JSON, e.g. `{"max_members":32,"kinds":{"game":{"joinable":false}}}`.
+    #[wasm_bindgen(js_name = createWith)]
+    pub fn create_with(&self, game: &str, kind: &str, name: &str, meta: &str, settings: &str) -> u32 {
+        self.e.create_with(game, kind, name, serde_json::from_str(meta).unwrap_or(Value::Null), serde_json::from_str(settings).unwrap_or(Value::Null))
+    }
+
+    /// Host only: change the room (`{"joinable":false}`, `{"kinds":{...}}`, `{"meta":...}`).
+    pub fn update(&self, patch: &str) {
+        self.e.update(serde_json::from_str(patch).unwrap_or(Value::Null))
+    }
+
+    /// Host only.
+    pub fn kick(&self, mid: u16) {
+        self.e.kick(mid)
+    }
+
+    /// Change your own name and/or meta (JSON `{"name":..,"meta":..}`); the others get `member_updated`.
+    #[wasm_bindgen(js_name = memberUpdate)]
+    pub fn member_update(&self, patch: &str) -> u32 {
+        let v: Value = serde_json::from_str(patch).unwrap_or(Value::Null);
+        self.e.member_update(v["name"].as_str(), v.get("meta").cloned())
     }
 
     pub fn leave(&self) {

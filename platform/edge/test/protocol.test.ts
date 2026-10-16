@@ -85,6 +85,39 @@ describe("rooms", () => {
     expect(await g.req({ t: "join", code })).toMatchObject({ t: "err", code: "not_joinable" });
   });
 
+  it("per-kind rules: a closed kind gets not_joinable, a capped kind gets full, and the host can change them", async () => {
+    const host = await connected();
+    const made = await host.req({ t: "create", game: "g", kinds: { game: { joinable: false }, phone: { max: 1 } } });
+    expect(made.room.kinds).toEqual({ game: { joinable: false }, phone: { max: 1 } });
+    const code = made.room.code;
+    const guest = await connected();
+    expect(await guest.req({ t: "join", code, kind: "game" })).toMatchObject({ t: "err", code: "not_joinable" });
+    const p1 = await connected();
+    expect((await p1.req({ t: "join", code, kind: "phone" })).t).toBe("ok");
+    const p2 = await connected();
+    expect(await p2.req({ t: "join", code, kind: "phone" })).toMatchObject({ t: "err", code: "full" });
+    // Opening games merges into the rules; phone stays capped.
+    const up = await host.req({ t: "update", kinds: { game: { joinable: true } } });
+    expect(up.room.kinds).toEqual({ game: { joinable: true }, phone: { max: 1 } });
+    expect((await guest.req({ t: "join", code, kind: "game" })).t).toBe("ok");
+    expect(await p1.event("room_updated")).toMatchObject({ room: { kinds: { game: { joinable: true } } } });
+    // null drops a kind's rule.
+    expect((await host.req({ t: "update", kinds: { phone: null } })).room.kinds).toEqual({ game: { joinable: true } });
+    expect((await p2.req({ t: "join", code, kind: "phone" })).t).toBe("ok");
+    expect(await host.req({ t: "update", kinds: [1] })).toMatchObject({ t: "err", code: "bad_request" });
+  });
+
+  it("a member renames itself and updates its own meta; the others hear it", async () => {
+    const { host, guest } = await roomWithGuest();
+    const r = await guest.req({ t: "member_update", name: "Sam", meta: { color: "red" } });
+    expect(r.member).toMatchObject({ mid: 2, name: "Sam", meta: { color: "red" } });
+    expect(await host.event("member_updated")).toMatchObject({ member: { mid: 2, name: "Sam", meta: { color: "red" } } });
+    const view = await host.req({ t: "update" });
+    expect(view.room.members.find((m: any) => m.mid === 2)).toMatchObject({ name: "Sam" });
+    const lone = await connected();
+    expect(await lone.req({ t: "member_update", name: "x" })).toMatchObject({ t: "err", code: "not_in_room" });
+  });
+
   it("rooms are private to their project", async () => {
     const { code } = await roomWithGuest();
     const other = await connected(await key("otherproj", "k9"));
@@ -182,6 +215,35 @@ describe("dropped sockets", () => {
     again.relay(1, [5]);
     expect(await host.binary()).toEqual({ from: 2, bytes: [5] });
     expect(host.frames.filter((f: any) => f.t === "member_suspended")).toEqual([]);
+  });
+
+  it("a host that timed out takes its code back with the reclaim token; a host that left doesn't", async () => {
+    const host = await connected();
+    const made = await host.req({ t: "create", game: "g", kinds: { phone: { max: 4 } } });
+    const { code, reclaim } = made.room;
+    expect(typeof reclaim).toBe("string");
+    const phone = await connected();
+    await phone.req({ t: "join", code, kind: "phone" });
+    host.close();
+    await phone.event("member_suspended");
+    await sleep(Number((env as any).GRACE_MS) + 50);
+    await runDurableObjectAlarm((env as any).SESSION.get((env as any).SESSION.idFromName(host.conn)));
+    expect(await phone.event("room_closed")).toMatchObject({ reason: "host_lost" });
+    // Someone else can't take it, even with a guessed token.
+    const thief = await connected();
+    const t = await thief.req({ t: "create", game: "g", reclaim: { code, token: "nope" } });
+    expect(t).toMatchObject({ t: "ok", reclaimed: false });
+    expect(t.room.code).not.toBe(code);
+    // The host, back with a new session, gets the same code; the phone rejoins it.
+    const back = await connected();
+    const r = await back.req({ t: "create", game: "g", kinds: { phone: { max: 4 } }, reclaim: { code, token: reclaim } });
+    expect(r).toMatchObject({ t: "ok", reclaimed: true, room: { code, host: 1, kinds: { phone: { max: 4 } } } });
+    expect(r.room.reclaim).not.toBe(reclaim);
+    expect((await phone.req({ t: "join", code, kind: "phone" })).t).toBe("ok");
+    // Leaving on purpose gives the code up: the token no longer works.
+    await back.req({ t: "leave" });
+    const again = await connected();
+    expect(await again.req({ t: "create", game: "g", reclaim: { code, token: r.room.reclaim } })).toMatchObject({ reclaimed: false });
   });
 
   it("gives the seat up after the grace window", async () => {

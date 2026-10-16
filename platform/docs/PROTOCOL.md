@@ -32,10 +32,11 @@ The first frame must be `hello`. Until the server answers `welcome`, nothing els
 | `t` | Fields | Reply |
 |---|---|---|
 | `hello` | `key` (publishable key), `v: 1`, `player_token?`, `client?` (free-form, e.g. `"tankii/0.9 macos"`) | `welcome`: `conn`, `project`, `resumed`, `ice_servers`, `ice_expires_at`, `server_time`, `room?` (when resumed in a room) |
-| `create` | `id`, `game`, `max_members?` (default 8, max 32), `kind?` (default `"game"`), `name?`, `meta?` | `ok`: `room` |
-| `join` | `id`, `code`, `kind?`, `name?`, `meta?` | `ok`: `room`. Errors: `not_found`, `full`, `closed`, `not_joinable`, `already_in_room` |
+| `create` | `id`, `game`, `max_members?` (default 8, max 32), `kinds?` (see below), `reclaim?` (`{code, token}`, see below), `kind?` (default `"game"`), `name?`, `meta?` | `ok`: `room` (with `reclaim`, the host's token), `reclaimed?` (when `reclaim` was asked) |
+| `join` | `id`, `code`, `kind?`, `name?`, `meta?` | `ok`: `room`. Errors: `not_found`, `full` (the room, or your kind's `max`), `closed`, `not_joinable` (the room, or your kind), `already_in_room` |
 | `leave` | `id` | `ok` |
-| `update` | `id`, `joinable?`, `meta?`, `max_members?` (host only) | `ok`: `room` |
+| `update` | `id`, `joinable?`, `meta?`, `max_members?`, `kinds?` (host only) | `ok`: `room` |
+| `member_update` | `id`, `name?`, `meta?`: your own member | `ok`: `member`. The others get `member_updated` |
 | `kick` | `id`, `mid` (host only) | `ok` |
 | `signal` | `to` (mid), `data` (any JSON) | none. The target gets `signal {from, data}` |
 | `ping` | `id` | `ok`: `server_time` |
@@ -47,15 +48,20 @@ The first frame must be `hello`. Until the server answers `welcome`, nothing els
 |---|---|
 | `welcome` | see `hello` |
 | `member_joined` | `member` |
+| `member_updated` | `member` (it changed its own name or meta) |
 | `member_left` | `mid`, `reason` (`left`, `kicked`, `timeout`) |
 | `member_suspended` | `mid`: its socket dropped; the seat is held for the grace window |
 | `member_resumed` | `mid` |
 | `room_updated` | `room` |
-| `room_closed` | `reason` (`host_left`, `ended`) |
+| `room_closed` | `reason` (`host_left`: the host left; `host_lost`: the host's connection timed out and it may reclaim the code, so phones can keep trying to rejoin for a few minutes; `kicked`, `ended`) |
 | `signal` | `from`, `data` |
 | `ice` | `ice_servers`, `ice_expires_at` (fresh relay credentials before the old ones expire) |
 
-A **room** is `{code, game, host: mid, you: mid, joinable, max_members, meta, members: [member]}`.
+A **room** is `{code, game, host: mid, you: mid, joinable, max_members, kinds?, meta, members: [member]}`.
+
+**Reclaim.** The host's `create` reply carries `room.reclaim`, a token only the host gets. If the host's session times out (not when it leaves), the room closes with `host_lost` and its code is held for 10 minutes: a `create` with `reclaim: {code, token}` from any new session gets that same code back (`reclaimed: true`, and a new token). Anything else (wrong token, expired, the host left on purpose) makes a fresh code with `reclaimed: false`. This keeps printed and on-screen QR codes working through a host's network drop.
+
+**Kinds.** `kinds` sets rules per member kind: `{"game": {"joinable": false}, "phone": {"max": 16}}`. A join of a kind with `joinable: false` gets `not_joinable`; a join when that kind already has `max` members gets `full`. Kinds without a rule follow the room's `joinable` and `max_members`, which still apply to everyone. On `update`, `kinds` merges per kind, and a kind set to `null` drops its rule (`"kinds": null` drops all). At most 8 kinds. Typical home room: phones always welcome, games only while hosting: create with `{"game": {"joinable": false}}`, then `update` `{"kinds": {"game": {"joinable": true}}}` on HOST.
 A **member** is `{mid, kind, name, meta, status: "active" | "suspended"}`.
 
 `ice_servers` always contains `turns:` on port 443 when relay is available.
@@ -66,14 +72,18 @@ client relies on the `ws` path. The edge never hands out a STUN-only list.
 
 `err` codes: `bad_request`, `unauthorized`, `not_found`, `full`, `closed`, `not_joinable`, `already_in_room`, `not_in_room`, `not_host`, `rate_limited`, `internal`.
 
+`rate_limited` always carries `retry_after_ms`: wait that long (plus a little jitter) before trying again. Show the player that the network is busy, and give up after about a minute.
+
+(The edge has an internal `reserved` code, for a join racing a brand-new room. It retries that itself and answers `not_found` if it persists; clients never see it.)
+
 ### Limits
 
 Staging and production limit each IP (sized far above real play; `LIMITS` in `edge/src/limits.ts`, switched on by the `RATE_LIMITS` var):
 
 | What | Per IP | Refused with |
 |---|---|---|
-| WebSocket upgrades on `/v1/connect` | 120 / min | HTTP 429, before any session |
-| New sessions (a `hello` that is not a resume) | 30 / min | `err` `rate_limited` (no `id`), then the socket closes with code 4029; clients back off and reconnect |
+| WebSocket upgrades on `/v1/connect` | 120 / min | HTTP 429 with `retry-after` (seconds) and `error.retry_after_ms`, before any session |
+| New sessions (a `hello` that is not a resume) | 60 / min | `err` `rate_limited` (no `id`), then the socket closes with code 4029; clients back off and reconnect |
 | `create` | 30 / min | `err` `rate_limited` |
 | `join` | 60 / min | `err` `rate_limited` |
 

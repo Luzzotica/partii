@@ -53,15 +53,20 @@ export function limitsFor(env: LimitEnv): Record<LimitKind, number> | null {
 
 /** True when allowed. Limits off, no limiter, or the limiter failing or slow, allows. */
 export async function allowed(env: LimitEnv, kind: LimitKind, ip: string): Promise<boolean> {
+  return (await retryAfter(env, kind, ip)) === 0;
+}
+
+/** 0 when allowed, else the milliseconds until this limit's window opens again (clients send `retry_after_ms` back to players as a wait). */
+export async function retryAfter(env: LimitEnv, kind: LimitKind, ip: string): Promise<number> {
   const limits = limitsFor(env);
-  if (!limits || !env.LIMITER) return true;
+  if (!limits || !env.LIMITER) return 0;
   const key = ip || "unknown";
   try {
     const stub = env.LIMITER.get(env.LIMITER.idFromName(key));
-    const timeout = new Promise<boolean>((ok) => setTimeout(() => ok(true), LIMIT_TIMEOUT_MS));
-    return await Promise.race([stub.take(kind, limits[kind]), timeout]);
+    const timeout = new Promise<number>((ok) => setTimeout(() => ok(0), LIMIT_TIMEOUT_MS));
+    return await Promise.race([stub.wait(kind, limits[kind]), timeout]);
   } catch {
-    return true;
+    return 0;
   }
 }
 
@@ -73,13 +78,18 @@ export class Limiter extends DurableObject {
   private windows = new Map<LimitKind, { start: number; n: number }>();
 
   async take(kind: LimitKind, limit: number, now = Date.now()): Promise<boolean> {
+    return (await this.wait(kind, limit, now)) === 0;
+  }
+
+  /** Counts one; 0 when within the limit, else the milliseconds left in this window. */
+  async wait(kind: LimitKind, limit: number, now = Date.now()): Promise<number> {
     let w = this.windows.get(kind);
     if (!w || now - w.start >= LIMIT_WINDOW_MS) {
       w = { start: now, n: 0 };
       this.windows.set(kind, w);
     }
     w.n++;
-    return w.n <= limit;
+    return w.n <= limit ? 0 : Math.max(1, w.start + LIMIT_WINDOW_MS - now);
   }
 }
 

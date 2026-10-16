@@ -35,6 +35,29 @@ export class WebEngine {
         return ret >>> 0;
     }
     /**
+     * `create` with room settings as JSON, e.g. `{"max_members":32,"kinds":{"game":{"joinable":false}}}`.
+     * @param {string} game
+     * @param {string} kind
+     * @param {string} name
+     * @param {string} meta
+     * @param {string} settings
+     * @returns {number}
+     */
+    createWith(game, kind, name, meta, settings) {
+        const ptr0 = passStringToWasm0(game, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(kind, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ptr3 = passStringToWasm0(meta, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len3 = WASM_VECTOR_LEN;
+        const ptr4 = passStringToWasm0(settings, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len4 = WASM_VECTOR_LEN;
+        const ret = wasm.webengine_createWith(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4);
+        return ret >>> 0;
+    }
+    /**
      * @param {string} code
      * @param {string} kind
      * @param {string} name
@@ -53,8 +76,26 @@ export class WebEngine {
         const ret = wasm.webengine_join(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3);
         return ret >>> 0;
     }
+    /**
+     * Host only.
+     * @param {number} mid
+     */
+    kick(mid) {
+        wasm.webengine_kick(this.__wbg_ptr, mid);
+    }
     leave() {
         wasm.webengine_leave(this.__wbg_ptr);
+    }
+    /**
+     * Change your own name and/or meta (JSON `{"name":..,"meta":..}`); the others get `member_updated`.
+     * @param {string} patch
+     * @returns {number}
+     */
+    memberUpdate(patch) {
+        const ptr0 = passStringToWasm0(patch, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.webengine_memberUpdate(this.__wbg_ptr, ptr0, len0);
+        return ret >>> 0;
     }
     /**
      * `config`: `{edge, key, conn?, client?, player_token?, no_webrtc?}` (JSON).
@@ -136,6 +177,15 @@ export class WebEngine {
         } finally {
             wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
         }
+    }
+    /**
+     * Host only: change the room (`{"joinable":false}`, `{"kinds":{...}}`, `{"meta":...}`).
+     * @param {string} patch
+     */
+    update(patch) {
+        const ptr0 = passStringToWasm0(patch, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.webengine_update(this.__wbg_ptr, ptr0, len0);
     }
 }
 if (Symbol.dispose) WebEngine.prototype[Symbol.dispose] = WebEngine.prototype.free;
@@ -416,22 +466,22 @@ function __wbg_get_imports() {
             return ret;
         },
         __wbindgen_cast_0000000000000002: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("MessageEvent")], shim_idx: 28, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("MessageEvent")], shim_idx: 36, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_4a957859194b7c6___convert__closures_____invoke___web_sys_e24271b32680505d___features__gen_MessageEvent__MessageEvent______true_);
             return ret;
         },
         __wbindgen_cast_0000000000000003: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("RTCDataChannelEvent")], shim_idx: 28, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("RTCDataChannelEvent")], shim_idx: 36, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_4a957859194b7c6___convert__closures_____invoke___web_sys_e24271b32680505d___features__gen_MessageEvent__MessageEvent______true__2);
             return ret;
         },
         __wbindgen_cast_0000000000000004: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("RTCPeerConnectionIceEvent")], shim_idx: 28, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("RTCPeerConnectionIceEvent")], shim_idx: 36, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_4a957859194b7c6___convert__closures_____invoke___web_sys_e24271b32680505d___features__gen_MessageEvent__MessageEvent______true__3);
             return ret;
         },
         __wbindgen_cast_0000000000000005: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 32, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 40, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_4a957859194b7c6___convert__closures_____invoke_______true_);
             return ret;
         },

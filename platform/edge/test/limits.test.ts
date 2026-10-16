@@ -33,13 +33,18 @@ describe("rate limits", () => {
     expect([await l.take("create", 2, t), await l.take("create", 2, t + 1), await l.take("create", 2, t + 2)]).toEqual([true, true, false]);
     expect(await l.take("join", 2, t + 3)).toBe(true);
     expect(await l.take("create", 2, t + LIMIT_WINDOW_MS)).toBe(true);
+    // Over the limit, wait says how long until the window opens again.
+    const w = E.LIMITER.get(E.LIMITER.idFromName("203.0.113.2"));
+    expect([await w.wait("join", 1, t), await w.wait("join", 1, t + 15_000)]).toEqual([0, LIMIT_WINDOW_MS - 15_000]);
   });
 
   it("new sessions per IP: over the limit the socket gets rate_limited and is closed", async () => {
     const ip = "198.51.100.7";
     for (let i = 0; i < 3; i++) expect((await new Client(newConn(), ip).open().then((c) => c.hello())).t).toBe("welcome");
     const c = await new Client(newConn(), ip).open();
-    expect(await c.hello()).toMatchObject({ t: "err", code: "rate_limited" });
+    const refused = await c.hello();
+    expect(refused).toMatchObject({ t: "err", code: "rate_limited" });
+    expect(refused.retry_after_ms).toBeGreaterThan(0);
     await until(async () => c.closed, (v) => v);
     expect(c.closed).toBe(true);
     // Another network is unaffected.
@@ -62,7 +67,10 @@ describe("rate limits", () => {
       expect((await c.req({ t: "create", game: "x" })).t).toBe("ok");
       await c.req({ t: "leave" });
     }
-    expect(await c.req({ t: "create", game: "x" })).toMatchObject({ t: "err", code: "rate_limited" });
+    const r = await c.req({ t: "create", game: "x" });
+    expect(r).toMatchObject({ t: "err", code: "rate_limited" });
+    expect(r.retry_after_ms).toBeGreaterThan(0);
+    expect(r.retry_after_ms).toBeLessThanOrEqual(LIMIT_WINDOW_MS);
   });
 
   it("joins per IP", async () => {
