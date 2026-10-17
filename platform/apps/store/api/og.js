@@ -1,8 +1,9 @@
 // Link previews (Discord, Slack, iMessage…) for store pages: the app's own
 // index.html with the page's title, description and cover image as meta tags.
 // Crawlers don't run the app, so without this every link shows "partii store".
-// vercel.json rewrites /games/<game>, /games/<game>/updates and
-// /games/<game>/updates/<version> here; anything that fails serves the plain page.
+// vercel.json sends link-preview crawlers (by user agent) for /games/<game>,
+// /games/<game>/updates and /games/<game>/updates/<version> here; browsers get the
+// static page as always. Anything that fails serves the plain page.
 export const config = { runtime: "edge" };
 
 const API = (process.env.VITE_PARTII_API || "https://api.partii.games").replace(/\/$/, "");

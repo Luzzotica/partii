@@ -1,8 +1,41 @@
 {
   "rewrites": [
-    { "source": "/games/:game/updates/:version", "destination": "/api/og?kind=note&game=:game&version=:version" },
-    { "source": "/games/:game/updates", "destination": "/api/og?kind=updates&game=:game" },
-    { "source": "/games/:game", "destination": "/api/og?kind=game&game=:game" },
-    { "source": "/((?!api/).*)", "destination": "/index.html" }
+    {
+      "source": "/games/:game/updates/:version",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": "(?i).*(bot|crawl|spider|slurp|preview|discord|slack|twitter|facebook|whatsapp|telegram|embed|skype|linkedin|mastodon|iframely|pinterest|vkshare|quora|google|bing|yandex).*"
+        }
+      ],
+      "destination": "/api/og?kind=note&game=:game&version=:version"
+    },
+    {
+      "source": "/games/:game/updates",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": "(?i).*(bot|crawl|spider|slurp|preview|discord|slack|twitter|facebook|whatsapp|telegram|embed|skype|linkedin|mastodon|iframely|pinterest|vkshare|quora|google|bing|yandex).*"
+        }
+      ],
+      "destination": "/api/og?kind=updates&game=:game"
+    },
+    {
+      "source": "/games/:game",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": "(?i).*(bot|crawl|spider|slurp|preview|discord|slack|twitter|facebook|whatsapp|telegram|embed|skype|linkedin|mastodon|iframely|pinterest|vkshare|quora|google|bing|yandex).*"
+        }
+      ],
+      "destination": "/api/og?kind=game&game=:game"
+    },
+    {
+      "source": "/((?!api/).*)",
+      "destination": "/index.html"
+    }
   ]
 }
