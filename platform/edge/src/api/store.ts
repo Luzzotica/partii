@@ -5,9 +5,10 @@ import { files } from "../files";
 // platform runs a fake store (dev).
 
 import type { Env } from "../index";
-import { ApiError, bad, currentPrice, gameView, now, randomSlug, type GameRow } from "./core";
+import { ApiError, bad, currentPrice, gameView, now, randomSlug, signClaims, verifyClaims, type Caller, type GameRow } from "./core";
 import { grant } from "./games";
 import type { Handlers } from "./index";
+import { instructionsFor } from "./instructions";
 import { latestNote } from "./notes";
 import { revokeSteamKeysFor, steamKeyFor } from "./steamkeys";
 import { siteUrl } from "./web";
@@ -49,6 +50,25 @@ export async function recordPurchase(env: Env, p: { player: string | null; game:
   return e;
 }
 
+/** How long a download link works (long enough to start; a started download finishes). */
+const DOWNLOAD_LINK_MS = 15 * 60_000;
+
+/** The current stable build a player may download (owners, or anyone for a game with a demo or no price). */
+async function downloadable(env: Env, caller: Caller, game: string, platform: string) {
+  const g = await env.DB.prepare("SELECT * FROM games WHERE id = ?").bind(game).first<GameRow>();
+  if (!g) throw new ApiError(404, "not_found", `no game ${game}`);
+  const owns = await env.DB.prepare("SELECT 1 FROM entitlements WHERE player_id = ? AND game_id = ? AND revoked_at IS NULL").bind(caller.player!.id, g.id).first();
+  if (!owns && !g.demo && g.price_cents > 0) throw new ApiError(402, "not_owned", "buy the game to download it", "POST /v1/store/games/{game}/checkout");
+  const b = await env.DB.prepare("SELECT r2_key, filename, version, size FROM builds WHERE game_id = ? AND platform = ? AND channel = 'stable' ORDER BY created_at DESC LIMIT 1")
+    .bind(g.id, platform)
+    .first<{ r2_key: string; filename: string; version: string; size: number }>();
+  if (!b) throw new ApiError(404, "not_found", `no ${platform} build yet`);
+  return { g, b };
+}
+
+/** A filename safe for content-disposition. */
+const safeName = (f: string) => f.replace(/[^A-Za-z0-9._+-]/g, "_");
+
 async function verifyStripeSignature(secret: string, header: string, payload: string): Promise<boolean> {
   const parts = Object.fromEntries(header.split(",").map((kv) => kv.split("=") as [string, string]));
   const t = Number(parts.t);
@@ -74,7 +94,7 @@ export const storeHandlers: Handlers = {
       .bind(g.id)
       .all();
     const site = await env.DB.prepare("SELECT 1 FROM web_sites WHERE game_id = ?").bind(g.id).first();
-    return { game: { ...gameView(g), price_now_cents: currentPrice(g), play_url: playUrl(env, g, !!site) }, builds: b.results, latest_note: await latestNote(env, g.id) };
+    return { game: { ...gameView(g), price_now_cents: currentPrice(g), play_url: playUrl(env, g, !!site) }, builds: b.results, latest_note: await latestNote(env, g.id), instructions: await instructionsFor(env, g.id) };
   },
 
   async storeCheckout({ env, caller, params, body }) {
@@ -119,15 +139,38 @@ export const storeHandlers: Handlers = {
   },
 
   async storeDownload({ env, caller, params }) {
-    const g = await env.DB.prepare("SELECT * FROM games WHERE id = ?").bind(params.game).first<GameRow>();
-    if (!g) throw new ApiError(404, "not_found", `no game ${params.game}`);
-    const owns = await env.DB.prepare("SELECT 1 FROM entitlements WHERE player_id = ? AND game_id = ? AND revoked_at IS NULL").bind(caller.player!.id, g.id).first();
-    if (!owns && !g.demo && g.price_cents > 0) throw new ApiError(402, "not_owned", "buy the game to download it", "POST /v1/store/games/{game}/checkout");
-    const b = await env.DB.prepare("SELECT r2_key, filename FROM builds WHERE game_id = ? AND platform = ? AND channel = 'stable' ORDER BY created_at DESC LIMIT 1").bind(g.id, params.platform).first<{ r2_key: string; filename: string }>();
-    if (!b) throw new ApiError(404, "not_found", `no ${params.platform} build yet`);
+    const { b } = await downloadable(env, caller, params.game, params.platform);
     const o = await files(env).get(b.r2_key);
     if (!o) throw new ApiError(404, "not_found", "the build file is missing");
-    return new Response(o.body, { headers: { "content-type": "application/octet-stream", "content-disposition": `attachment; filename="${b.filename}"`, "content-length": String(o.size) } });
+    return new Response(o.body, { headers: { "content-type": "application/octet-stream", "content-disposition": `attachment; filename="${safeName(b.filename)}"`, "content-length": String(o.size) } });
+  },
+
+  async storeDownloadLink({ env, req, caller, params }) {
+    const { g, b } = await downloadable(env, caller, params.game, params.platform);
+    const expires_at = now() + DOWNLOAD_LINK_MS;
+    const ticket = await signClaims(env.KEY_SECRET, "dl", { k: b.r2_key, f: b.filename, g: g.id, p: params.platform, exp: expires_at });
+    return { url: `${new URL(req.url).origin}/v1/store/files/${ticket}`, filename: b.filename, version: b.version, size: b.size, platform: params.platform, expires_at };
+  },
+
+  async storeFile({ env, req, params }) {
+    const t = await verifyClaims<{ k: string; f: string; g: string; p: string; exp: number }>(env.KEY_SECRET, "dl", String(params.ticket ?? ""));
+    if (!t) throw new ApiError(410, "link_expired", "this download link has expired", "start the download again from the game's page");
+    const headers: Record<string, string> = { "content-type": "application/octet-stream", "content-disposition": `attachment; filename="${safeName(t.f)}"`, "accept-ranges": "bytes", "cache-control": "private, no-store" };
+    if (env.FILES) {
+      // Ranges, so a dropped download resumes instead of starting over.
+      const o = await env.FILES.get(t.k, { range: req.headers });
+      if (!o) throw new ApiError(404, "not_found", "the build file is missing");
+      const r = (o as R2ObjectBody & { range?: { offset?: number; length?: number } }).range;
+      if (r && req.headers.has("range")) {
+        const offset = r.offset ?? 0;
+        const length = r.length ?? o.size - offset;
+        return new Response(o.body, { status: 206, headers: { ...headers, "content-length": String(length), "content-range": `bytes ${offset}-${offset + length - 1}/${o.size}` } });
+      }
+      return new Response(o.body, { headers: { ...headers, "content-length": String(o.size) } });
+    }
+    const o = await files(env).get(t.k);
+    if (!o) throw new ApiError(404, "not_found", "the build file is missing");
+    return new Response(o.body, { headers: { ...headers, "content-length": String(o.size) } });
   },
 
   async testPurchase({ env, caller, body }) {

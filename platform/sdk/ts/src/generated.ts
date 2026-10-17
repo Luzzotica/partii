@@ -237,6 +237,8 @@ export function operations(t: Transport) {
     steamKeysList: (game: string, query: { status?: string | number } = {}) => t.call("GET", `/v1/games/${encodeURIComponent(game)}/steam-keys`, "developer", query, undefined, "json"),
     /** Take unassigned keys out of the pool (keys a player already has stay). (developer) */
     steamKeysRemove: (game: string, body: Record<string, unknown> = {}) => t.call("POST", `/v1/games/${encodeURIComponent(game)}/steam-keys/remove`, "developer", {}, body, "json"),
+    /** Set how to install and play the game on one platform (markdown, shown on the store right after a download starts). {{title}} and {{file}} become the game's title and the download's file name. reset: true goes back to partii's default. (developer) */
+    instructionsSet: (game: string, body: Record<string, unknown> = {}) => t.call("PUT", `/v1/games/${encodeURIComponent(game)}/instructions`, "developer", {}, body, "json"),
     /** Every published game. play_url is where to play it in the browser: the site (https://<game>.partii.games) of a game whose platforms include web. (public) */
     storeGames: () => t.call("GET", `/v1/store/games`, "public", {}, undefined, "json"),
     /** A published game's store page, with its stable builds; play_url as in storeGames. (public) */
@@ -251,6 +253,12 @@ export function operations(t: Transport) {
     storeNote: (game: string, version: string) => t.call("GET", `/v1/store/games/${encodeURIComponent(game)}/notes/${encodeURIComponent(version)}`, "public", {}, undefined, "json"),
     /** The player's Steam key for the game, {key, activate_url, assigned_at, revoked}: the one they have, or the next free one when they own the game through partii (a purchase, grant or code) and the developer has loaded keys. 404 no_steam_key otherwise. activate_url opens Steam's activation page with the key filled in. (player) */
     storeSteamKey: (game: string) => t.call("GET", `/v1/store/games/${encodeURIComponent(game)}/steam-key`, "player", {}, undefined, "json"),
+    /** A link to download the current build (same rules as storeDownload) that a browser can open directly: {url, filename, version, size, platform, expires_at}. The url works for 15 minutes without auth, names the file, and resumes (Range). (player) */
+    storeDownloadLink: (game: string, platform: string) => t.call("GET", `/v1/store/games/${encodeURIComponent(game)}/download/${encodeURIComponent(platform)}/link`, "player", {}, undefined, "json"),
+    /** The file behind a download link (storeDownloadLink); 410 link_expired after 15 minutes. (public) */
+    storeFile: (ticket: string) => t.call("GET", `/v1/store/files/${encodeURIComponent(ticket)}`, "public", {}, undefined, "binary"),
+    /** How to install and play, per platform (windows, macos, linux, android): {markdown, custom}. custom false means partii's default. {{title}} and {{file}} in the markdown stand for the game's title and the downloaded file's name. Also on storeGame as instructions. (public) */
+    instructionsList: (game: string) => t.call("GET", `/v1/store/games/${encodeURIComponent(game)}/instructions`, "public", {}, undefined, "json"),
     /** The player's games. (player) */
     storeLibrary: () => t.call("GET", `/v1/store/library`, "player", {}, undefined, "json"),
   };

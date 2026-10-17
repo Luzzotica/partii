@@ -20,6 +20,7 @@ import { analyticsHandlers, reportPlatformError } from "./analytics";
 import { leaderboardHandlers } from "./leaderboards";
 import { notesHandlers } from "./notes";
 import { steamKeyHandlers } from "./steamkeys";
+import { instructionHandlers } from "./instructions";
 import { adminHandlers } from "./admin";
 
 export interface Ctx {
@@ -53,6 +54,7 @@ export const HANDLERS: Handlers = {
   ...leaderboardHandlers,
   ...notesHandlers,
   ...steamKeyHandlers,
+  ...instructionHandlers,
   ...adminHandlers,
 };
 

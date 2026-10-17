@@ -302,6 +302,20 @@ Uploads go straight to storage: the CLI gets a signed URL (`buildsUploadStart`),
 
 Body fields are also flags: `--price-cents 500` and `--field price_cents=500` are the same; use `--field` for JSON values (lists, objects, `null`).
 
+### Downloads and how to install
+
+The store detects the visitor's computer and shows one big **Download for <platform>** button (with version and size), and puts the other platforms under "Other platforms". Clicking starts a normal browser download with the build's file name (`partii store download-link` makes the same 15-minute link). The page then shows how to install and play on that platform.
+
+Every game starts with partii's instructions for Windows, macOS, Linux (including Steam Deck) and Android. Set your own where your build differs:
+
+```sh
+partii instructions set mygame --platform windows --markdown @install-windows.md   # {{title}} and {{file}} are filled in
+partii instructions list mygame                                                    # every platform: yours (custom) or the default
+partii instructions set mygame --platform windows --reset true                      # back to partii's default
+```
+
+Name build files with their extension (`mygame-1.2.0-windows.zip`): that's the name the player's browser saves.
+
 ### Steam keys for partii buyers
 
 If the game is also on Steam, people who buy it on partii can get it on Steam too. Request keys in Steamworks (Users & Permissions › Request Steam Product Keys), then load them:

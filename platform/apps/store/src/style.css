@@ -1028,3 +1028,48 @@ footer .spacer {
   margin-top: 8px;
   flex-wrap: wrap;
 }
+
+/* ── Downloads and install steps ── */
+.downloads button.big {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 14px 22px;
+  font-size: 1.1em;
+}
+.downloads button.big small {
+  font-weight: 400;
+  opacity: 0.85;
+  font-size: 0.8em;
+}
+.downloads .other-platforms {
+  margin: 10px 0;
+}
+.downloads .other-platforms summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+.downloads .other-platforms button,
+.downloads .row button {
+  margin: 8px 8px 0 0;
+}
+button.link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
+}
+.install {
+  margin: 14px 0;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+}
+.install h3 {
+  margin-top: 4px;
+}

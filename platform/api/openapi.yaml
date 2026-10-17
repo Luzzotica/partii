@@ -1213,6 +1213,16 @@ paths:
       requestBody: { content: { application/json: { schema: { type: object, required: [keys], properties: { keys: { type: string } } } } } }
       responses: { "200": { description: "{removed, not_removed, available}" } }
 
+  /v1/games/{game}/instructions:
+    put:
+      operationId: instructionsSet
+      summary: "Set how to install and play the game on one platform (markdown, shown on the store right after a download starts). {{title}} and {{file}} become the game's title and the download's file name. reset: true goes back to partii's default."
+      x-auth: developer
+      x-cli: instructions set
+      parameters: [{ name: game, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [platform], properties: { platform: { type: string, description: "windows, macos, linux or android" }, markdown: { type: string, description: "In the CLI, --markdown @windows.md reads a file." }, reset: { type: boolean } } } } } }
+      responses: { "200": { description: "{platform, custom, markdown}" } }
+
   /v1/store/games:
     get:
       operationId: storeGames
@@ -1277,6 +1287,32 @@ paths:
       x-cli: store steam-key
       parameters: [{ name: game, in: path, required: true, schema: { type: string } }]
       responses: { "200": { description: "{steam_key}" } }
+  /v1/store/games/{game}/download/{platform}/link:
+    get:
+      operationId: storeDownloadLink
+      summary: "A link to download the current build (same rules as storeDownload) that a browser can open directly: {url, filename, version, size, platform, expires_at}. The url works for 15 minutes without auth, names the file, and resumes (Range)."
+      x-auth: player
+      x-cli: store download-link
+      parameters:
+        - { name: game, in: path, required: true, schema: { type: string } }
+        - { name: platform, in: path, required: true, schema: { type: string } }
+      responses: { "200": { description: "{url, filename, version, size, platform, expires_at}" } }
+  /v1/store/files/{ticket}:
+    get:
+      operationId: storeFile
+      summary: The file behind a download link (storeDownloadLink); 410 link_expired after 15 minutes.
+      x-auth: public
+      x-response: binary
+      parameters: [{ name: ticket, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: "the build" } }
+  /v1/store/games/{game}/instructions:
+    get:
+      operationId: instructionsList
+      summary: "How to install and play, per platform (windows, macos, linux, android): {markdown, custom}. custom false means partii's default. {{title}} and {{file}} in the markdown stand for the game's title and the downloaded file's name. Also on storeGame as instructions."
+      x-auth: public
+      x-cli: instructions list
+      parameters: [{ name: game, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: "{instructions, placeholders}" } }
   /v1/store/library:
     get:
       operationId: storeLibrary

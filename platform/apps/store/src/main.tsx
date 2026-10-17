@@ -152,6 +152,129 @@ function AllGames({ go, games }: { go: (to: string) => void; games: Game[] | nul
 
 const PLATFORM_NAMES: Record<string, string> = { macos: "Mac", windows: "Windows", linux: "Linux", ios: "iPhone & iPad", android: "Android", web: "Browser" };
 
+/** The visitor's platform, for the one big download button. */
+function detectPlatform(): string | null {
+  const ua = navigator.userAgent;
+  const hint = ((navigator as unknown as { userAgentData?: { platform?: string } }).userAgentData?.platform ?? "").toLowerCase();
+  if (/android/i.test(ua) || hint === "android") return "android";
+  if (/iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) return "ios";
+  if (/Windows/.test(ua) || hint === "windows") return "windows";
+  if (/Mac OS X|Macintosh/.test(ua) || hint === "macos") return "macos";
+  if (/Linux|X11|CrOS/.test(ua) || hint === "linux" || hint === "chrome os") return "linux";
+  return null;
+}
+
+const mb = (bytes: number) => (bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(bytes / 1e6))} MB`);
+
+type Build = { platform: string; version: string; size: number };
+type Instructions = Record<string, { markdown: string; custom: boolean }>;
+
+/** One big button for the visitor's platform, the rest under "Other platforms", and how to install once it starts. */
+function Downloads({ g, builds, instructions }: { g: Game; builds: Build[]; instructions?: Instructions }) {
+  const [mine] = useState(detectPlatform);
+  const [started, setStarted] = useState<{ platform: string; filename: string; url: string } | null>(null);
+  const [help, setHelp] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const primary = builds.find((b) => b.platform === mine) ?? null;
+  const others = builds.filter((b) => b !== primary);
+  const start = async (b: Build) => {
+    setErr(null);
+    track("download", { game: g.id, platform: b.platform, detected: mine ?? "unknown" });
+    try {
+      const l = await api.storeDownloadLink(g.id, b.platform);
+      const a = document.createElement("a");
+      a.href = l.url;
+      a.download = l.filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setStarted({ platform: b.platform, filename: l.filename, url: l.url });
+      setHelp(b.platform);
+    } catch (e) {
+      failed("download", g.id, e);
+      setErr(e instanceof PartiiError ? e.message : String(e));
+    }
+  };
+  const label = (b: Build) => `Download for ${PLATFORM_NAMES[b.platform] ?? b.platform}`;
+  const meta = (b: Build) => `${b.version} · ${mb(b.size)}`;
+  const steps = help ? instructions?.[help] : undefined;
+  const file = started?.platform === help ? started.filename : `the downloaded file`;
+  return (
+    <div className="downloads" data-testid="downloads">
+      {primary ? (
+        <button className="big" onClick={() => start(primary)} data-testid="download-primary">
+          {label(primary)}
+          <small>{meta(primary)}</small>
+        </button>
+      ) : (
+        mine && (
+          <p className="muted" data-testid="no-build-for-you">
+            {mine === "ios" ? "There's no iPhone or iPad download here" : `${g.title} isn't available for ${PLATFORM_NAMES[mine] ?? mine} yet`}
+            {others.length ? "; downloads for other computers:" : "."}
+          </p>
+        )
+      )}
+      {others.length > 0 &&
+        (primary ? (
+          <details className="other-platforms">
+            <summary>Other platforms</summary>
+            {others.map((b) => (
+              <button key={b.platform} className="secondary" onClick={() => start(b)}>
+                {label(b)} <span className="muted">· {meta(b)}</span>
+              </button>
+            ))}
+          </details>
+        ) : (
+          <div className="row">
+            {others.map((b) => (
+              <button key={b.platform} className="secondary" onClick={() => start(b)}>
+                {label(b)} <span className="muted">· {meta(b)}</span>
+              </button>
+            ))}
+          </div>
+        ))}
+      {err && <p className="note">{err}</p>}
+      {!help && (primary || builds.length > 0) && instructions && (
+        <button className="link" onClick={() => setHelp(primary?.platform ?? builds[0].platform)} data-testid="how-to-install">
+          How to install and play
+        </button>
+      )}
+      {help && steps && (
+        <section className="install" data-testid="install">
+          {started?.platform === help ? (
+            <p>
+              <strong>Your download is starting:</strong> {started.filename}.{" "}
+              <a href={started.url} download={started.filename}>
+                Didn't start?
+              </a>
+            </p>
+          ) : null}
+          <h3>How to install and play on {PLATFORM_NAMES[help] ?? help}</h3>
+          <Markdown text={steps.markdown.replaceAll("{{title}}", g.title).replaceAll("{{file}}", file)} className="policy notes" />
+          {builds.length > 1 && (
+            <p className="muted">
+              Other computer:{" "}
+              {builds
+                .filter((b) => b.platform !== help)
+                .map((b, i) => (
+                  <span key={b.platform}>
+                    {i ? " · " : ""}
+                    <button className="link" onClick={() => setHelp(b.platform)}>
+                      {PLATFORM_NAMES[b.platform] ?? b.platform}
+                    </button>
+                  </span>
+                ))}
+            </p>
+          )}
+          <button className="link" onClick={() => setHelp(null)}>
+            Hide
+          </button>
+        </section>
+      )}
+    </div>
+  );
+}
+
 /** A step that failed for the visitor: an event, and an error report when the API never answered (the API reports its own). */
 function failed(step: string, game: string, e: unknown) {
   const code = e instanceof PartiiError ? e.code : "network";
@@ -291,7 +414,7 @@ function SteamKeyBox({ k, game }: { k: SteamKey; game: string }) {
 }
 
 function GamePage({ id, owned, refresh, go }: { id: string; owned: Set<string>; refresh: () => Promise<void>; go: (to: string) => void }) {
-  const [data, setData] = useState<{ game: Game; builds: { platform: string; version: string; size: number }[]; latest_note?: NoteSummary | null } | null>(null);
+  const [data, setData] = useState<{ game: Game; builds: Build[]; latest_note?: NoteSummary | null; instructions?: Instructions } | null>(null);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [steamKey, setSteamKey] = useState<SteamKey | null>(null);
@@ -326,19 +449,6 @@ function GamePage({ id, owned, refresh, go }: { id: string; owned: Set<string>; 
       setBusy(false);
     }
   };
-  const download = async (platform: string) => {
-    track("download", { game: g.id, platform });
-    try {
-      const blob: Blob = await api.storeDownload(g.id, platform);
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = `${g.id}-${platform}`;
-      a.click();
-    } catch (e) {
-      failed("download", g.id, e);
-      setNote(e instanceof PartiiError ? e.message : String(e));
-    }
-  };
   return (
     <article className="game">
       <Cover g={g} />
@@ -367,15 +477,7 @@ function GamePage({ id, owned, refresh, go }: { id: string; owned: Set<string>; 
           )}
         </div>
         {own && steamKey && <SteamKeyBox k={steamKey} game={g.id} />}
-        {(own || g.demo || g.price_cents === 0) && data.builds.length > 0 && (
-          <div className="downloads">
-            {data.builds.map((b) => (
-              <button key={b.platform} className="secondary" onClick={() => download(b.platform)}>
-                Download for {PLATFORM_NAMES[b.platform] ?? b.platform}
-              </button>
-            ))}
-          </div>
-        )}
+        {(own || g.demo || g.price_cents === 0) && data.builds.length > 0 && <Downloads g={g} builds={data.builds} instructions={data.instructions} />}
         {data.latest_note && (
           <p className="latest-note" data-testid="latest-note">
             Latest update:{" "}

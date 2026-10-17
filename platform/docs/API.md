@@ -136,6 +136,7 @@ Auth (`x-auth`):
 | `steamKeysAdd` | `POST /v1/games/{game}/steam-keys` | developer | `partii steam-keys add` |
 | `steamKeysList` | `GET /v1/games/{game}/steam-keys` | developer | `partii steam-keys list` |
 | `steamKeysRemove` | `POST /v1/games/{game}/steam-keys/remove` | developer | `partii steam-keys remove` |
+| `instructionsSet` | `PUT /v1/games/{game}/instructions` | developer | `partii instructions set` |
 | `storeGames` | `GET /v1/store/games` | public | `partii store list` |
 | `storeGame` | `GET /v1/store/games/{game}` | public | `partii store get` |
 | `storeCheckout` | `POST /v1/store/games/{game}/checkout` | player | `partii store checkout` |
@@ -143,6 +144,9 @@ Auth (`x-auth`):
 | `storeNotes` | `GET /v1/store/games/{game}/notes` | public | `partii notes list` |
 | `storeNote` | `GET /v1/store/games/{game}/notes/{version}` | public | `partii notes get` |
 | `storeSteamKey` | `GET /v1/store/games/{game}/steam-key` | player | `partii store steam-key` |
+| `storeDownloadLink` | `GET /v1/store/games/{game}/download/{platform}/link` | player | `partii store download-link` |
+| `storeFile` | `GET /v1/store/files/{ticket}` | public | – |
+| `instructionsList` | `GET /v1/store/games/{game}/instructions` | public | `partii instructions list` |
 | `storeLibrary` | `GET /v1/store/library` | player | `partii store library` |
 | `webhookStripe` | `POST /v1/webhooks/stripe` | stripe | – |
 
@@ -1311,6 +1315,17 @@ Parameters:
 
 Body fields: `keys` (required)
 
+### instructionsSet
+
+`PUT /v1/games/{game}/instructions` (auth: developer) · `partii instructions set`
+
+Set how to install and play the game on one platform (markdown, shown on the store right after a download starts). {{title}} and {{file}} become the game's title and the download's file name. reset: true goes back to partii's default.
+
+Parameters:
+- `game` (path, required)
+
+Body fields: `platform` (required), `markdown`, `reset`
+
 ### storeGames
 
 `GET /v1/store/games` (auth: public) · `partii store list`
@@ -1373,6 +1388,34 @@ Parameters:
 `GET /v1/store/games/{game}/steam-key` (auth: player) · `partii store steam-key`
 
 The player's Steam key for the game, {key, activate_url, assigned_at, revoked}: the one they have, or the next free one when they own the game through partii (a purchase, grant or code) and the developer has loaded keys. 404 no_steam_key otherwise. activate_url opens Steam's activation page with the key filled in.
+
+Parameters:
+- `game` (path, required)
+
+### storeDownloadLink
+
+`GET /v1/store/games/{game}/download/{platform}/link` (auth: player) · `partii store download-link`
+
+A link to download the current build (same rules as storeDownload) that a browser can open directly: {url, filename, version, size, platform, expires_at}. The url works for 15 minutes without auth, names the file, and resumes (Range).
+
+Parameters:
+- `game` (path, required)
+- `platform` (path, required)
+
+### storeFile
+
+`GET /v1/store/files/{ticket}` (auth: public)
+
+The file behind a download link (storeDownloadLink); 410 link_expired after 15 minutes.
+
+Parameters:
+- `ticket` (path, required)
+
+### instructionsList
+
+`GET /v1/store/games/{game}/instructions` (auth: public) · `partii instructions list`
+
+How to install and play, per platform (windows, macos, linux, android): {markdown, custom}. custom false means partii's default. {{title}} and {{file}} in the markdown stand for the game's title and the downloaded file's name. Also on storeGame as instructions.
 
 Parameters:
 - `game` (path, required)
