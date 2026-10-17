@@ -61,7 +61,7 @@
       // The workers.dev host stays on: shipped games use it.
       "workers_dev": true,
       "routes": [{ "pattern": "api.partii.games", "custom_domain": true }, { "pattern": "*.partii.games/*", "zone_name": "partii.games" }],
-      "vars": { "PARTII_ENV": "production", "RATE_LIMITS": "on", "TURN_MODE": "cloudflare", "EMAIL_MODE": "resend", "STORE_URL": "https://partii.games", "R2_BUCKET": "partii-prod-files", "UGC": "on", "WEB_DOMAIN": ".partii.games", "APPLE_CLIENT_IDS": "me.sterlinglong.tankii" },
+      "vars": { "PARTII_ENV": "production", "RATE_LIMITS": "on", "TURN_MODE": "cloudflare", "EMAIL_MODE": "resend", "STORE_URL": "https://partii.games", "R2_BUCKET": "partii-prod-files", "UGC": "on", "UGC_SIGNIN": "on", "WEB_DOMAIN": ".partii.games", "APPLE_CLIENT_IDS": "me.sterlinglong.tankii" },
       "version_metadata": { "binding": "CF_VERSION_METADATA" },
       "durable_objects": {
         "bindings": [
