@@ -96,6 +96,8 @@ export const storeHandlers: Handlers = {
       "metadata[game]": g.id,
       "payment_intent_data[metadata][player]": caller.player!.id,
       "payment_intent_data[metadata][game]": g.id,
+      // Stripe promotion codes (giveaways, press, the owner's own tests); a 100%-off one completes with no payment.
+      allow_promotion_codes: "true",
     });
     return { url: s.url, session: s.id, completed: false };
   },
@@ -159,7 +161,8 @@ export const storeHandlers: Handlers = {
     }
     const ev = JSON.parse(payload) as { type: string; data: { object: Record<string, any> } };
     const o = ev.data.object;
-    if (ev.type === "checkout.session.completed" && o.payment_status === "paid" && o.metadata?.game) {
+    // "no_payment_required": a promotion code took the price to zero.
+    if (ev.type === "checkout.session.completed" && (o.payment_status === "paid" || o.payment_status === "no_payment_required") && o.metadata?.game) {
       await recordPurchase(env, { player: o.metadata.player ?? null, game: o.metadata.game, store: "stripe", ref: o.payment_intent ?? o.id, amount: o.amount_total ?? 0, currency: o.currency ?? "usd", test: !o.livemode });
     } else if (ev.type === "payment_intent.succeeded" && o.metadata?.game) {
       await recordPurchase(env, { player: o.metadata.player ?? null, game: o.metadata.game, store: "stripe", ref: o.id, amount: o.amount ?? 0, currency: o.currency ?? "usd", test: !o.livemode });

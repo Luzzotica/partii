@@ -404,6 +404,20 @@ describe("stripe webhooks", () => {
     await api("POST", "/v1/webhooks/stripe", { raw: refund, headers: { "stripe-signature": await sign(refund, (env as any).STRIPE_WEBHOOK_SECRET) } });
     expect((await api("GET", `/v1/players/me/entitlements?game=${game}`, { key, player: me.token })).json.entitlements).toHaveLength(0);
   });
+
+  it("a 100%-off promotion code (no_payment_required) grants the game; an unpaid session doesn't", async () => {
+    const { key, game } = await setup();
+    const send = async (o: Record<string, unknown>) => {
+      const ev = JSON.stringify({ type: "checkout.session.completed", data: { object: { amount_total: 0, currency: "usd", livemode: false, payment_intent: null, ...o } } });
+      await api("POST", "/v1/webhooks/stripe", { raw: ev, headers: { "stripe-signature": await sign(ev, (env as any).STRIPE_WEBHOOK_SECRET) } });
+    };
+    const unpaid = await guest(key);
+    await send({ id: `cs_u${Date.now()}`, payment_status: "unpaid", metadata: { player: unpaid.player.id, game } });
+    expect((await api("GET", `/v1/players/me/entitlements?game=${game}`, { key, player: unpaid.token })).json.entitlements).toHaveLength(0);
+    const free = await guest(key);
+    await send({ id: `cs_f${Date.now()}`, payment_status: "no_payment_required", metadata: { player: free.player.id, game } });
+    expect((await api("GET", `/v1/players/me/entitlements?game=${game}`, { key, player: free.token })).json.entitlements).toHaveLength(1);
+  });
 });
 
 describe("ID tokens", () => {
