@@ -131,10 +131,14 @@ Auth (`x-auth`):
 | `steamOpenidStart` | `POST /v1/players/steam/openid/start` | key | `partii player steam-start` |
 | `steamOpenidPoll` | `POST /v1/players/steam/openid/poll` | key | `partii player steam-poll` |
 | `steamOpenidReturn` | `GET /v1/players/steam/openid/return` | public | – |
+| `notesPut` | `PUT /v1/games/{game}/notes/{version}` | developer | `partii notes publish` |
+| `notesDelete` | `DELETE /v1/games/{game}/notes/{version}` | developer | `partii notes delete` |
 | `storeGames` | `GET /v1/store/games` | public | `partii store list` |
 | `storeGame` | `GET /v1/store/games/{game}` | public | `partii store get` |
 | `storeCheckout` | `POST /v1/store/games/{game}/checkout` | player | `partii store checkout` |
 | `storeDownload` | `GET /v1/store/games/{game}/download/{platform}` | player | `partii store download` |
+| `storeNotes` | `GET /v1/store/games/{game}/notes` | public | `partii notes list` |
+| `storeNote` | `GET /v1/store/games/{game}/notes/{version}` | public | `partii notes get` |
 | `storeLibrary` | `GET /v1/store/library` | player | `partii store library` |
 | `webhookStripe` | `POST /v1/webhooks/stripe` | stripe | – |
 
@@ -1249,6 +1253,28 @@ Where Steam sends the browser back (a page that says to return to the game).
 Parameters:
 - `state` (query, required)
 
+### notesPut
+
+`PUT /v1/games/{game}/notes/{version}` (auth: developer) · `partii notes publish`
+
+Publish a version's patch notes (markdown; idempotent: publishing the version again updates it). Returns url, the public store page (https://partii.games/games/<game>/updates/<version>), and index_url. title defaults to "<Game> <version>"; date (YYYY-MM-DD) defaults to the first publish.
+
+Parameters:
+- `game` (path, required)
+- `version` (path, required)
+
+Body fields: `markdown` (required), `title`, `date`
+
+### notesDelete
+
+`DELETE /v1/games/{game}/notes/{version}` (auth: developer) · `partii notes delete`
+
+Take a version's patch notes down.
+
+Parameters:
+- `game` (path, required)
+- `version` (path, required)
+
 ### storeGames
 
 `GET /v1/store/games` (auth: public) · `partii store list`
@@ -1284,6 +1310,27 @@ Download the current build for a platform (owners, or anyone when the game has a
 Parameters:
 - `game` (path, required)
 - `platform` (path, required)
+
+### storeNotes
+
+`GET /v1/store/games/{game}/notes` (auth: public) · `partii notes list`
+
+A published game's patch notes, newest first: version, title, excerpt, published_at and url (the store page). Pass next_before as before for older ones.
+
+Parameters:
+- `game` (path, required)
+- `limit` (query)
+- `before` (query)
+
+### storeNote
+
+`GET /v1/store/games/{game}/notes/{version}` (auth: public) · `partii notes get`
+
+One version's patch notes, with the markdown.
+
+Parameters:
+- `game` (path, required)
+- `version` (path, required)
 
 ### storeLibrary
 

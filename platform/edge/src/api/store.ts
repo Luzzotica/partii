@@ -8,6 +8,7 @@ import type { Env } from "../index";
 import { ApiError, bad, currentPrice, gameView, now, randomSlug, type GameRow } from "./core";
 import { grant } from "./games";
 import type { Handlers } from "./index";
+import { latestNote } from "./notes";
 import { siteUrl } from "./web";
 import { recordPlatformEvent } from "./analytics";
 
@@ -68,7 +69,7 @@ export const storeHandlers: Handlers = {
       .bind(g.id)
       .all();
     const site = await env.DB.prepare("SELECT 1 FROM web_sites WHERE game_id = ?").bind(g.id).first();
-    return { game: { ...gameView(g), price_now_cents: currentPrice(g), play_url: playUrl(env, g, !!site) }, builds: b.results };
+    return { game: { ...gameView(g), price_now_cents: currentPrice(g), play_url: playUrl(env, g, !!site) }, builds: b.results, latest_note: await latestNote(env, g.id) };
   },
 
   async storeCheckout({ env, caller, params, body }) {

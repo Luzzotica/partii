@@ -18,6 +18,7 @@ import { themeHandlers } from "./theme";
 import { webHandlers } from "./web";
 import { analyticsHandlers, reportPlatformError } from "./analytics";
 import { leaderboardHandlers } from "./leaderboards";
+import { notesHandlers } from "./notes";
 import { adminHandlers } from "./admin";
 
 export interface Ctx {
@@ -49,6 +50,7 @@ export const HANDLERS: Handlers = {
   ...webHandlers,
   ...analyticsHandlers,
   ...leaderboardHandlers,
+  ...notesHandlers,
   ...adminHandlers,
 };
 

@@ -9,6 +9,7 @@ import privacyText from "../../../docs/PRIVACY.md?raw";
 import { AdminPage } from "./admin";
 import { DevDashboard } from "./dev";
 import { Developers, GameCard, Home, LINKS } from "./home";
+import { Markdown } from "./markdown";
 import { deviceId, reportError, startTracking, track } from "./track";
 import "./style.css";
 
@@ -151,8 +152,108 @@ function failed(step: string, game: string, e: unknown) {
   if (!(e instanceof PartiiError)) reportError(`${step} failed: ${e instanceof Error ? e.message : String(e)}`, { context: { step, game } });
 }
 
-function GamePage({ id, owned, refresh }: { id: string; owned: Set<string>; refresh: () => Promise<void> }) {
-  const [data, setData] = useState<{ game: Game; builds: { platform: string; version: string; size: number }[] } | null>(null);
+interface NoteSummary {
+  version: string;
+  title: string;
+  excerpt: string;
+  published_at: number;
+  url: string;
+}
+
+const day = (t: number) => new Date(t).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" });
+
+/** A link inside the app (the store's own pages). */
+function Go({ to, go, children, className }: { to: string; go: (to: string) => void; children: React.ReactNode; className?: string }) {
+  return (
+    <a href={to} className={className} onClick={(e) => (e.preventDefault(), go(to))}>
+      {children}
+    </a>
+  );
+}
+
+/** A game's patch notes, newest first. */
+function Updates({ id, go }: { id: string; go: (to: string) => void }) {
+  const [title, setTitle] = useState("");
+  const [notes, setNotes] = useState<NoteSummary[] | null>(null);
+  const [before, setBefore] = useState<number | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const load = (b?: number) =>
+    api.storeNotes(id, b ? { before: b } : {}).then(
+      (r) => {
+        setTitle(r.game.title);
+        setNotes((old) => [...(b ? old ?? [] : []), ...r.notes]);
+        setBefore(r.next_before);
+      },
+      () => setNote("This game is not on the store."),
+    );
+  useEffect(() => {
+    load();
+  }, [id]);
+  useEffect(() => {
+    if (title) document.title = `${title} updates · partii`;
+  }, [title]);
+  if (!notes) return <p className="muted">{note ?? "Loading…"}</p>;
+  return (
+    <section className="updates" data-testid="updates">
+      <p>
+        <Go to={`/games/${id}`} go={go}>
+          ← {title}
+        </Go>
+      </p>
+      <h1>{title} updates</h1>
+      {!notes.length && <p className="muted">No updates posted yet.</p>}
+      {notes.map((n) => (
+        <Go key={n.version} to={`/games/${id}/updates/${encodeURIComponent(n.version)}`} go={go} className="card update">
+          <h3>{n.title}</h3>
+          <p className="muted">
+            {n.version} · {day(n.published_at)}
+          </p>
+          {n.excerpt && <p>{n.excerpt}</p>}
+        </Go>
+      ))}
+      {before && (
+        <button className="secondary" onClick={() => load(before)}>
+          Older updates
+        </button>
+      )}
+    </section>
+  );
+}
+
+/** One version's patch notes. */
+function Update({ id, version, go }: { id: string; version: string; go: (to: string) => void }) {
+  const [data, setData] = useState<{ game: { id: string; title: string }; note: NoteSummary & { markdown: string } } | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  useEffect(() => {
+    api.storeNote(id, version).then(
+      (d) => (setData(d), (document.title = `${d.note.title} · partii`)),
+      () => setNote("No notes for this version."),
+    );
+  }, [id, version]);
+  if (!data) return <p className="muted">{note ?? "Loading…"}</p>;
+  return (
+    <section className="updates" data-testid="update">
+      <p>
+        <Go to={`/games/${id}/updates`} go={go}>
+          ← All {data.game.title} updates
+        </Go>
+      </p>
+      <h1>{data.note.title}</h1>
+      <p className="muted">
+        {data.game.title} {data.note.version} · {day(data.note.published_at)}
+      </p>
+      <Markdown text={data.note.markdown} className="policy notes" />
+      <p>
+        <Go to={`/games/${id}`} className="button" go={go}>
+          Get {data.game.title}
+        </Go>
+      </p>
+    </section>
+  );
+}
+
+function GamePage({ id, owned, refresh, go }: { id: string; owned: Set<string>; refresh: () => Promise<void>; go: (to: string) => void }) {
+  const [data, setData] = useState<{ game: Game; builds: { platform: string; version: string; size: number }[]; latest_note?: NoteSummary | null } | null>(null);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   useEffect(() => {
@@ -231,6 +332,18 @@ function GamePage({ id, owned, refresh }: { id: string; owned: Set<string>; refr
               </button>
             ))}
           </div>
+        )}
+        {data.latest_note && (
+          <p className="latest-note" data-testid="latest-note">
+            Latest update:{" "}
+            <Go to={`/games/${g.id}/updates/${encodeURIComponent(data.latest_note.version)}`} go={go}>
+              {data.latest_note.title}
+            </Go>{" "}
+            <span className="muted">· {day(data.latest_note.published_at)} ·</span>{" "}
+            <Go to={`/games/${g.id}/updates`} go={go}>
+              All updates
+            </Go>
+          </p>
         )}
         {g.store?.appstore_url && <a href={g.store.appstore_url}>App Store</a>} {g.store?.play_url && <a href={g.store.play_url}>Google Play</a>}
         {note && <p className="note" data-testid="note">{note}</p>}
@@ -311,21 +424,6 @@ function SignIn({ onDone, signup }: { onDone: (token: string, p: Player) => void
 /** Where takedown requests and appeals go. */
 const CONTACT = import.meta.env.VITE_CONTENT_CONTACT ?? "support@sterlinglong.me";
 
-/** Enough Markdown for the policy: headings, paragraphs, lists, **bold**. */
-function Markdown({ text }: { text: string }) {
-  const inline = (s: string) => s.split(/(\*\*[^*]+\*\*)/).map((p, i) => (p.startsWith("**") ? <strong key={i}>{p.slice(2, -2)}</strong> : p));
-  const out: JSX.Element[] = [];
-  for (const [i, block] of text.trim().split(/\n\s*\n/).entries()) {
-    const lines = block.split("\n");
-    if (block.startsWith("# ")) out.push(<h1 key={i}>{inline(block.slice(2))}</h1>);
-    else if (block.startsWith("## ")) out.push(<h2 key={i}>{inline(block.slice(3))}</h2>);
-    else if (/^\d+\. /.test(block)) out.push(<ol key={i}>{lines.map((l, j) => <li key={j}>{inline(l.replace(/^\d+\. /, ""))}</li>)}</ol>);
-    else if (block.startsWith("- ")) out.push(<ul key={i}>{lines.map((l, j) => <li key={j}>{inline(l.slice(2))}</li>)}</ul>);
-    else out.push(<p key={i}>{inline(block)}</p>);
-  }
-  return <article className="policy">{out}</article>;
-}
-
 function ContentPolicy() {
   return <Markdown text={policyText.replaceAll("{{CONTACT}}", CONTACT)} />;
 }
@@ -347,7 +445,10 @@ function App() {
   const member = !!player && player.providers.includes("email");
   let page;
   const m = /^\/games\/([a-z0-9-]+)/.exec(path);
-  if (m) page = <GamePage id={m[1]} owned={owned} refresh={refresh} />;
+  const u = /^\/games\/([a-z0-9-]+)\/updates(?:\/([^/]+))?\/?$/.exec(path);
+  if (u?.[2]) page = <Update id={u[1]} version={decodeURIComponent(u[2])} go={go} />;
+  else if (u) page = <Updates id={u[1]} go={go} />;
+  else if (m) page = <GamePage id={m[1]} owned={owned} refresh={refresh} go={go} />;
   else if (path.startsWith("/games")) page = <AllGames go={go} games={games} />;
   else if (path.startsWith("/library")) page = <Library go={go} />;
   else if (path.startsWith("/signup")) page = <SignIn onDone={signedIn} signup />;

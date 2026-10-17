@@ -2,7 +2,8 @@
 //! table (api/openapi.yaml): `partii games price tankii --price-cents 499`.
 //! Path parameters are positional; query parameters and body fields are
 //! flags (kebab-case, typed from the spec); `--body` takes a whole JSON body
-//! (or `@file.json`); `--file` uploads bytes; `--out` saves a download.
+//! (or `@file.json`); a string flag's `@path` reads that file (`@@` for a literal @);
+//! `--file` uploads bytes; `--out` saves a download.
 
 use crate::out::{print, CliError};
 use clap::{Arg, ArgAction, ArgMatches, Command};
@@ -94,7 +95,12 @@ fn typed(ty: &str, v: &str) -> Result<Value, String> {
         "integer" => v.parse::<i64>().map(Value::from).map_err(|_| format!("{v} is not a whole number")),
         "number" => v.parse::<f64>().map(Value::from).map_err(|_| format!("{v} is not a number")),
         "boolean" => v.parse::<bool>().map(Value::from).map_err(|_| format!("{v} is not true/false")),
-        "string" => Ok(Value::String(v.to_string())),
+        // `@path` reads a file (notes, descriptions); `@@…` is a literal leading @.
+        "string" => match (v.strip_prefix("@@"), v.strip_prefix('@')) {
+            (Some(rest), _) => Ok(Value::String(format!("@{rest}"))),
+            (None, Some(path)) => std::fs::read_to_string(path).map(Value::String).map_err(|e| format!("reading {path}: {e}")),
+            _ => Ok(Value::String(v.to_string())),
+        },
         _ => Ok(serde_json::from_str(v).unwrap_or_else(|_| Value::String(v.to_string()))),
     }
 }

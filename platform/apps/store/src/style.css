@@ -984,3 +984,26 @@ footer .spacer {
   line-height: 1.6;
   white-space: pre;
 }
+
+/* ── Patch notes (/games/<game>/updates) ── */
+.updates {
+  max-width: 720px;
+}
+.updates .card.update {
+  display: block;
+  margin-bottom: 12px;
+  color: inherit;
+  text-decoration: none;
+}
+.notes img.md-img {
+  max-width: 100%;
+  border-radius: 8px;
+}
+.notes code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--line);
+}
+.latest-note {
+  margin-top: 12px;
+}

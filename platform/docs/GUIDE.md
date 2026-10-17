@@ -302,6 +302,19 @@ Uploads go straight to storage: the CLI gets a signed URL (`buildsUploadStart`),
 
 Body fields are also flags: `--price-cents 500` and `--field price_cents=500` are the same; use `--field` for JSON values (lists, objects, `null`).
 
+### Patch notes
+
+Post each version's player-facing notes (markdown) right after you upload its builds. Publishing a version again updates it, so a pipeline can run this every time:
+
+```sh
+partii notes publish mygame 1.2.0 --markdown @notes.md            # title: "<Game> 1.2.0"; --title, --date YYYY-MM-DD optional
+# → {"url": "https://partii.games/games/mygame/updates/1.2.0", "index_url": "https://partii.games/games/mygame/updates", …}
+partii notes list mygame                                          # newest first: version, title, excerpt, url
+partii notes delete mygame 1.2.0
+```
+
+`url` is a public page (no sign-in needed) to link from Discord or a launcher. The game's store page shows the latest one and links to all of them. The notes render headings, bullet and numbered lists (nested), **bold**, *italic*, `code`, links and images (https URLs only). One `## <version>` section of a CHANGELOG.md, without its heading line, is a good body. In the CLI, any text flag's `@path` reads a file (`@@` for a literal @).
+
 ## 5. Live content
 
 ```sh

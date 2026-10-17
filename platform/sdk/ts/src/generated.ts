@@ -227,6 +227,10 @@ export function operations(t: Transport) {
     steamOpenidPoll: (body: Record<string, unknown> = {}) => t.call("POST", `/v1/players/steam/openid/poll`, "key", {}, body, "json"),
     /** Where Steam sends the browser back (a page that says to return to the game). (public) */
     steamOpenidReturn: (query: { state?: string | number } = {}) => t.call("GET", `/v1/players/steam/openid/return`, "public", query, undefined, "binary"),
+    /** Publish a version's patch notes (markdown; idempotent: publishing the version again updates it). Returns url, the public store page (https://partii.games/games/<game>/updates/<version>), and index_url. title defaults to "<Game> <version>"; date (YYYY-MM-DD) defaults to the first publish. (developer) */
+    notesPut: (game: string, version: string, body: Record<string, unknown> = {}) => t.call("PUT", `/v1/games/${encodeURIComponent(game)}/notes/${encodeURIComponent(version)}`, "developer", {}, body, "json"),
+    /** Take a version's patch notes down. (developer) */
+    notesDelete: (game: string, version: string) => t.call("DELETE", `/v1/games/${encodeURIComponent(game)}/notes/${encodeURIComponent(version)}`, "developer", {}, undefined, "json"),
     /** Every published game. play_url is where to play it in the browser: the site (https://<game>.partii.games) of a game whose platforms include web. (public) */
     storeGames: () => t.call("GET", `/v1/store/games`, "public", {}, undefined, "json"),
     /** A published game's store page, with its stable builds; play_url as in storeGames. (public) */
@@ -235,6 +239,10 @@ export function operations(t: Transport) {
     storeCheckout: (game: string, body: Record<string, unknown> = {}) => t.call("POST", `/v1/store/games/${encodeURIComponent(game)}/checkout`, "player", {}, body, "json"),
     /** Download the current build for a platform (owners, or anyone when the game has a demo). (player) */
     storeDownload: (game: string, platform: string) => t.call("GET", `/v1/store/games/${encodeURIComponent(game)}/download/${encodeURIComponent(platform)}`, "player", {}, undefined, "binary"),
+    /** A published game's patch notes, newest first: version, title, excerpt, published_at and url (the store page). Pass next_before as before for older ones. (public) */
+    storeNotes: (game: string, query: { limit?: string | number; before?: string | number } = {}) => t.call("GET", `/v1/store/games/${encodeURIComponent(game)}/notes`, "public", query, undefined, "json"),
+    /** One version's patch notes, with the markdown. (public) */
+    storeNote: (game: string, version: string) => t.call("GET", `/v1/store/games/${encodeURIComponent(game)}/notes/${encodeURIComponent(version)}`, "public", {}, undefined, "json"),
     /** The player's games. (player) */
     storeLibrary: () => t.call("GET", `/v1/store/library`, "player", {}, undefined, "json"),
   };

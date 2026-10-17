@@ -1164,6 +1164,27 @@ paths:
       parameters: [{ name: state, in: query, required: true, schema: { type: string } }]
       responses: { "200": { description: "an HTML page" } }
 
+  /v1/games/{game}/notes/{version}:
+    put:
+      operationId: notesPut
+      summary: "Publish a version's patch notes (markdown; idempotent: publishing the version again updates it). Returns url, the public store page (https://partii.games/games/<game>/updates/<version>), and index_url. title defaults to \"<Game> <version>\"; date (YYYY-MM-DD) defaults to the first publish."
+      x-auth: developer
+      x-cli: notes publish
+      parameters:
+        - { name: game, in: path, required: true, schema: { type: string } }
+        - { name: version, in: path, required: true, schema: { type: string } }
+      requestBody: { content: { application/json: { schema: { type: object, required: [markdown], properties: { markdown: { type: string, description: "The notes. In the CLI, --markdown @notes.md reads a file." }, title: { type: string }, date: { type: string } } } } } }
+      responses: { "200": { description: "{note, created, url, index_url}" } }
+    delete:
+      operationId: notesDelete
+      summary: Take a version's patch notes down.
+      x-auth: developer
+      x-cli: notes delete
+      parameters:
+        - { name: game, in: path, required: true, schema: { type: string } }
+        - { name: version, in: path, required: true, schema: { type: string } }
+      responses: { "200": { description: "{deleted}" } }
+
   /v1/store/games:
     get:
       operationId: storeGames
@@ -1199,6 +1220,27 @@ paths:
         - { name: game, in: path, required: true, schema: { type: string } }
         - { name: platform, in: path, required: true, schema: { type: string } }
       responses: { "200": { description: "the build" } }
+  /v1/store/games/{game}/notes:
+    get:
+      operationId: storeNotes
+      summary: "A published game's patch notes, newest first: version, title, excerpt, published_at and url (the store page). Pass next_before as before for older ones."
+      x-auth: public
+      x-cli: notes list
+      parameters:
+        - { name: game, in: path, required: true, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer } }
+        - { name: before, in: query, schema: { type: integer } }
+      responses: { "200": { description: "{game, notes, next_before, url}" } }
+  /v1/store/games/{game}/notes/{version}:
+    get:
+      operationId: storeNote
+      summary: One version's patch notes, with the markdown.
+      x-auth: public
+      x-cli: notes get
+      parameters:
+        - { name: game, in: path, required: true, schema: { type: string } }
+        - { name: version, in: path, required: true, schema: { type: string } }
+      responses: { "200": { description: "{game, note}" } }
   /v1/store/library:
     get:
       operationId: storeLibrary
