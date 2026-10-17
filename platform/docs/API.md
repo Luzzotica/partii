@@ -133,12 +133,16 @@ Auth (`x-auth`):
 | `steamOpenidReturn` | `GET /v1/players/steam/openid/return` | public | – |
 | `notesPut` | `PUT /v1/games/{game}/notes/{version}` | developer | `partii notes publish` |
 | `notesDelete` | `DELETE /v1/games/{game}/notes/{version}` | developer | `partii notes delete` |
+| `steamKeysAdd` | `POST /v1/games/{game}/steam-keys` | developer | `partii steam-keys add` |
+| `steamKeysList` | `GET /v1/games/{game}/steam-keys` | developer | `partii steam-keys list` |
+| `steamKeysRemove` | `POST /v1/games/{game}/steam-keys/remove` | developer | `partii steam-keys remove` |
 | `storeGames` | `GET /v1/store/games` | public | `partii store list` |
 | `storeGame` | `GET /v1/store/games/{game}` | public | `partii store get` |
 | `storeCheckout` | `POST /v1/store/games/{game}/checkout` | player | `partii store checkout` |
 | `storeDownload` | `GET /v1/store/games/{game}/download/{platform}` | player | `partii store download` |
 | `storeNotes` | `GET /v1/store/games/{game}/notes` | public | `partii notes list` |
 | `storeNote` | `GET /v1/store/games/{game}/notes/{version}` | public | `partii notes get` |
+| `storeSteamKey` | `GET /v1/store/games/{game}/steam-key` | player | `partii store steam-key` |
 | `storeLibrary` | `GET /v1/store/library` | player | `partii store library` |
 | `webhookStripe` | `POST /v1/webhooks/stripe` | stripe | – |
 
@@ -1275,6 +1279,38 @@ Parameters:
 - `game` (path, required)
 - `version` (path, required)
 
+### steamKeysAdd
+
+`POST /v1/games/{game}/steam-keys` (auth: developer) · `partii steam-keys add`
+
+Load Steam keys (from Steamworks) for the game: each player who owns it through partii gets one, in their library with an activate-on-Steam link. keys is one per line (or an array); duplicates are skipped. Returns added, already_loaded, invalid, available.
+
+Parameters:
+- `game` (path, required)
+
+Body fields: `keys` (required), `batch`
+
+### steamKeysList
+
+`GET /v1/games/{game}/steam-keys` (auth: developer) · `partii steam-keys list`
+
+The game's Steam key pool: counts (available, assigned, revoked) and the keys with status (assigned: default, with player and when; revoked: refunded or taken back, to ban in Steamworks; available: last 5 characters only).
+
+Parameters:
+- `game` (path, required)
+- `status` (query)
+
+### steamKeysRemove
+
+`POST /v1/games/{game}/steam-keys/remove` (auth: developer) · `partii steam-keys remove`
+
+Take unassigned keys out of the pool (keys a player already has stay).
+
+Parameters:
+- `game` (path, required)
+
+Body fields: `keys` (required)
+
 ### storeGames
 
 `GET /v1/store/games` (auth: public) · `partii store list`
@@ -1331,6 +1367,15 @@ One version's patch notes, with the markdown.
 Parameters:
 - `game` (path, required)
 - `version` (path, required)
+
+### storeSteamKey
+
+`GET /v1/store/games/{game}/steam-key` (auth: player) · `partii store steam-key`
+
+The player's Steam key for the game, {key, activate_url, assigned_at, revoked}: the one they have, or the next free one when they own the game through partii (a purchase, grant or code) and the developer has loaded keys. 404 no_steam_key otherwise. activate_url opens Steam's activation page with the key filled in.
+
+Parameters:
+- `game` (path, required)
 
 ### storeLibrary
 

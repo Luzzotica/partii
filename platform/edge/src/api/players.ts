@@ -12,6 +12,7 @@ import { verifyProvider } from "./providers";
 import { steamTicketSubject } from "./steam";
 import { deleteUgcOf, mergeUgc } from "./ugc";
 import { deleteScoresOf, mergeScores } from "./leaderboards";
+import { mergeSteamKeys } from "./steamkeys";
 
 const OFFLINE_TTL = 7 * 86400_000;
 
@@ -49,6 +50,7 @@ async function merge(env: Env, guest: string, into: string) {
   }
   await mergeUgc(env, guest, into);
   await mergeScores(env, guest, into);
+  await mergeSteamKeys(env, guest, into);
   await env.DB.batch([
     env.DB.prepare("INSERT OR IGNORE INTO entitlements (player_id, game_id, sku, source, ref, created_at, revoked_at) SELECT ?, game_id, sku, source, ref, created_at, revoked_at FROM entitlements WHERE player_id = ?").bind(into, guest),
     env.DB.prepare("DELETE FROM entitlements WHERE player_id = ?").bind(guest),

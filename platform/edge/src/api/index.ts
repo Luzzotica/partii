@@ -19,6 +19,7 @@ import { webHandlers } from "./web";
 import { analyticsHandlers, reportPlatformError } from "./analytics";
 import { leaderboardHandlers } from "./leaderboards";
 import { notesHandlers } from "./notes";
+import { steamKeyHandlers } from "./steamkeys";
 import { adminHandlers } from "./admin";
 
 export interface Ctx {
@@ -51,6 +52,7 @@ export const HANDLERS: Handlers = {
   ...analyticsHandlers,
   ...leaderboardHandlers,
   ...notesHandlers,
+  ...steamKeyHandlers,
   ...adminHandlers,
 };
 

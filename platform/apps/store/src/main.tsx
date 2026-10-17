@@ -16,6 +16,13 @@ import "./style.css";
 const API = import.meta.env.VITE_PARTII_API ?? "https://api.partii.games";
 const KEY = import.meta.env.VITE_PARTII_KEY ?? "";
 const api = createClient({ base: API, key: KEY });
+// The saved player before the first render: pages load their data in effects, which run before usePlayer's.
+try {
+  const saved = JSON.parse(localStorage.getItem("partii.token") ?? "null") as string | null;
+  if (saved) api.setPlayerToken(saved);
+} catch {
+  /* no storage */
+}
 
 // ── Tiny router ──
 function usePath(): [string, (to: string) => void] {
@@ -252,10 +259,45 @@ function Update({ id, version, go }: { id: string; version: string; go: (to: str
   );
 }
 
+interface SteamKey {
+  key: string;
+  activate_url: string;
+  revoked: boolean;
+}
+
+/** The player's Steam key for a game they own here: activate it on Steam in one click. */
+function SteamKeyBox({ k, game }: { k: SteamKey; game: string }) {
+  const [copied, setCopied] = useState(false);
+  if (k.revoked) return <p className="muted">Your Steam key for this game was revoked (refunded).</p>;
+  return (
+    <div className="steam-key" data-testid="steam-key">
+      <span className="muted">Steam key</span> <code>{k.key}</code>
+      <div className="row">
+        <a className="button small" href={k.activate_url} target="_blank" rel="noopener noreferrer" onClick={() => track("steam_key_activate", { game })}>
+          Activate on Steam
+        </a>
+        <button
+          className="secondary small"
+          onClick={() => {
+            navigator.clipboard?.writeText(k.key).then(() => setCopied(true), () => {});
+            track("steam_key_copy", { game });
+          }}
+        >
+          {copied ? "Copied" : "Copy"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function GamePage({ id, owned, refresh, go }: { id: string; owned: Set<string>; refresh: () => Promise<void>; go: (to: string) => void }) {
   const [data, setData] = useState<{ game: Game; builds: { platform: string; version: string; size: number }[]; latest_note?: NoteSummary | null } | null>(null);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  const [steamKey, setSteamKey] = useState<SteamKey | null>(null);
+  useEffect(() => {
+    if (owned.has(id)) api.storeSteamKey(id).then((r) => setSteamKey(r.steam_key), () => setSteamKey(null));
+  }, [id, owned]);
   useEffect(() => {
     api.storeGame(id).then(
       (d) => (setData(d), track("game_view", { game: id })),
@@ -324,6 +366,7 @@ function GamePage({ id, owned, refresh, go }: { id: string; owned: Set<string>; 
             </button>
           )}
         </div>
+        {own && steamKey && <SteamKeyBox k={steamKey} game={g.id} />}
         {(own || g.demo || g.price_cents === 0) && data.builds.length > 0 && (
           <div className="downloads">
             {data.builds.map((b) => (
@@ -353,7 +396,7 @@ function GamePage({ id, owned, refresh, go }: { id: string; owned: Set<string>; 
 }
 
 function Library({ go }: { go: (to: string) => void }) {
-  const [games, setGames] = useState<Game[] | null>(null);
+  const [games, setGames] = useState<(Game & { steam_key?: SteamKey | null })[] | null>(null);
   useEffect(() => {
     const bought = new URLSearchParams(location.search).get("bought");
     if (bought) track("checkout_return", { game: bought.slice(0, 40) });
@@ -364,10 +407,13 @@ function Library({ go }: { go: (to: string) => void }) {
   return (
     <div className="grid" data-testid="library">
       {games.map((g) => (
-        <a key={g.id} className="card" href={`/games/${g.id}`} onClick={(e) => (e.preventDefault(), go(`/games/${g.id}`))}>
-          <Cover g={g} />
-          <h3>{g.title}</h3>
-        </a>
+        <div key={g.id} className="library-item">
+          <a className="card" href={`/games/${g.id}`} onClick={(e) => (e.preventDefault(), go(`/games/${g.id}`))}>
+            <Cover g={g} />
+            <h3>{g.title}</h3>
+          </a>
+          {g.steam_key && <SteamKeyBox k={g.steam_key} game={g.id} />}
+        </div>
       ))}
     </div>
   );

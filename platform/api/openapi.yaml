@@ -1185,6 +1185,34 @@ paths:
         - { name: version, in: path, required: true, schema: { type: string } }
       responses: { "200": { description: "{deleted}" } }
 
+  /v1/games/{game}/steam-keys:
+    post:
+      operationId: steamKeysAdd
+      summary: "Load Steam keys (from Steamworks) for the game: each player who owns it through partii gets one, in their library with an activate-on-Steam link. keys is one per line (or an array); duplicates are skipped. Returns added, already_loaded, invalid, available."
+      x-auth: developer
+      x-cli: steam-keys add
+      parameters: [{ name: game, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [keys], properties: { keys: { type: string, description: "One key per line. In the CLI, --keys @keys.txt reads a file." }, batch: { type: string, description: "A label for this upload (e.g. the Steamworks request name)." } } } } } }
+      responses: { "200": { description: "{added, already_loaded, invalid, invalid_examples, available}" } }
+    get:
+      operationId: steamKeysList
+      summary: "The game's Steam key pool: counts (available, assigned, revoked) and the keys with status (assigned: default, with player and when; revoked: refunded or taken back, to ban in Steamworks; available: last 5 characters only)."
+      x-auth: developer
+      x-cli: steam-keys list
+      parameters:
+        - { name: game, in: path, required: true, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string } }
+      responses: { "200": { description: "{counts, status, keys}" } }
+  /v1/games/{game}/steam-keys/remove:
+    post:
+      operationId: steamKeysRemove
+      summary: Take unassigned keys out of the pool (keys a player already has stay).
+      x-auth: developer
+      x-cli: steam-keys remove
+      parameters: [{ name: game, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [keys], properties: { keys: { type: string } } } } } }
+      responses: { "200": { description: "{removed, not_removed, available}" } }
+
   /v1/store/games:
     get:
       operationId: storeGames
@@ -1241,6 +1269,14 @@ paths:
         - { name: game, in: path, required: true, schema: { type: string } }
         - { name: version, in: path, required: true, schema: { type: string } }
       responses: { "200": { description: "{game, note}" } }
+  /v1/store/games/{game}/steam-key:
+    get:
+      operationId: storeSteamKey
+      summary: "The player's Steam key for the game, {key, activate_url, assigned_at, revoked}: the one they have, or the next free one when they own the game through partii (a purchase, grant or code) and the developer has loaded keys. 404 no_steam_key otherwise. activate_url opens Steam's activation page with the key filled in."
+      x-auth: player
+      x-cli: store steam-key
+      parameters: [{ name: game, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: "{steam_key}" } }
   /v1/store/library:
     get:
       operationId: storeLibrary

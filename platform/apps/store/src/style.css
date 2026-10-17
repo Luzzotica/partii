@@ -1007,3 +1007,24 @@ footer .spacer {
 .latest-note {
   margin-top: 12px;
 }
+
+/* ── Steam keys (library and game page) ── */
+.steam-key {
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+}
+.steam-key code {
+  font-size: 1.05em;
+  letter-spacing: 0.04em;
+  user-select: all;
+  overflow-wrap: anywhere;
+}
+.steam-key .row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}

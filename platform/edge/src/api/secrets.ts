@@ -36,7 +36,7 @@ export const SECRET_NAMES: Record<string, Spec> = {
   },
 };
 
-async function cryptoKey(env: Env): Promise<CryptoKey> {
+export async function cryptoKey(env: Env): Promise<CryptoKey> {
   if (!env.SECRETS_KEY) throw new ApiError(501, "secrets_unavailable", "this platform has no SECRETS_KEY, so it can't store secrets", "platform operators: set SECRETS_KEY (32 random bytes, base64url)");
   const raw = fromB64url(env.SECRETS_KEY);
   if (raw.byteLength !== 32) throw new ApiError(500, "internal", "SECRETS_KEY must be 32 bytes");

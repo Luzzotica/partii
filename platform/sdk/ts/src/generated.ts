@@ -231,6 +231,12 @@ export function operations(t: Transport) {
     notesPut: (game: string, version: string, body: Record<string, unknown> = {}) => t.call("PUT", `/v1/games/${encodeURIComponent(game)}/notes/${encodeURIComponent(version)}`, "developer", {}, body, "json"),
     /** Take a version's patch notes down. (developer) */
     notesDelete: (game: string, version: string) => t.call("DELETE", `/v1/games/${encodeURIComponent(game)}/notes/${encodeURIComponent(version)}`, "developer", {}, undefined, "json"),
+    /** Load Steam keys (from Steamworks) for the game: each player who owns it through partii gets one, in their library with an activate-on-Steam link. keys is one per line (or an array); duplicates are skipped. Returns added, already_loaded, invalid, available. (developer) */
+    steamKeysAdd: (game: string, body: Record<string, unknown> = {}) => t.call("POST", `/v1/games/${encodeURIComponent(game)}/steam-keys`, "developer", {}, body, "json"),
+    /** The game's Steam key pool: counts (available, assigned, revoked) and the keys with status (assigned: default, with player and when; revoked: refunded or taken back, to ban in Steamworks; available: last 5 characters only). (developer) */
+    steamKeysList: (game: string, query: { status?: string | number } = {}) => t.call("GET", `/v1/games/${encodeURIComponent(game)}/steam-keys`, "developer", query, undefined, "json"),
+    /** Take unassigned keys out of the pool (keys a player already has stay). (developer) */
+    steamKeysRemove: (game: string, body: Record<string, unknown> = {}) => t.call("POST", `/v1/games/${encodeURIComponent(game)}/steam-keys/remove`, "developer", {}, body, "json"),
     /** Every published game. play_url is where to play it in the browser: the site (https://<game>.partii.games) of a game whose platforms include web. (public) */
     storeGames: () => t.call("GET", `/v1/store/games`, "public", {}, undefined, "json"),
     /** A published game's store page, with its stable builds; play_url as in storeGames. (public) */
@@ -243,6 +249,8 @@ export function operations(t: Transport) {
     storeNotes: (game: string, query: { limit?: string | number; before?: string | number } = {}) => t.call("GET", `/v1/store/games/${encodeURIComponent(game)}/notes`, "public", query, undefined, "json"),
     /** One version's patch notes, with the markdown. (public) */
     storeNote: (game: string, version: string) => t.call("GET", `/v1/store/games/${encodeURIComponent(game)}/notes/${encodeURIComponent(version)}`, "public", {}, undefined, "json"),
+    /** The player's Steam key for the game, {key, activate_url, assigned_at, revoked}: the one they have, or the next free one when they own the game through partii (a purchase, grant or code) and the developer has loaded keys. 404 no_steam_key otherwise. activate_url opens Steam's activation page with the key filled in. (player) */
+    storeSteamKey: (game: string) => t.call("GET", `/v1/store/games/${encodeURIComponent(game)}/steam-key`, "player", {}, undefined, "json"),
     /** The player's games. (player) */
     storeLibrary: () => t.call("GET", `/v1/store/library`, "player", {}, undefined, "json"),
   };

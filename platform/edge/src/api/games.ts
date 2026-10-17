@@ -287,6 +287,8 @@ export const gameHandlers: Handlers = {
     await ownGame(env, caller, params.game);
     if (dryRun) return { dry_run: true };
     const r = await env.DB.prepare("UPDATE entitlements SET revoked_at = ? WHERE game_id = ? AND player_id = ? AND revoked_at IS NULL").bind(now(), params.game, params.player).run();
+    // Their Steam key too: ban it in Steamworks (partii steam-keys list <game> --status revoked).
+    await env.DB.prepare("UPDATE steam_keys SET revoked_at = ?, revoked_reason = 'entitlement revoked' WHERE game_id = ? AND player_id = ? AND revoked_at IS NULL").bind(now(), params.game, params.player).run();
     return { revoked: r.meta.changes > 0 };
   },
 

@@ -9,6 +9,7 @@ import { ApiError, bad, currentPrice, gameView, now, randomSlug, type GameRow } 
 import { grant } from "./games";
 import type { Handlers } from "./index";
 import { latestNote } from "./notes";
+import { revokeSteamKeysFor, steamKeyFor } from "./steamkeys";
 import { siteUrl } from "./web";
 import { recordPlatformEvent } from "./analytics";
 
@@ -41,7 +42,11 @@ export async function recordPurchase(env: Env, p: { player: string | null; game:
     .run();
   // Once per purchase: stores repeat their notifications.
   if (ins.meta.changes) await recordPlatformEvent(env, "purchase", { game: p.game, store: p.store, amount_cents: p.amount, currency: p.currency, test: p.test }, p.player);
-  return p.player ? grant(env, p.player, p.game, p.store, p.ref) : null;
+  if (!p.player) return null;
+  const e = await grant(env, p.player, p.game, p.store, p.ref);
+  // The buyer's Steam key, when the developer has loaded some (a failure here must not lose the purchase).
+  await steamKeyFor(env, p.player, p.game).catch(() => null);
+  return e;
 }
 
 async function verifyStripeSignature(secret: string, header: string, payload: string): Promise<boolean> {
@@ -109,7 +114,8 @@ export const storeHandlers: Handlers = {
     )
       .bind(caller.player!.id)
       .all<GameRow & { source: string; owned_at: number }>();
-    return { games: r.results.map((g) => ({ ...gameView(g), owned_via: g.source, owned_at: g.owned_at })) };
+    const keys = await Promise.all(r.results.map((g) => steamKeyFor(env, caller.player!.id, g.id).catch(() => null)));
+    return { games: r.results.map((g, i) => ({ ...gameView(g), owned_via: g.source, owned_at: g.owned_at, steam_key: keys[i] })) };
   },
 
   async storeDownload({ env, caller, params }) {
@@ -170,6 +176,7 @@ export const storeHandlers: Handlers = {
     } else if (ev.type === "charge.refunded" && o.payment_intent) {
       await env.DB.prepare("UPDATE purchases SET status = 'refunded' WHERE ref = ?").bind(o.payment_intent).run();
       await env.DB.prepare("UPDATE entitlements SET revoked_at = ? WHERE ref = ?").bind(now(), o.payment_intent).run();
+      await revokeSteamKeysFor(env, o.payment_intent, "refunded");
     }
     return { received: true };
   },

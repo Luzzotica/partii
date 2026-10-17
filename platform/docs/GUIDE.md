@@ -302,6 +302,19 @@ Uploads go straight to storage: the CLI gets a signed URL (`buildsUploadStart`),
 
 Body fields are also flags: `--price-cents 500` and `--field price_cents=500` are the same; use `--field` for JSON values (lists, objects, `null`).
 
+### Steam keys for partii buyers
+
+If the game is also on Steam, people who buy it on partii can get it on Steam too. Request keys in Steamworks (Users & Permissions › Request Steam Product Keys), then load them:
+
+```sh
+partii steam-keys add mygame --keys @keys.txt --batch "2026-10 request"   # one key per line; duplicates are skipped
+partii steam-keys list mygame                                            # counts, and who has which key
+partii steam-keys list mygame --status revoked                           # refunded: ban these in Steamworks
+partii steam-keys remove mygame --keys @unused.txt                       # take unassigned keys back out
+```
+
+Each player who owns the game through partii (a purchase, a grant or a code, but not an App Store or Steam purchase) gets one key. It shows in their partii library and on the game's page with an **Activate on Steam** button (`https://store.steampowered.com/account/registerkey?key=…`). A game can show it too: `GET /v1/store/games/{game}/steam-key` with the player's token. A refund, or `partii entitlements revoke`, marks that player's key revoked; ban it in Steamworks. Keys are encrypted at rest and shown only to their player and to you. partii's error dashboard warns when fewer than 10 are left, and reports an error when a buyer found none. Follow Valve's Steam Keys rules: don't sell keys for less than the Steam price for long.
+
 ### Patch notes
 
 Post each version's player-facing notes (markdown) right after you upload its builds. Publishing a version again updates it, so a pipeline can run this every time:
