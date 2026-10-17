@@ -258,6 +258,25 @@ describe("player content: only for signed-in players (owner rule 2026-10-16)", (
     expect((await api("PUT", `/v1/ugc/${a.id}/vote`, { key: s.key, token: acct, body: { value: 1 } })).json.my_vote).toBe(1);
   });
 
+  it("with UGC_SIGNIN off (production until every game build sends the token) key-only viewing and guest votes work as before", async () => {
+    const { Hono } = await import("hono");
+    const { registerApi } = await import("../src/api");
+    const app = new Hono();
+    registerApi(app as any);
+    const off = { ...(env as any), UGC_SIGNIN: undefined };
+    const s = await setup();
+    const a = await publish(s, await signedIn(s.key));
+    const g = await guest(s.key);
+    const list = await app.request(`/v1/games/${s.game}/ugc`, { headers: { "x-partii-key": s.key } }, off);
+    expect(((await list.json()) as any).items.map((x: any) => x.id)).toEqual([a.id]);
+    expect((await app.request(a.download_url.replace(/^https:\/\/[^/]+/, ""), {}, off)).status).toBe(200);
+    const vote = await app.request(`/v1/ugc/${a.id}/vote`, { method: "PUT", headers: { "x-partii-key": s.key, authorization: `Bearer ${g}`, "content-type": "application/json" }, body: JSON.stringify({ value: 1 }) }, off);
+    expect(((await vote.json()) as any).my_vote).toBe(1);
+    // Publishing still needs a signed-in player.
+    const up = await app.request(`/v1/games/${s.game}/ugc/uploads`, { method: "POST", headers: { "x-partii-key": s.key, authorization: `Bearer ${g}`, "content-type": "application/json" }, body: JSON.stringify({ size: 3, sha256: "a".repeat(64) }) }, off);
+    expect(((await up.json()) as any).error.code).toBe("sign_in_required");
+  });
+
   it("a signed-in viewer always gets my_vote, 0 when they haven't voted", async () => {
     const s = await setup();
     const t = await signedIn(s.key);

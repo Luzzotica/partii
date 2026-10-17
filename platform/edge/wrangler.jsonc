@@ -20,6 +20,7 @@
     "PARTII_ENV": "dev",
     "KEY_SECRET": "dev-only-key-secret",
     "UGC": "on",
+    "UGC_SIGNIN": "on",
     // Dev only; staging and production set SECRETS_KEY as a secret.
     "SECRETS_KEY": "ZGV2LW9ubHktc2VjcmV0cy1rZXktMzItYnl0ZXMhISE",
     "TURN_MODE": "none",
@@ -38,7 +39,7 @@
       // The workers.dev host stays on: shipped games use it.
       "workers_dev": true,
       "routes": [{ "pattern": "api-staging.partii.games", "custom_domain": true }, { "pattern": "*-staging.partii.games/*", "zone_name": "partii.games" }],
-      "vars": { "PARTII_ENV": "staging", "RATE_LIMITS": "on", "TURN_MODE": "cloudflare", "ALLOW_FAKE_LOGIN": "1", "ALLOW_FAKE_STORE": "1", "EMAIL_MODE": "dev", "STORE_URL": "https://partii-store.vercel.app", "R2_BUCKET": "partii-staging-files", "UGC": "on", "WEB_DOMAIN": "-staging.partii.games", "APPLE_CLIENT_IDS": "me.sterlinglong.tankii" },
+      "vars": { "PARTII_ENV": "staging", "RATE_LIMITS": "on", "TURN_MODE": "cloudflare", "ALLOW_FAKE_LOGIN": "1", "ALLOW_FAKE_STORE": "1", "EMAIL_MODE": "dev", "STORE_URL": "https://partii-store.vercel.app", "R2_BUCKET": "partii-staging-files", "UGC": "on", "UGC_SIGNIN": "on", "WEB_DOMAIN": "-staging.partii.games", "APPLE_CLIENT_IDS": "me.sterlinglong.tankii" },
       "version_metadata": { "binding": "CF_VERSION_METADATA" },
       "durable_objects": {
         "bindings": [

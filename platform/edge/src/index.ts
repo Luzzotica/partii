@@ -31,6 +31,8 @@ export interface Env extends IceEnv, LimitEnv {
   KEY_SECRET: string;
   /** "on": the player content (UGC) routes are served. */
   UGC?: string;
+  /** "on": players' content is for signed-in players only (owner rule 2026-10-16); off keeps key-only viewing for older game builds. */
+  UGC_SIGNIN?: string;
   /** 32 bytes, base64url: encrypts per-game secrets (secrets.ts). */
   SECRETS_KEY?: string;
   GRACE_MS?: string;

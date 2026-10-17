@@ -149,13 +149,16 @@ const SIGN_IN_HINT = "sign in (Steam, Game Center, Apple, Google, Discord or ema
 
 /** Players' content is for signed-in players: an account they can get back to, not a device guest. */
 async function requireSignedIn(env: Env, player: string, what = "publish") {
+  if (what !== "publish" && env.UGC_SIGNIN !== "on") return;
   const r = await env.DB.prepare("SELECT 1 FROM identities WHERE player_id = ? AND provider <> 'device' LIMIT 1").bind(player).first();
   if (!r) throw new ApiError(403, "sign_in_required", `guests can't ${what} players' content`, SIGN_IN_HINT);
 }
 
 /** Viewing players' content needs a signed-in player's token; no token and a guest's get the same answer. */
-async function signedInViewer(env: Env, req: Request): Promise<string> {
+async function signedInViewer(env: Env, req: Request): Promise<string | null> {
   const viewer = await optionalPlayer(env, req);
+  // Off (production until every game build sends the player token): key-only viewing as before.
+  if (env.UGC_SIGNIN !== "on") return viewer;
   if (!viewer) {
     if ((req.headers.get("authorization") ?? "").startsWith("Bearer pt_")) throw new ApiError(401, "unauthorized", "this player token is invalid or expired", "sign the player in again");
     throw new ApiError(403, "sign_in_required", "players' content is for signed-in players", SIGN_IN_HINT);
