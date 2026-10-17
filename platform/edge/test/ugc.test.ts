@@ -230,12 +230,14 @@ describe("player content: unpublish and moderation", () => {
 });
 
 describe("player content: only for signed-in players (owner rule 2026-10-16)", () => {
-  it("guests and key-only callers can't browse, look up, download, rate, play or report; a bad token is 401", async () => {
+  it("guests and key-only callers can't see, download, rate, play or report players' items; a bad token is 401", async () => {
     const s = await setup();
     const t = await signedIn(s.key);
     const a = await publish(s, t);
     const g = await guest(s.key);
-    const reads = [`/v1/games/${s.game}/ugc`, `/v1/games/${s.game}/ugc/code/${a.share_code}`, `/v1/ugc/${a.id}`, `/v1/games/${s.game}/ugc/hash/${a.sha256}`, a.download_url];
+    // Signed out, browse is the official items only: none here.
+    for (const token of [undefined, g]) expect((await api("GET", `/v1/games/${s.game}/ugc`, { key: s.key, token })).json.items).toEqual([]);
+    const reads = [`/v1/games/${s.game}/ugc/code/${a.share_code}`, `/v1/ugc/${a.id}`, `/v1/games/${s.game}/ugc/hash/${a.sha256}`, a.download_url];
     for (const path of reads) {
       for (const token of [undefined, g]) {
         const r = await api("GET", path, { key: s.key, token });
@@ -275,6 +277,32 @@ describe("player content: only for signed-in players (owner rule 2026-10-16)", (
     // Publishing still needs a signed-in player.
     const up = await app.request(`/v1/games/${s.game}/ugc/uploads`, { method: "POST", headers: { "x-partii-key": s.key, authorization: `Bearer ${g}`, "content-type": "application/json" }, body: JSON.stringify({ size: 3, sha256: "a".repeat(64) }) }, off);
     expect(((await up.json()) as any).error.code).toBe("sign_in_required");
+  });
+
+  it("signed out, the official publisher's items are browsable and downloadable; players' items and files aren't", async () => {
+    const s = await setup();
+    const pub = (await api("POST", `/v1/projects/${s.game.slice(2)}/publisher`, { token: s.dev, body: { display_name: "Tankii" } })).json.player_token;
+    const thumb = await upload(s.key, pub, s.game, new Uint8Array([...PNG, 9]), "thumbnail");
+    const official = await publish(s, pub, { title: "Starter Isles", thumbnail_sha256: thumb });
+    const t = await signedIn(s.key);
+    const theirs = await publish(s, t, { title: "Player level" });
+    const g = await guest(s.key);
+    for (const token of [undefined, g]) {
+      const list = (await api("GET", `/v1/games/${s.game}/ugc`, { key: s.key, token })).json;
+      expect(list.items.map((x: any) => [x.id, x.author.official])).toEqual([[official.id, true]]);
+      expect((await api("GET", `/v1/games/${s.game}/ugc?q=player`, { key: s.key, token })).json.items).toEqual([]);
+      expect((await api("GET", `/v1/ugc/${official.id}`, { key: s.key, token })).status).toBe(200);
+      expect((await api("GET", `/v1/games/${s.game}/ugc/code/${official.share_code}`, { key: s.key, token })).status).toBe(200);
+      expect((await api("GET", `/v1/games/${s.game}/ugc/hash/${official.sha256}`, { key: s.key, token })).json.versions[0].item_id).toBe(official.id);
+      expect((await api("GET", official.download_url, { key: s.key, token })).status).toBe(200);
+      expect((await api("GET", official.thumbnail_url, { key: s.key, token })).status).toBe(200);
+      for (const path of [`/v1/ugc/${theirs.id}`, `/v1/games/${s.game}/ugc/code/${theirs.share_code}`, `/v1/games/${s.game}/ugc/hash/${theirs.sha256}`, theirs.download_url]) {
+        expect([path, (await api("GET", path, { key: s.key, token })).json?.error?.code]).toEqual([path, "sign_in_required"]);
+      }
+    }
+    // Rating official items still needs a sign-in; signed in sees both.
+    expect((await api("PUT", `/v1/ugc/${official.id}/vote`, { key: s.key, token: g, body: { value: 1 } })).json.error.code).toBe("sign_in_required");
+    expect((await api("GET", `/v1/games/${s.game}/ugc`, { key: s.key, token: t })).json.items).toHaveLength(2);
   });
 
   it("a signed-in viewer always gets my_vote, 0 when they haven't voted", async () => {

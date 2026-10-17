@@ -78,6 +78,9 @@ interface ItemRow {
   updated_at: number;
 }
 
+/** The item's author is an official publisher (SQL, item alias i). */
+const OFFICIAL = "EXISTS (SELECT 1 FROM identities x WHERE x.player_id = i.author_id AND x.provider = 'publisher')";
+
 const ITEM_SELECT =
   "SELECT i.*, p.display_name AS author_name, EXISTS (SELECT 1 FROM identities x WHERE x.player_id = i.author_id AND x.provider = 'publisher') AS author_official FROM ugc_items i LEFT JOIN players p ON p.id = i.author_id";
 
@@ -154,17 +157,38 @@ async function requireSignedIn(env: Env, player: string, what = "publish") {
   if (!r) throw new ApiError(403, "sign_in_required", `guests can't ${what} players' content`, SIGN_IN_HINT);
 }
 
-/** Viewing players' content needs a signed-in player's token; no token and a guest's get the same answer. */
-async function signedInViewer(env: Env, req: Request): Promise<string | null> {
-  const viewer = await optionalPlayer(env, req);
+type Viewer = { player: string | null; signedIn: boolean };
+
+/**
+ * Who is looking. Players' content is for signed-in players; signed out (no token, or a
+ * device guest's) sees only the official publisher's items. A bad token is 401.
+ */
+async function viewerOf(env: Env, req: Request): Promise<Viewer> {
+  const player = await optionalPlayer(env, req);
   // Off (production until every game build sends the player token): key-only viewing as before.
-  if (env.UGC_SIGNIN !== "on") return viewer;
-  if (!viewer) {
-    if ((req.headers.get("authorization") ?? "").startsWith("Bearer pt_")) throw new ApiError(401, "unauthorized", "this player token is invalid or expired", "sign the player in again");
-    throw new ApiError(403, "sign_in_required", "players' content is for signed-in players", SIGN_IN_HINT);
-  }
-  await requireSignedIn(env, viewer, "view");
-  return viewer;
+  if (env.UGC_SIGNIN !== "on") return { player, signedIn: true };
+  if (!player && (req.headers.get("authorization") ?? "").startsWith("Bearer pt_")) throw new ApiError(401, "unauthorized", "this player token is invalid or expired", "sign the player in again");
+  const signedIn = !!player && !!(await env.DB.prepare("SELECT 1 FROM identities WHERE player_id = ? AND provider <> 'device' LIMIT 1").bind(player).first());
+  return { player, signedIn };
+}
+
+const signInFirst = () => new ApiError(403, "sign_in_required", "players' content is for signed-in players", SIGN_IN_HINT);
+
+/** Signed out, only official items. */
+function officialOnly(v: Viewer, r: ItemRow) {
+  if (!v.signedIn && !r.author_official) throw signInFirst();
+}
+
+/** Signed out, only files (versions or thumbnails) of official items. */
+async function officialFile(env: Env, v: Viewer, game: string, hash: string) {
+  if (v.signedIn) return;
+  const r = await env.DB.prepare(
+    `SELECT 1 FROM ugc_items i WHERE i.game_id = ? AND i.hidden_at IS NULL AND ${OFFICIAL}
+       AND (i.thumbnail_sha256 = ? OR EXISTS (SELECT 1 FROM ugc_versions v WHERE v.item_id = i.id AND v.sha256 = ?)) LIMIT 1`,
+  )
+    .bind(game, hash, hash)
+    .first();
+  if (!r) throw signInFirst();
 }
 
 async function perHour(env: Env, sql: string, ...args: unknown[]): Promise<number> {
@@ -398,7 +422,7 @@ export const ugcHandlers: Handlers = {
 
   async ugcBlob({ env, req, params }) {
     const hash = sha(params.sha256);
-    await signedInViewer(env, req);
+    await officialFile(env, await viewerOf(env, req), params.game, hash);
     const row = await env.DB.prepare("SELECT kind, hidden_at FROM ugc_blobs WHERE game_id = ? AND sha256 = ?").bind(params.game, hash).first<{ kind: string; hidden_at: number | null }>();
     const o = row && row.hidden_at === null ? await files(env).get(blobKey(params.game, hash)) : null;
     if (!o) throw new ApiError(404, "not_found", "no such file", row?.hidden_at ? "it was removed by moderation" : "");
@@ -454,11 +478,12 @@ export const ugcHandlers: Handlers = {
   },
 
   async ugcList({ env, req, params, query }) {
-    const viewer = await signedInViewer(env, req);
+    const v = await viewerOf(env, req);
     const sort = (String(query.sort ?? "new") as Sort);
     if (!(sort in SORTS)) throw bad("sort is new, top or played");
     const limit = Math.min(Math.max(Number(query.limit ?? 20) || 20, 1), PAGE_MAX);
     const where = ["i.game_id = ?", "i.visibility = 'public'", "i.deleted_at IS NULL", "i.hidden_at IS NULL"];
+    if (!v.signedIn) where.push(OFFICIAL);
     const args: unknown[] = [params.game];
     if (query.kind) {
       if (!(KINDS as readonly string[]).includes(query.kind)) throw bad(`kind is one of ${KINDS.join(", ")}`);
@@ -494,29 +519,32 @@ export const ugcHandlers: Handlers = {
     }
     const r = await env.DB.prepare(`${ITEM_SELECT} WHERE ${where.join(" AND ")} ORDER BY ${SORTS[sort].order} LIMIT ?`).bind(...args, limit + 1).all<ItemRow>();
     const rows = r.results.slice(0, limit);
-    const votes = await myVotes(env, viewer, rows.map((x) => x.id));
+    const votes = await myVotes(env, v.player, rows.map((x) => x.id));
     return {
-      items: rows.map((x) => itemView(req, x, { my_vote: votes.get(x.id) ?? 0 })),
+      items: rows.map((x) => itemView(req, x, v.player ? { my_vote: votes.get(x.id) ?? 0 } : {})),
       next_cursor: r.results.length > limit ? cursorOf(sort, rows[rows.length - 1]) : null,
     };
   },
 
   async ugcByCode({ env, req, params }) {
     const code = String(params.code ?? "").trim().toUpperCase();
-    const viewer = await signedInViewer(env, req);
+    const v = await viewerOf(env, req);
     const row = await env.DB.prepare(`${ITEM_SELECT} WHERE i.game_id = ? AND i.share_code = ?`).bind(params.game, code).first<ItemRow>();
-    const r = await visibleItem(env, row?.id ?? "", viewer);
-    return { item: { ...itemView(req, r, { my_vote: (await myVotes(env, viewer, [r.id])).get(r.id) ?? 0 }), versions: await versionsOf(req, env, r) } };
+    const r = await visibleItem(env, row?.id ?? "", v.player);
+    officialOnly(v, r);
+    const viewer = v.player;
+    return { item: { ...itemView(req, r, viewer ? { my_vote: (await myVotes(env, viewer, [r.id])).get(r.id) ?? 0 } : {}), versions: await versionsOf(req, env, r) } };
   },
 
   async ugcByHash({ env, req, params }) {
     const hash = sha(params.sha256);
-    await signedInViewer(env, req);
+    const viewer = await viewerOf(env, req);
+    await officialFile(env, viewer, params.game, hash);
     const blob = await env.DB.prepare("SELECT size, hidden_at FROM ugc_blobs WHERE game_id = ? AND sha256 = ? AND kind = 'file'").bind(params.game, hash).first<{ size: number; hidden_at: number | null }>();
     if (!blob || blob.hidden_at !== null) throw new ApiError(404, "not_found", "no file with this hash");
     // Unpublished items still say what a pinned hash is; hidden ones don't.
     const v = await env.DB.prepare(
-      "SELECT v.item_id, v.version, v.client_version, v.created_at, i.kind, i.title, i.deleted_at IS NOT NULL AS unpublished FROM ugc_versions v JOIN ugc_items i ON i.id = v.item_id WHERE i.game_id = ? AND v.sha256 = ? AND i.hidden_at IS NULL ORDER BY v.created_at",
+      `SELECT v.item_id, v.version, v.client_version, v.created_at, i.kind, i.title, i.deleted_at IS NOT NULL AS unpublished FROM ugc_versions v JOIN ugc_items i ON i.id = v.item_id WHERE i.game_id = ? AND v.sha256 = ? AND i.hidden_at IS NULL${viewer.signedIn ? "" : ` AND ${OFFICIAL}`} ORDER BY v.created_at`,
     )
       .bind(params.game, hash)
       .all<{ unpublished: number }>();
@@ -524,9 +552,11 @@ export const ugcHandlers: Handlers = {
   },
 
   async ugcGet({ env, req, params }) {
-    const viewer = await signedInViewer(env, req);
-    const r = await visibleItem(env, params.id, viewer);
-    return { item: { ...itemView(req, r, { my_vote: (await myVotes(env, viewer, [r.id])).get(r.id) ?? 0 }), versions: await versionsOf(req, env, r) } };
+    const v = await viewerOf(env, req);
+    const r = await visibleItem(env, params.id, v.player);
+    officialOnly(v, r);
+    const viewer = v.player;
+    return { item: { ...itemView(req, r, viewer ? { my_vote: (await myVotes(env, viewer, [r.id])).get(r.id) ?? 0 } : {}), versions: await versionsOf(req, env, r) } };
   },
 
   async ugcUpdate({ env, req, caller, params, body, dryRun }) {

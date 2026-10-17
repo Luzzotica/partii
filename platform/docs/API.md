@@ -707,7 +707,7 @@ Body fields: `kind`, `size` (required), `sha256` (required)
 
 `GET /v1/games/{game}/ugc/blobs/{sha256}` (auth: public) · `partii ugc blob`
 
-A stored file or thumbnail, by its hash (cache forever, privately). The download_url and thumbnail_url in item views point here. Send a signed-in player's token (Authorization: Bearer pt_…); guests get 403 sign_in_required.
+A stored file or thumbnail, by its hash (cache forever, privately). The download_url and thumbnail_url in item views point here. Send a signed-in player's token (Authorization: Bearer pt_…); signed out, only official items' files, else 403 sign_in_required.
 
 Parameters:
 - `game` (path, required)
@@ -730,7 +730,7 @@ Body: the file's bytes.
 
 `GET /v1/games/{game}/ugc` (auth: key) · `partii ugc list`
 
-Browse and search public items, for signed-in players (a guest's or no token: 403 sign_in_required). sort is new, top or played; tags is comma-separated (all must match); pass next_cursor as cursor for the next page. Each item has my_vote.
+Browse and search public items. Signed out (no token or a guest's) lists only the official publisher's items. sort is new, top or played; tags is comma-separated (all must match); pass next_cursor as cursor for the next page. Each item has my_vote.
 
 Parameters:
 - `game` (path, required)
@@ -757,7 +757,7 @@ Body fields: `kind` (required), `title` (required), `description`, `tags`, `visi
 
 `GET /v1/games/{game}/ugc/code/{code}` (auth: key) · `partii ugc code`
 
-The item with this share code (works for unlisted items), for signed-in players.
+The item with this share code (works for unlisted items), for signed-in players (official items for anyone).
 
 Parameters:
 - `game` (path, required)
@@ -767,7 +767,7 @@ Parameters:
 
 `GET /v1/games/{game}/ugc/hash/{sha256}` (auth: key) · `partii ugc hash`
 
-The items and versions stored under this hash (a World's pinned Levels), for signed-in players.
+The items and versions stored under this hash (a World's pinned Levels), for signed-in players (official items for anyone).
 
 Parameters:
 - `game` (path, required)
@@ -786,7 +786,7 @@ Parameters:
 
 `GET /v1/ugc/{id}` (auth: key) · `partii ugc get`
 
-One item with all its versions and my_vote, for signed-in players.
+One item with all its versions and my_vote, for signed-in players (official items for anyone).
 
 Parameters:
 - `id` (path, required)

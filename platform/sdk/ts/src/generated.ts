@@ -125,21 +125,21 @@ export function operations(t: Transport) {
     contentFile: (game: string, sha: string) => t.call("GET", `/v1/content/${encodeURIComponent(game)}/files/${encodeURIComponent(sha)}`, "key", {}, undefined, "binary"),
     /** Start uploading a file or thumbnail by its hash. Returns where to PUT the bytes, or exists=true when that hash is already stored. (player) */
     ugcUploadStart: (game: string, body: Record<string, unknown> = {}) => t.call("POST", `/v1/games/${encodeURIComponent(game)}/ugc/uploads`, "player", {}, body, "json"),
-    /** A stored file or thumbnail, by its hash (cache forever, privately). The download_url and thumbnail_url in item views point here. Send a signed-in player's token (Authorization: Bearer pt_…); guests get 403 sign_in_required. (public) */
+    /** A stored file or thumbnail, by its hash (cache forever, privately). The download_url and thumbnail_url in item views point here. Send a signed-in player's token (Authorization: Bearer pt_…); signed out, only official items' files, else 403 sign_in_required. (public) */
     ugcBlob: (game: string, sha256: string) => t.call("GET", `/v1/games/${encodeURIComponent(game)}/ugc/blobs/${encodeURIComponent(sha256)}`, "public", {}, undefined, "binary"),
     /** Upload the bytes to a url from ugcUploadStart when the platform has no direct uploads (the url carries a signed ticket). (public) */
     ugcBlobPut: (game: string, sha256: string, query: { ticket?: string | number } = {}, body: BodyInit) => t.call("PUT", `/v1/games/${encodeURIComponent(game)}/ugc/blobs/${encodeURIComponent(sha256)}`, "public", query, body, "json"),
-    /** Browse and search public items, for signed-in players (a guest's or no token: 403 sign_in_required). sort is new, top or played; tags is comma-separated (all must match); pass next_cursor as cursor for the next page. Each item has my_vote. (key) */
+    /** Browse and search public items. Signed out (no token or a guest's) lists only the official publisher's items. sort is new, top or played; tags is comma-separated (all must match); pass next_cursor as cursor for the next page. Each item has my_vote. (key) */
     ugcList: (game: string, query: { kind?: string | number; tags?: string | number; q?: string | number; author?: string | number; sort?: string | number; limit?: string | number; cursor?: string | number } = {}) => t.call("GET", `/v1/games/${encodeURIComponent(game)}/ugc`, "key", query, undefined, "json"),
     /** Publish an item from uploaded files (signed-in players, not guests). refs lists the hashes a World pins. (player) */
     ugcPublish: (game: string, body: Record<string, unknown> = {}) => t.call("POST", `/v1/games/${encodeURIComponent(game)}/ugc`, "player", {}, body, "json"),
-    /** The item with this share code (works for unlisted items), for signed-in players. (key) */
+    /** The item with this share code (works for unlisted items), for signed-in players (official items for anyone). (key) */
     ugcByCode: (game: string, code: string) => t.call("GET", `/v1/games/${encodeURIComponent(game)}/ugc/code/${encodeURIComponent(code)}`, "key", {}, undefined, "json"),
-    /** The items and versions stored under this hash (a World's pinned Levels), for signed-in players. (key) */
+    /** The items and versions stored under this hash (a World's pinned Levels), for signed-in players (official items for anyone). (key) */
     ugcByHash: (game: string, sha256: string) => t.call("GET", `/v1/games/${encodeURIComponent(game)}/ugc/hash/${encodeURIComponent(sha256)}`, "key", {}, undefined, "json"),
     /** Reported items of your game, most reported first (unresolved reports only). (developer) */
     ugcReports: (game: string) => t.call("GET", `/v1/games/${encodeURIComponent(game)}/ugc/reports`, "developer", {}, undefined, "json"),
-    /** One item with all its versions and my_vote, for signed-in players. (key) */
+    /** One item with all its versions and my_vote, for signed-in players (official items for anyone). (key) */
     ugcGet: (id: string) => t.call("GET", `/v1/ugc/${encodeURIComponent(id)}`, "key", {}, undefined, "json"),
     /** Change an item's title, description, tags, visibility or thumbnail (author only). (player) */
     ugcUpdate: (id: string, body: Record<string, unknown> = {}) => t.call("PATCH", `/v1/ugc/${encodeURIComponent(id)}`, "player", {}, body, "json"),
