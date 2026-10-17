@@ -1,1 +1,8 @@
-{ "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }] }
+{
+  "rewrites": [
+    { "source": "/games/:game/updates/:version", "destination": "/api/og?kind=note&game=:game&version=:version" },
+    { "source": "/games/:game/updates", "destination": "/api/og?kind=updates&game=:game" },
+    { "source": "/games/:game", "destination": "/api/og?kind=game&game=:game" },
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
+  ]
+}

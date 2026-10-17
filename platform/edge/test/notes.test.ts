@@ -29,7 +29,7 @@ describe("patch notes", () => {
   it("publishes per version (idempotent), lists newest first, and shows on the store page", async () => {
     const { dev, game } = await setup();
     const a = await api("PUT", `/v1/games/${game}/notes/0.4.277`, { token: dev, body: { markdown: "Older notes.", date: "2026-10-16" } });
-    expect(a.json).toMatchObject({ ok: true, created: true, note: { version: "0.4.277", title: "Tankii 0.4.277" } });
+    expect(a.json).toMatchObject({ ok: true, created: true, note: { version: "0.4.277", title: "Tankii 0.4.277", date: "2026-10-16" } });
     const b = await api("PUT", `/v1/games/${game}/notes/0.4.278`, { token: dev, body: { markdown: MD } });
     expect(b.json.url).toMatch(new RegExp(`/games/${game}/updates/0.4.278$`));
     expect(b.json.index_url).toMatch(new RegExp(`/games/${game}/updates$`));

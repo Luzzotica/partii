@@ -239,7 +239,7 @@ export function operations(t: Transport) {
     storeCheckout: (game: string, body: Record<string, unknown> = {}) => t.call("POST", `/v1/store/games/${encodeURIComponent(game)}/checkout`, "player", {}, body, "json"),
     /** Download the current build for a platform (owners, or anyone when the game has a demo). (player) */
     storeDownload: (game: string, platform: string) => t.call("GET", `/v1/store/games/${encodeURIComponent(game)}/download/${encodeURIComponent(platform)}`, "player", {}, undefined, "binary"),
-    /** A published game's patch notes, newest first: version, title, excerpt, published_at and url (the store page). Pass next_before as before for older ones. (public) */
+    /** A published game's patch notes, newest first: version, title, excerpt, date (YYYY-MM-DD), published_at (ms) and url (the store page). Pass next_before as before for older ones. (public) */
     storeNotes: (game: string, query: { limit?: string | number; before?: string | number } = {}) => t.call("GET", `/v1/store/games/${encodeURIComponent(game)}/notes`, "public", query, undefined, "json"),
     /** One version's patch notes, with the markdown. (public) */
     storeNote: (game: string, version: string) => t.call("GET", `/v1/store/games/${encodeURIComponent(game)}/notes/${encodeURIComponent(version)}`, "public", {}, undefined, "json"),

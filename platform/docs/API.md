@@ -1315,7 +1315,7 @@ Parameters:
 
 `GET /v1/store/games/{game}/notes` (auth: public) · `partii notes list`
 
-A published game's patch notes, newest first: version, title, excerpt, published_at and url (the store page). Pass next_before as before for older ones.
+A published game's patch notes, newest first: version, title, excerpt, date (YYYY-MM-DD), published_at (ms) and url (the store page). Pass next_before as before for older ones.
 
 Parameters:
 - `game` (path, required)

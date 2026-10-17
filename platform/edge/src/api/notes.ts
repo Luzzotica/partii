@@ -53,6 +53,8 @@ function view(env: Env, r: NoteRow, full: boolean) {
     game: r.game_id,
     version: r.version,
     title: r.title,
+    /** The release day (UTC), as given with --date or the first publish. */
+    date: new Date(r.published_at).toISOString().slice(0, 10),
     published_at: r.published_at,
     updated_at: r.updated_at,
     excerpt: excerpt(r.markdown),
