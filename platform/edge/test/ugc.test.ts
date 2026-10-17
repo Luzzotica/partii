@@ -37,6 +37,8 @@ async function guest(key: string) {
   return (await api("POST", "/v1/players/guest", { key, body: { device_id: `device-${uniq()}` } })).json.player_token as string;
 }
 
+/** Fetch a URL as this player. */
+const as = (token: string) => ({ headers: { authorization: `Bearer ${token}` } });
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
 
 /** Upload through the Worker (the path used when there are no R2 S3 credentials). */
@@ -95,14 +97,14 @@ describe("player content: publish, versions, fetch", () => {
     const it1 = await publish(s, t, { tags: ["Desert", "hard"], description: "A long canyon", thumbnail_sha256: thumb });
     expect(it1).toMatchObject({ kind: "level", title: "Canyon run", tags: ["desert", "hard"], version: 1, author: { display_name: "Ada" }, visibility: "public" });
     expect(it1.share_code).toMatch(/^[A-Z2-9]{6}$/);
-    const got = await api("GET", `/v1/ugc/${it1.id}`, { key: s.key });
+    const got = await api("GET", `/v1/ugc/${it1.id}`, { key: s.key, token: t });
     expect(got.json.item.versions).toHaveLength(1);
-    expect((await api("GET", `/v1/games/${s.game}/ugc/code/${it1.share_code.toLowerCase()}`, { key: s.key })).json.item.id).toBe(it1.id);
-    expect((await api("GET", `/v1/games/${s.game}/ugc/hash/${it1.sha256}`, { key: s.key })).json.versions[0]).toMatchObject({ item_id: it1.id, version: 1 });
-    const dl = await SELF.fetch(it1.download_url);
+    expect((await api("GET", `/v1/games/${s.game}/ugc/code/${it1.share_code.toLowerCase()}`, { key: s.key, token: t })).json.item.id).toBe(it1.id);
+    expect((await api("GET", `/v1/games/${s.game}/ugc/hash/${it1.sha256}`, { key: s.key, token: t })).json.versions[0]).toMatchObject({ item_id: it1.id, version: 1 });
+    const dl = await SELF.fetch(it1.download_url, as(t));
     expect(dl.headers.get("cache-control")).toContain("immutable");
     expect(await sha256hex(await dl.arrayBuffer())).toBe(it1.sha256);
-    const th = await SELF.fetch(it1.thumbnail_url);
+    const th = await SELF.fetch(it1.thumbnail_url, as(t));
     expect(th.headers.get("content-type")).toBe("image/png");
   });
 
@@ -127,8 +129,8 @@ describe("player content: publish, versions, fetch", () => {
     const v2 = await api("POST", `/v1/ugc/${level.id}/versions`, { key: s.key, token: t, body: { sha256: v2sha, client_version: "0.9.2", notes: "wider" } });
     expect(v2.json.item).toMatchObject({ version: 2, sha256: v2sha });
     expect(v2.json.item.versions.map((v: any) => v.version)).toEqual([2, 1]);
-    expect((await SELF.fetch(level.download_url)).status).toBe(200);
-    const w = await api("GET", `/v1/ugc/${world.id}`, { key: s.key });
+    expect((await SELF.fetch(level.download_url, as(t))).status).toBe(200);
+    const w = await api("GET", `/v1/ugc/${world.id}`, { key: s.key, token: t });
     expect(w.json.item.versions[0].refs).toEqual([level.sha256]);
     // Only the author can change it.
     const other = await signedIn(s.key, "Eve");
@@ -145,7 +147,7 @@ describe("player content: browse", () => {
     const b = await publish(s, t, { title: "Frozen pass", tags: ["ice", "hard"] });
     const c = await publish(s, t, { title: "Secret", visibility: "unlisted" });
     const r = await publish(s, t, { kind: "replay", title: "Triple kill" });
-    const list = async (q: string) => (await api("GET", `/v1/games/${s.game}/ugc?${q}`, { key: s.key })).json;
+    const list = async (q: string) => (await api("GET", `/v1/games/${s.game}/ugc?${q}`, { key: s.key, token: t })).json;
     expect((await list("")).items.map((x: any) => x.id)).toEqual([r.id, b.id, a.id]);
     expect((await list("kind=level")).items.map((x: any) => x.id)).toEqual([b.id, a.id]);
     expect((await list("tags=ice,hard")).items.map((x: any) => x.id)).toEqual([b.id]);
@@ -158,11 +160,11 @@ describe("player content: browse", () => {
     expect(p2.next_cursor).toBeNull();
     // Votes and plays from other players.
     for (let i = 0; i < 2; i++) {
-      const v = await guest(s.key);
+      const v = await signedIn(s.key, `V${i}`);
       await api("PUT", `/v1/ugc/${a.id}/vote`, { key: s.key, token: v, body: { value: 1 } });
       await api("POST", `/v1/ugc/${a.id}/plays`, { key: s.key, token: v });
     }
-    await api("PUT", `/v1/ugc/${b.id}/vote`, { key: s.key, token: await guest(s.key), body: { value: -1 } });
+    await api("PUT", `/v1/ugc/${b.id}/vote`, { key: s.key, token: await signedIn(s.key, "W"), body: { value: -1 } });
     expect((await list("sort=top")).items.map((x: any) => x.id)).toEqual([a.id, r.id, b.id]);
     expect((await list("sort=played")).items[0]).toMatchObject({ id: a.id, plays: 2 });
     expect(c.id).toBeTruthy();
@@ -171,7 +173,7 @@ describe("player content: browse", () => {
   it("votes are one per player, can change and clear; plays count players", async () => {
     const s = await setup();
     const a = await publish(s, await signedIn(s.key));
-    const g = await guest(s.key);
+    const g = await signedIn(s.key, "Gus");
     expect((await api("PUT", `/v1/ugc/${a.id}/vote`, { key: s.key, token: g, body: { value: 1 } })).json.votes).toEqual({ up: 1, down: 0, score: 1 });
     expect((await api("PUT", `/v1/ugc/${a.id}/vote`, { key: s.key, token: g, body: { value: 1 } })).json.votes).toEqual({ up: 1, down: 0, score: 1 });
     expect((await api("PUT", `/v1/ugc/${a.id}/vote`, { key: s.key, token: g, body: { value: -1 } })).json.votes).toEqual({ up: 0, down: 1, score: -1 });
@@ -179,7 +181,7 @@ describe("player content: browse", () => {
     expect((await api("PUT", `/v1/ugc/${a.id}/vote`, { key: s.key, token: g, body: { value: 0 } })).json.votes).toEqual({ up: 0, down: 0, score: 0 });
     expect((await api("POST", `/v1/ugc/${a.id}/plays`, { key: s.key, token: g })).json.counted).toBe(true);
     expect((await api("POST", `/v1/ugc/${a.id}/plays`, { key: s.key, token: g })).json.counted).toBe(false);
-    expect((await api("GET", `/v1/ugc/${a.id}`, { key: s.key })).json.item.plays).toBe(1);
+    expect((await api("GET", `/v1/ugc/${a.id}`, { key: s.key, token: g })).json.item.plays).toBe(1);
   });
 });
 
@@ -189,18 +191,18 @@ describe("player content: unpublish and moderation", () => {
     const t = await signedIn(s.key);
     const a = await publish(s, t);
     expect((await api("DELETE", `/v1/ugc/${a.id}`, { key: s.key, token: t })).json.deleted).toBe(true);
-    expect((await api("GET", `/v1/ugc/${a.id}`, { key: s.key })).status).toBe(404);
-    expect((await api("GET", `/v1/games/${s.game}/ugc`, { key: s.key })).json.items).toEqual([]);
+    expect((await api("GET", `/v1/ugc/${a.id}`, { key: s.key, token: t })).status).toBe(404);
+    expect((await api("GET", `/v1/games/${s.game}/ugc`, { key: s.key, token: t })).json.items).toEqual([]);
     expect((await api("GET", `/v1/players/me/ugc?game=${s.game}`, { key: s.key, token: t })).json.items).toEqual([]);
-    expect((await SELF.fetch(a.download_url)).status).toBe(200);
-    expect((await api("GET", `/v1/games/${s.game}/ugc/hash/${a.sha256}`, { key: s.key })).json.versions[0].unpublished).toBe(true);
+    expect((await SELF.fetch(a.download_url, as(t))).status).toBe(200);
+    expect((await api("GET", `/v1/games/${s.game}/ugc/hash/${a.sha256}`, { key: s.key, token: t })).json.versions[0].unpublished).toBe(true);
   });
 
   it("reports reach the developer, who can hide an item and its files, and bring it back", async () => {
     const s = await setup();
     const t = await signedIn(s.key);
     const a = await publish(s, t);
-    const g = await guest(s.key);
+    const g = await signedIn(s.key, "Rep");
     expect((await api("POST", `/v1/ugc/${a.id}/report`, { key: s.key, token: g, body: { reason: "offensive name" } })).json.reported).toBe(true);
     const reports = await api("GET", `/v1/games/${s.game}/ugc/reports`, { token: s.dev });
     expect(reports.json.items[0]).toMatchObject({ id: a.id, reports: [{ reason: "offensive name" }] });
@@ -208,32 +210,60 @@ describe("player content: unpublish and moderation", () => {
     const stranger = (await api("POST", "/v1/admin/developers", { token: "dev-admin-token", body: { email: `x${uniq()}@example.com` } })).json.token;
     expect((await api("POST", `/v1/ugc/${a.id}/moderate`, { token: stranger, body: { action: "hide" } })).status).toBe(404);
     expect((await api("POST", `/v1/ugc/${a.id}/moderate`, { token: s.dev, body: { action: "hide", reason: "name" } })).json.item.hidden).toBe(true);
-    expect((await api("GET", `/v1/ugc/${a.id}`, { key: s.key })).status).toBe(404);
-    expect((await SELF.fetch(a.download_url)).status).toBe(404);
+    expect((await api("GET", `/v1/ugc/${a.id}`, { key: s.key, token: g })).status).toBe(404);
+    expect((await SELF.fetch(a.download_url, as(t))).status).toBe(404);
     expect((await api("GET", `/v1/players/me/ugc`, { key: s.key, token: t })).json.items[0]).toMatchObject({ hidden: true, hidden_reason: "name" });
     expect((await api("GET", `/v1/games/${s.game}/ugc/reports`, { token: s.dev })).json.items).toEqual([]);
     expect((await api("POST", `/v1/admin/ugc/${a.id}/moderate`, { token: "dev-admin-token", body: { action: "unhide" } })).json.item.hidden).toBe(false);
-    expect((await SELF.fetch(a.download_url)).status).toBe(200);
+    expect((await SELF.fetch(a.download_url, as(t))).status).toBe(200);
   });
 
-  it("a guest's votes follow it into the account it signs in to; deleting an account unpublishes its items", async () => {
+  it("deleting an account unpublishes its items", async () => {
     const s = await setup();
     const t = await signedIn(s.key);
     const a = await publish(s, t);
-    const subject = `m${uniq()}`;
-    const acct = (await api("POST", "/v1/players/login", { key: s.key, body: { provider: "fake", subject } })).json.player_token;
-    const g = await guest(s.key);
-    await api("PUT", `/v1/ugc/${a.id}/vote`, { key: s.key, token: acct, body: { value: 1 } });
-    await api("PUT", `/v1/ugc/${a.id}/vote`, { key: s.key, token: g, body: { value: 1 } });
-    await api("POST", `/v1/ugc/${a.id}/plays`, { key: s.key, token: g });
-    expect((await api("GET", `/v1/ugc/${a.id}`, { key: s.key })).json.item.votes.up).toBe(2);
-    // The guest signs in to the existing account: one player, one vote.
-    const merged = await api("POST", "/v1/players/login", { key: s.key, token: g, body: { provider: "fake", subject } });
-    expect(merged.json.merged).toBe(true);
-    const after = (await api("GET", `/v1/ugc/${a.id}`, { key: s.key, token: merged.json.player_token })).json.item;
-    expect(after).toMatchObject({ votes: { up: 1, down: 0, score: 1 }, plays: 1, my_vote: 1 });
+    const other = await signedIn(s.key, "Eve");
+    expect((await api("GET", `/v1/ugc/${a.id}`, { key: s.key, token: other })).status).toBe(200);
     expect((await api("DELETE", "/v1/players/me", { key: s.key, token: t })).json.deleted).toBe(true);
-    expect((await api("GET", `/v1/ugc/${a.id}`, { key: s.key })).status).toBe(404);
+    expect((await api("GET", `/v1/ugc/${a.id}`, { key: s.key, token: other })).status).toBe(404);
+  });
+});
+
+describe("player content: only for signed-in players (owner rule 2026-10-16)", () => {
+  it("guests and key-only callers can't browse, look up, download, rate, play or report; a bad token is 401", async () => {
+    const s = await setup();
+    const t = await signedIn(s.key);
+    const a = await publish(s, t);
+    const g = await guest(s.key);
+    const reads = [`/v1/games/${s.game}/ugc`, `/v1/games/${s.game}/ugc/code/${a.share_code}`, `/v1/ugc/${a.id}`, `/v1/games/${s.game}/ugc/hash/${a.sha256}`, a.download_url];
+    for (const path of reads) {
+      for (const token of [undefined, g]) {
+        const r = await api("GET", path, { key: s.key, token });
+        expect([path, r.status, r.json?.error?.code]).toEqual([path, 403, "sign_in_required"]);
+      }
+      expect((await api("GET", path, { key: s.key, token: "pt_bad.token" })).status).toBe(401);
+      expect((await api("GET", path, { key: s.key, token: t })).status).toBe(200);
+    }
+    const writes: [string, string, unknown][] = [
+      ["PUT", `/v1/ugc/${a.id}/vote`, { value: 1 }],
+      ["POST", `/v1/ugc/${a.id}/plays`, undefined],
+      ["POST", `/v1/ugc/${a.id}/report`, { reason: "spam" }],
+    ];
+    for (const [method, path, body] of writes) {
+      const r = await api(method, path, { key: s.key, token: g, body });
+      expect([path, r.status, r.json?.error?.code]).toEqual([path, 403, "sign_in_required"]);
+    }
+    // A guest that signs in gets everything a signed-in player gets.
+    const acct = (await api("POST", "/v1/players/login", { key: s.key, token: g, body: { provider: "fake", subject: `m${uniq()}` } })).json.player_token;
+    expect((await api("PUT", `/v1/ugc/${a.id}/vote`, { key: s.key, token: acct, body: { value: 1 } })).json.my_vote).toBe(1);
+  });
+
+  it("a signed-in viewer always gets my_vote, 0 when they haven't voted", async () => {
+    const s = await setup();
+    const t = await signedIn(s.key);
+    await publish(s, t);
+    const items = (await api("GET", `/v1/games/${s.game}/ugc`, { key: s.key, token: t })).json.items;
+    expect(items.map((x: any) => x.my_vote)).toEqual([0]);
   });
 });
 
@@ -305,8 +335,8 @@ describe("player content: review queue (the moderator)", () => {
     expect((await api("POST", `/v1/admin/ugc/review/${e.seq}`, { token: MOD, body: { verdict: "hide" } })).status).toBe(400);
     const hid = await api("POST", `/v1/admin/ugc/review/${e.seq}`, { token: MOD, body: { verdict: "hide", reason: "sexual content (rule 1)" } });
     expect(hid.json.item.hidden_reason).toBe("sexual content (rule 1)");
-    expect((await api("GET", `/v1/ugc/${it1.id}`, { key: s.key })).status).toBe(404);
-    expect((await api("GET", it1.download_url)).status).toBe(404);
+    expect((await api("GET", `/v1/ugc/${it1.id}`, { key: s.key, token: await signedIn(s.key, "Vi") })).status).toBe(404);
+    expect((await api("GET", it1.download_url, { token: t })).status).toBe(404);
     const mine = await api("GET", `/v1/players/me/ugc`, { key: s.key, token: t });
     expect(mine.json.items[0].hidden_reason).toBe("sexual content (rule 1)");
   });
@@ -315,10 +345,11 @@ describe("player content: review queue (the moderator)", () => {
     const s = await setup();
     const author = await signedIn(s.key);
     const it1 = await publish(s, author);
+    const viewer = await signedIn(s.key, "Vi");
     for (let i = 0; i < 3; i++) {
       const r = await api("POST", `/v1/ugc/${it1.id}/report`, { key: s.key, token: await signedIn(s.key, `R${i}`), body: { reason: "nsfw" } });
       expect(r.json.reported).toBe(true);
-      expect((await api("GET", `/v1/ugc/${it1.id}`, { key: s.key })).status).toBe(i < 2 ? 200 : 404);
+      expect((await api("GET", `/v1/ugc/${it1.id}`, { key: s.key, token: viewer })).status).toBe(i < 2 ? 200 : 404);
     }
     const q = await pendingFor(it1.id);
     expect(q.filter((e) => e.cause === "reports").length).toBe(3);
@@ -327,7 +358,7 @@ describe("player content: review queue (the moderator)", () => {
     // Still reviewable while hidden.
     expect((await api("GET", q.at(-1).file_url, { token: MOD })).status).toBe(200);
     await api("POST", `/v1/admin/ugc/review/${q.at(-1).seq}`, { token: MOD, body: { verdict: "ok", reason: "a normal level" } });
-    expect((await api("GET", `/v1/ugc/${it1.id}`, { key: s.key })).status).toBe(200);
+    expect((await api("GET", `/v1/ugc/${it1.id}`, { key: s.key, token: author })).status).toBe(200);
     expect(await pendingFor(it1.id)).toEqual([]);
   });
 });

@@ -707,7 +707,7 @@ Body fields: `kind`, `size` (required), `sha256` (required)
 
 `GET /v1/games/{game}/ugc/blobs/{sha256}` (auth: public) · `partii ugc blob`
 
-A stored file or thumbnail, by its hash (cache forever). The download_url and thumbnail_url in item views point here.
+A stored file or thumbnail, by its hash (cache forever, privately). The download_url and thumbnail_url in item views point here. Send a signed-in player's token (Authorization: Bearer pt_…); guests get 403 sign_in_required.
 
 Parameters:
 - `game` (path, required)
@@ -730,7 +730,7 @@ Body: the file's bytes.
 
 `GET /v1/games/{game}/ugc` (auth: key) · `partii ugc list`
 
-Browse and search public items. sort is new, top or played; tags is comma-separated (all must match); pass next_cursor as cursor for the next page.
+Browse and search public items, for signed-in players (a guest's or no token: 403 sign_in_required). sort is new, top or played; tags is comma-separated (all must match); pass next_cursor as cursor for the next page. Each item has my_vote.
 
 Parameters:
 - `game` (path, required)
@@ -757,7 +757,7 @@ Body fields: `kind` (required), `title` (required), `description`, `tags`, `visi
 
 `GET /v1/games/{game}/ugc/code/{code}` (auth: key) · `partii ugc code`
 
-The item with this share code (works for unlisted items).
+The item with this share code (works for unlisted items), for signed-in players.
 
 Parameters:
 - `game` (path, required)
@@ -767,7 +767,7 @@ Parameters:
 
 `GET /v1/games/{game}/ugc/hash/{sha256}` (auth: key) · `partii ugc hash`
 
-The items and versions stored under this hash (a World's pinned Levels).
+The items and versions stored under this hash (a World's pinned Levels), for signed-in players.
 
 Parameters:
 - `game` (path, required)
@@ -786,7 +786,7 @@ Parameters:
 
 `GET /v1/ugc/{id}` (auth: key) · `partii ugc get`
 
-One item with all its versions. With a player token, my_vote is included.
+One item with all its versions and my_vote, for signed-in players.
 
 Parameters:
 - `id` (path, required)
@@ -826,7 +826,7 @@ Body fields: `sha256` (required), `client_version` (required), `notes`, `refs`
 
 `PUT /v1/ugc/{id}/vote` (auth: player) · `partii ugc vote`
 
-Vote an item up (1), down (-1) or clear your vote (0). One vote per player per item.
+Vote an item up (1), down (-1) or clear your vote (0). One vote per player per item; signed-in players only.
 
 Parameters:
 - `id` (path, required)
@@ -837,7 +837,7 @@ Body fields: `value` (required)
 
 `POST /v1/ugc/{id}/plays` (auth: player) · `partii ugc play`
 
-Count a play (fire and forget). plays counts players, so repeats by the same player don't add.
+Count a play (fire and forget). plays counts players, so repeats by the same player don't add; signed-in players only.
 
 Parameters:
 - `id` (path, required)
@@ -846,7 +846,7 @@ Parameters:
 
 `POST /v1/ugc/{id}/report` (auth: player) · `partii ugc report`
 
-Report an item to the game's moderators.
+Report an item to the game's moderators (signed-in players).
 
 Parameters:
 - `id` (path, required)

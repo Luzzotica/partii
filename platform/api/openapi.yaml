@@ -669,7 +669,7 @@ paths:
   /v1/games/{game}/ugc/blobs/{sha256}:
     get:
       operationId: ugcBlob
-      summary: A stored file or thumbnail, by its hash (cache forever). The download_url and thumbnail_url in item views point here.
+      summary: "A stored file or thumbnail, by its hash (cache forever, privately). The download_url and thumbnail_url in item views point here. Send a signed-in player's token (Authorization: Bearer pt_…); guests get 403 sign_in_required."
       x-auth: public
       x-cli: ugc blob
       x-response: binary
@@ -690,7 +690,7 @@ paths:
   /v1/games/{game}/ugc:
     get:
       operationId: ugcList
-      summary: Browse and search public items. sort is new, top or played; tags is comma-separated (all must match); pass next_cursor as cursor for the next page.
+      summary: "Browse and search public items, for signed-in players (a guest's or no token: 403 sign_in_required). sort is new, top or played; tags is comma-separated (all must match); pass next_cursor as cursor for the next page. Each item has my_vote."
       x-auth: key
       x-cli: ugc list
       parameters:
@@ -714,7 +714,7 @@ paths:
   /v1/games/{game}/ugc/code/{code}:
     get:
       operationId: ugcByCode
-      summary: The item with this share code (works for unlisted items).
+      summary: The item with this share code (works for unlisted items), for signed-in players.
       x-auth: key
       x-cli: ugc code
       parameters:
@@ -724,7 +724,7 @@ paths:
   /v1/games/{game}/ugc/hash/{sha256}:
     get:
       operationId: ugcByHash
-      summary: The items and versions stored under this hash (a World's pinned Levels).
+      summary: The items and versions stored under this hash (a World's pinned Levels), for signed-in players.
       x-auth: key
       x-cli: ugc hash
       parameters:
@@ -742,7 +742,7 @@ paths:
   /v1/ugc/{id}:
     get:
       operationId: ugcGet
-      summary: One item with all its versions. With a player token, my_vote is included.
+      summary: One item with all its versions and my_vote, for signed-in players.
       x-auth: key
       x-cli: ugc get
       parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
@@ -774,7 +774,7 @@ paths:
   /v1/ugc/{id}/vote:
     put:
       operationId: ugcVote
-      summary: Vote an item up (1), down (-1) or clear your vote (0). One vote per player per item.
+      summary: Vote an item up (1), down (-1) or clear your vote (0). One vote per player per item; signed-in players only.
       x-auth: player
       x-cli: ugc vote
       parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
@@ -783,7 +783,7 @@ paths:
   /v1/ugc/{id}/plays:
     post:
       operationId: ugcPlay
-      summary: Count a play (fire and forget). plays counts players, so repeats by the same player don't add.
+      summary: Count a play (fire and forget). plays counts players, so repeats by the same player don't add; signed-in players only.
       x-auth: player
       x-cli: ugc play
       parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
@@ -791,7 +791,7 @@ paths:
   /v1/ugc/{id}/report:
     post:
       operationId: ugcReport
-      summary: Report an item to the game's moderators.
+      summary: Report an item to the game's moderators (signed-in players).
       x-auth: player
       x-cli: ugc report
       parameters: [{ name: id, in: path, required: true, schema: { type: string } }]

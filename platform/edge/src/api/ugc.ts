@@ -145,10 +145,23 @@ async function gameExists(env: Env, game: string) {
   return g;
 }
 
-/** Publishing needs an account a player can get back to, not a device guest. */
-async function requireSignedIn(env: Env, player: string) {
+const SIGN_IN_HINT = "sign in (Steam, Game Center, Apple, Google, Discord or email) first; the guest's progress merges into the account";
+
+/** Players' content is for signed-in players: an account they can get back to, not a device guest. */
+async function requireSignedIn(env: Env, player: string, what = "publish") {
   const r = await env.DB.prepare("SELECT 1 FROM identities WHERE player_id = ? AND provider <> 'device' LIMIT 1").bind(player).first();
-  if (!r) throw new ApiError(403, "sign_in_required", "guests can't publish", "sign in (email, Steam, Apple, Google or Discord) first; the guest's progress merges into the account");
+  if (!r) throw new ApiError(403, "sign_in_required", `guests can't ${what} players' content`, SIGN_IN_HINT);
+}
+
+/** Viewing players' content needs a signed-in player's token; no token and a guest's get the same answer. */
+async function signedInViewer(env: Env, req: Request): Promise<string> {
+  const viewer = await optionalPlayer(env, req);
+  if (!viewer) {
+    if ((req.headers.get("authorization") ?? "").startsWith("Bearer pt_")) throw new ApiError(401, "unauthorized", "this player token is invalid or expired", "sign the player in again");
+    throw new ApiError(403, "sign_in_required", "players' content is for signed-in players", SIGN_IN_HINT);
+  }
+  await requireSignedIn(env, viewer, "view");
+  return viewer;
 }
 
 async function perHour(env: Env, sql: string, ...args: unknown[]): Promise<number> {
@@ -380,13 +393,14 @@ export const ugcHandlers: Handlers = {
     return { stored: true, sha256: hash, size: bytes.byteLength };
   },
 
-  async ugcBlob({ env, params }) {
+  async ugcBlob({ env, req, params }) {
     const hash = sha(params.sha256);
+    await signedInViewer(env, req);
     const row = await env.DB.prepare("SELECT kind, hidden_at FROM ugc_blobs WHERE game_id = ? AND sha256 = ?").bind(params.game, hash).first<{ kind: string; hidden_at: number | null }>();
     const o = row && row.hidden_at === null ? await files(env).get(blobKey(params.game, hash)) : null;
     if (!o) throw new ApiError(404, "not_found", "no such file", row?.hidden_at ? "it was removed by moderation" : "");
     return new Response(o.body, {
-      headers: { "content-type": row!.kind === "thumbnail" ? "image/png" : "application/octet-stream", "content-length": String(o.size), "cache-control": "public, max-age=31536000, immutable", "access-control-allow-origin": "*" },
+      headers: { "content-type": row!.kind === "thumbnail" ? "image/png" : "application/octet-stream", "content-length": String(o.size), "cache-control": "private, max-age=31536000, immutable", "access-control-allow-origin": "*" },
     });
   },
 
@@ -437,6 +451,7 @@ export const ugcHandlers: Handlers = {
   },
 
   async ugcList({ env, req, params, query }) {
+    const viewer = await signedInViewer(env, req);
     const sort = (String(query.sort ?? "new") as Sort);
     if (!(sort in SORTS)) throw bad("sort is new, top or played");
     const limit = Math.min(Math.max(Number(query.limit ?? 20) || 20, 1), PAGE_MAX);
@@ -476,23 +491,24 @@ export const ugcHandlers: Handlers = {
     }
     const r = await env.DB.prepare(`${ITEM_SELECT} WHERE ${where.join(" AND ")} ORDER BY ${SORTS[sort].order} LIMIT ?`).bind(...args, limit + 1).all<ItemRow>();
     const rows = r.results.slice(0, limit);
-    const votes = await myVotes(env, await optionalPlayer(env, req), rows.map((x) => x.id));
+    const votes = await myVotes(env, viewer, rows.map((x) => x.id));
     return {
-      items: rows.map((x) => itemView(req, x, votes.size ? { my_vote: votes.get(x.id) ?? 0 } : {})),
+      items: rows.map((x) => itemView(req, x, { my_vote: votes.get(x.id) ?? 0 })),
       next_cursor: r.results.length > limit ? cursorOf(sort, rows[rows.length - 1]) : null,
     };
   },
 
   async ugcByCode({ env, req, params }) {
     const code = String(params.code ?? "").trim().toUpperCase();
+    const viewer = await signedInViewer(env, req);
     const row = await env.DB.prepare(`${ITEM_SELECT} WHERE i.game_id = ? AND i.share_code = ?`).bind(params.game, code).first<ItemRow>();
-    const viewer = await optionalPlayer(env, req);
     const r = await visibleItem(env, row?.id ?? "", viewer);
-    return { item: { ...itemView(req, r, viewer ? { my_vote: (await myVotes(env, viewer, [r.id])).get(r.id) ?? 0 } : {}), versions: await versionsOf(req, env, r) } };
+    return { item: { ...itemView(req, r, { my_vote: (await myVotes(env, viewer, [r.id])).get(r.id) ?? 0 }), versions: await versionsOf(req, env, r) } };
   },
 
   async ugcByHash({ env, req, params }) {
     const hash = sha(params.sha256);
+    await signedInViewer(env, req);
     const blob = await env.DB.prepare("SELECT size, hidden_at FROM ugc_blobs WHERE game_id = ? AND sha256 = ? AND kind = 'file'").bind(params.game, hash).first<{ size: number; hidden_at: number | null }>();
     if (!blob || blob.hidden_at !== null) throw new ApiError(404, "not_found", "no file with this hash");
     // Unpublished items still say what a pinned hash is; hidden ones don't.
@@ -505,9 +521,9 @@ export const ugcHandlers: Handlers = {
   },
 
   async ugcGet({ env, req, params }) {
-    const viewer = await optionalPlayer(env, req);
+    const viewer = await signedInViewer(env, req);
     const r = await visibleItem(env, params.id, viewer);
-    return { item: { ...itemView(req, r, viewer ? { my_vote: (await myVotes(env, viewer, [r.id])).get(r.id) ?? 0 } : {}), versions: await versionsOf(req, env, r) } };
+    return { item: { ...itemView(req, r, { my_vote: (await myVotes(env, viewer, [r.id])).get(r.id) ?? 0 }), versions: await versionsOf(req, env, r) } };
   },
 
   async ugcUpdate({ env, req, caller, params, body, dryRun }) {
@@ -572,6 +588,7 @@ export const ugcHandlers: Handlers = {
   async ugcVote({ env, caller, params, body }) {
     const value = Number(body.value);
     if (![1, 0, -1].includes(value)) throw bad("value is 1 (up), -1 (down) or 0 (clear)");
+    await requireSignedIn(env, caller.player!.id, "rate");
     const r = await visibleItem(env, params.id, caller.player!.id);
     const player = caller.player!.id;
     if ((await perHour(env, "SELECT COUNT(*) AS n FROM ugc_votes WHERE player_id = ? AND updated_at > ?", player)) >= UGC_LIMITS.votesPerHour) throw limited("votes");
@@ -586,6 +603,7 @@ export const ugcHandlers: Handlers = {
   },
 
   async ugcPlay({ env, caller, params }) {
+    await requireSignedIn(env, caller.player!.id, "play");
     const r = await visibleItem(env, params.id, caller.player!.id);
     const res = await env.DB.prepare("INSERT OR IGNORE INTO ugc_plays (item_id, player_id, created_at) VALUES (?, ?, ?)").bind(r.id, caller.player!.id, now()).run();
     const counted = (res.meta.changes ?? 0) > 0;
@@ -595,6 +613,7 @@ export const ugcHandlers: Handlers = {
 
   async ugcReport({ env, caller, params, body }) {
     const reason = text(body.reason, "reason", 500, true);
+    await requireSignedIn(env, caller.player!.id, "report");
     const r = await visibleItem(env, params.id, caller.player!.id);
     const player = caller.player!.id;
     if ((await perHour(env, "SELECT COUNT(*) AS n FROM ugc_reports WHERE player_id = ? AND created_at > ?", player)) >= UGC_LIMITS.reportsPerHour) throw limited("reports");
